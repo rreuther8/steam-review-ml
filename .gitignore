@@ -1,0 +1,10 @@
+# Data
+src/data/
+
+# Cursor rules
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/*.mdc
+
+# Environment
+.vscode/*
