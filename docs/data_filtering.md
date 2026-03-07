@@ -8,7 +8,7 @@ model-ready table for:
   `is_helpful` (binary label).
 
 The goal is that all notebooks, scripts, and services use the **same rules**
-implemented in `src/steam_recs/data/preprocess.py`.
+implemented in `src/steam_review_ml/data/preprocess.py`.
 
 ---
 
@@ -52,11 +52,11 @@ They are implemented in `filter_reviews(df, ...)`.
 - **Keep** only rows with `language == "english"` for the main modeling dataset.
 - Other languages can be handled in a separate, future multilingual pipeline.
 
-### 2.2 Missing or empty review text
+### 2.2 Missing, empty, or very short review text
 
 - For text-based models:
-  - **Drop** rows where `review` is null or empty after stripping whitespace.
-    - Condition: `review.isna()` or `review.str.strip() == ""`.
+  - **Drop** rows where `review` is null, empty after stripping whitespace, or has fewer than 4 characters after strip.
+    - Condition: `review.isna()`, or `review.str.strip() == ""`, or `len(review.str.strip()) < 4`.
 - For non-text experiments, this rule could be relaxed, but the default pipeline drops them.
 
 ### 2.3 Numeric sanity checks (playtime)
@@ -196,7 +196,7 @@ Applied in `select_features(df, ...)`:
 
 The filtering and selection logic is implemented in:
 
-- `src/steam_recs/data/preprocess.py`
+- `src/steam_review_ml/data/preprocess.py`
 
 Key functions:
 
@@ -220,7 +220,7 @@ Example pipeline (pseudo-code):
 
 ```python
 from pathlib import Path
-from steam_recs.data.preprocess import load_raw_reviews, filter_reviews, select_features
+from steam_review_ml.data.preprocess import load_raw_reviews, filter_reviews, select_features
 
 RAW_PATH = Path(\"data/steam_reviews_full.csv\")
 

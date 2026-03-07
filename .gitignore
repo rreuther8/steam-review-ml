@@ -1,5 +1,5 @@
 # Data
-src/data/
+data/
 
 # Cursor rules
 .cursor/*

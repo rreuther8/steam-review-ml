@@ -1,6 +1,6 @@
 import argparse
 
-from steam_recs.data.loaders import chunk_csv
+from steam_review_ml.data.loaders import chunk_csv
 
 
 def main() -> None:
