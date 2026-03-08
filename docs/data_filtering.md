@@ -97,6 +97,25 @@ Future possible heuristics (to be added only if clearly justified by EDA):
   - Very high `votes_helpful` or `votes_funny`.
 - Users with extremely high `author.num_reviews` and clearly repetitive text.
 
+
+### 2.5 Votes / helpfulness outliers
+
+Columns:
+
+- `votes_helpful`
+- `votes_funny`
+
+Rules:
+
+- **Drop** rows where `votes_funny` or `votes_helpful` equals **4294967295**
+  (2³² − 1, the maximum unsigned 32-bit integer). This value is a sentinel or
+  overflow in the source data, not a real count; EDA found a small number of
+  such records (e.g. 14 for `votes_funny`). Implement as a row filter in
+  `filter_reviews` before other vote logic.
+- Do **not** drop rows based on other extreme vote counts.
+- We optionally **cap** these features during feature engineering, not during
+  row filtering (e.g., clip at a high percentile).
+
 ---
 
 ## 3. Column selection and derived features
