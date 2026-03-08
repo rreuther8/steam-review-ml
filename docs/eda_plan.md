@@ -1,6 +1,6 @@
 # EDA Plan: Build Understanding for Recommended and votes_helpful
 
-This plan walks through exploratory analysis in a fixed order so each step supports the next and you can explain your choices (e.g. in an interview) instead of vibe-coding. Work in `notebooks/eda/eda_001.ipynb`; reuse helpers there and add new ones as needed.
+This plan walks through exploratory analysis in a fixed order so each step supports the next and you can explain your choices (e.g. in an interview) instead of vibe-coding. EDA is split across focused notebooks in `notebooks/eda/`; each has the same imports, helpers, and load-data block. Use: **eda_001_targets.ipynb** (target variables), **eda_002_quality.ipynb** (data quality), **eda_003_text.ipynb** (text), **eda_004_features.ipynb** (features vs targets), **eda_005_numeric.ipynb** (correlation and outliers). Reuse helpers in those notebooks and add new ones as needed.
 
 **Targets:** (1) `recommended` (sentiment), (2) `votes_helpful` / `is_helpful` (helpfulness).  
 **Data:** English-only slice (e.g. `df_eng`). Filtering and column choices are in [data_filtering.md](data_filtering.md).
@@ -144,5 +144,5 @@ This plan walks through exploratory analysis in a fixed order so each step suppo
 
 ## Notes
 
-- **Helpers:** Reuse and extend functions in `notebooks/eda/eda_001.ipynb` (e.g. `show_class_balance`, `show_votes_helpful_distribution`, `plot_distributions`, `missing_report`, `plot_correlation_heatmap`, `detect_outliers_zscore`). Add small, well-named functions for new views so the notebook stays readable.
+- **Helpers:** Reuse and extend functions in the EDA notebooks (e.g. `show_class_balance`, `show_votes_helpful_distribution`, `plot_distributions`, `missing_report`, `plot_correlation_heatmap`, `detect_outliers_zscore`). Each split notebook (eda_001_targets through eda_005_numeric) includes the same helper cell; add small, well-named functions there for new views so the notebook stays readable.
 - **Decisions:** When you change filtering or feature choices based on EDA, update [data_filtering.md](data_filtering.md) and/or preprocessing in `src/steam_review_ml/data/preprocess.py` so the pipeline stays the single source of truth.
