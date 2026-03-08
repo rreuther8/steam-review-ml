@@ -124,21 +124,21 @@ This plan walks through exploratory analysis in a fixed order so each step suppo
 
 ## Checklist (for tracking)
 
-- [ ] 1.1 Class balance for `recommended`
-- [ ] 1.2 Distribution of `votes_helpful` (and optional `is_helpful` binning)
-- [ ] 1.3 Crosstab: recommended vs is_helpful
-- [ ] 2.1 Missingness report
-- [ ] 2.2 Duplicate review_id and repeated text checks
-- [ ] 2.3 Reviews per game
-- [ ] 2.4 Reviews per author
-- [ ] 3.1 Review length distribution
-- [ ] 3.2 Sample positive vs negative review excerpts
-- [ ] 3.3 Mean length by recommended and by is_helpful
-- [ ] 4.1 Numeric features vs recommended (boxplots/violins)
-- [ ] 4.2 Numeric features vs helpfulness
-- [ ] 4.3 Review length vs both targets
-- [ ] 5.1 Correlation matrix
-- [ ] 5.2 Outliers for playtime and vote columns
+- [x] 1.1 Class balance for `recommended`
+- [x] 1.2 Distribution of `votes_helpful` (and optional `is_helpful` binning)
+- [x] 1.3 Crosstab: recommended vs is_helpful
+- [x] 2.1 Missingness report
+- [x] 2.2 Duplicate review_id and repeated text checks
+- [x] 2.3 Reviews per game
+- [x] 2.4 Reviews per author
+- [x] 3.1 Review length distribution
+- [x] 3.2 Sample positive vs negative review excerpts
+- [x] 3.3 Mean length by recommended and by is_helpful
+- [x] 4.1 Numeric features vs recommended (boxplots/violins)
+- [x] 4.2 Numeric features vs helpfulness
+- [x] 4.3 Review length vs both targets
+- [x] 5.1 Correlation matrix
+- [x] 5.2 Outliers for playtime and vote columns
 
 ---
 
