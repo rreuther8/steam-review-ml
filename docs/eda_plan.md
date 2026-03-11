@@ -1,6 +1,6 @@
 # EDA Plan: Build Understanding for Recommended and votes_helpful
 
-This plan walks through exploratory analysis in a fixed order so each step supports the next and you can explain your choices (e.g. in an interview) instead of vibe-coding. Work in `notebooks/eda/eda_001.ipynb`; reuse helpers there and add new ones as needed.
+This plan walks through exploratory analysis in a fixed order so each step supports the next and you can explain your choices (e.g. in an interview) instead of vibe-coding. EDA is split across focused notebooks in `notebooks/eda/`; each has the same imports, helpers, and load-data block. Use: **eda_001_targets.ipynb** (target variables), **eda_002_quality.ipynb** (data quality), **eda_003_text.ipynb** (text), **eda_004_features.ipynb** (features vs targets), **eda_005_numeric.ipynb** (correlation and outliers). Reuse helpers in those notebooks and add new ones as needed.
 
 **Targets:** (1) `recommended` (sentiment), (2) `votes_helpful` / `is_helpful` (helpfulness).  
 **Data:** English-only slice (e.g. `df_eng`). Filtering and column choices are in [data_filtering.md](data_filtering.md).
@@ -124,25 +124,25 @@ This plan walks through exploratory analysis in a fixed order so each step suppo
 
 ## Checklist (for tracking)
 
-- [ ] 1.1 Class balance for `recommended`
-- [ ] 1.2 Distribution of `votes_helpful` (and optional `is_helpful` binning)
-- [ ] 1.3 Crosstab: recommended vs is_helpful
-- [ ] 2.1 Missingness report
-- [ ] 2.2 Duplicate review_id and repeated text checks
-- [ ] 2.3 Reviews per game
-- [ ] 2.4 Reviews per author
-- [ ] 3.1 Review length distribution
-- [ ] 3.2 Sample positive vs negative review excerpts
-- [ ] 3.3 Mean length by recommended and by is_helpful
-- [ ] 4.1 Numeric features vs recommended (boxplots/violins)
-- [ ] 4.2 Numeric features vs helpfulness
-- [ ] 4.3 Review length vs both targets
-- [ ] 5.1 Correlation matrix
-- [ ] 5.2 Outliers for playtime and vote columns
+- [x] 1.1 Class balance for `recommended`
+- [x] 1.2 Distribution of `votes_helpful` (and optional `is_helpful` binning)
+- [x] 1.3 Crosstab: recommended vs is_helpful
+- [x] 2.1 Missingness report
+- [x] 2.2 Duplicate review_id and repeated text checks
+- [x] 2.3 Reviews per game
+- [x] 2.4 Reviews per author
+- [x] 3.1 Review length distribution
+- [x] 3.2 Sample positive vs negative review excerpts
+- [x] 3.3 Mean length by recommended and by is_helpful
+- [x] 4.1 Numeric features vs recommended (boxplots/violins)
+- [x] 4.2 Numeric features vs helpfulness
+- [x] 4.3 Review length vs both targets
+- [x] 5.1 Correlation matrix
+- [x] 5.2 Outliers for playtime and vote columns
 
 ---
 
 ## Notes
 
-- **Helpers:** Reuse and extend functions in `notebooks/eda/eda_001.ipynb` (e.g. `show_class_balance`, `show_votes_helpful_distribution`, `plot_distributions`, `missing_report`, `plot_correlation_heatmap`, `detect_outliers_zscore`). Add small, well-named functions for new views so the notebook stays readable.
+- **Helpers:** Reuse and extend functions in the EDA notebooks (e.g. `show_class_balance`, `show_votes_helpful_distribution`, `plot_distributions`, `missing_report`, `plot_correlation_heatmap`, `detect_outliers_zscore`). Each split notebook (eda_001_targets through eda_005_numeric) includes the same helper cell; add small, well-named functions there for new views so the notebook stays readable.
 - **Decisions:** When you change filtering or feature choices based on EDA, update [data_filtering.md](data_filtering.md) and/or preprocessing in `src/steam_review_ml/data/preprocess.py` so the pipeline stays the single source of truth.
