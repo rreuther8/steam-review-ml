@@ -6,5 +6,10 @@ data/
 !.cursor/rules/
 !.cursor/rules/*.mdc
 
+# Python
+__pycache__/
+*.egg-info/
+*.egg
+
 # Environment
 .vscode/*

@@ -83,9 +83,14 @@ Columns:
 
 Rules:
 
-- Do **not** drop rows based on extreme vote counts.
-- We optionally **cap** these features during feature engineering, not during
-  row filtering (e.g., clip at a high percentile).
+- **Drop** rows where `votes_funny` or `votes_helpful` equals **4294967295**
+  (2³² − 1, the maximum unsigned 32-bit integer). This value is a sentinel or
+  overflow in the source data, not a real count; EDA found a small number of
+  such records (e.g. 14 for `votes_funny`). Implement as a row filter in
+  `filter_reviews` before other vote logic.
+- Do **not** drop rows based on other extreme vote counts.
+- We optionally **cap** these features during feature engineering (e.g., clip
+  at a high percentile), not during row filtering.
 
 ### 2.5 Optional spam/bot heuristics (placeholder)
 
@@ -96,25 +101,6 @@ Future possible heuristics (to be added only if clearly justified by EDA):
   - Very high playtime, or
   - Very high `votes_helpful` or `votes_funny`.
 - Users with extremely high `author.num_reviews` and clearly repetitive text.
-
-
-### 2.5 Votes / helpfulness outliers
-
-Columns:
-
-- `votes_helpful`
-- `votes_funny`
-
-Rules:
-
-- **Drop** rows where `votes_funny` or `votes_helpful` equals **4294967295**
-  (2³² − 1, the maximum unsigned 32-bit integer). This value is a sentinel or
-  overflow in the source data, not a real count; EDA found a small number of
-  such records (e.g. 14 for `votes_funny`). Implement as a row filter in
-  `filter_reviews` before other vote logic.
-- Do **not** drop rows based on other extreme vote counts.
-- We optionally **cap** these features during feature engineering, not during
-  row filtering (e.g., clip at a high percentile).
 
 ---
 
@@ -211,7 +197,43 @@ Applied in `select_features(df, ...)`:
 
 ---
 
-## 4. Implementation mapping
+## 4. Normalization and feature transforms
+
+These transforms are applied **after** filtering and column selection, typically
+at training time (e.g. in a sklearn `Pipeline` or a dedicated transform step).
+They reduce skew and scale so models behave better; we do **not** drop rows here.
+
+### 4.1 Long-tailed counts (votes, playtime)
+
+- **Votes** (`votes_helpful`, `votes_funny`):
+  - Optionally **cap** at a high percentile (e.g. 99th) or a fixed ceiling
+    before modeling, to avoid a few extreme values dominating.
+  - Alternatively use **log(1 + x)** so the target/feature is less skewed;
+    for regression on `votes_helpful`, log-transform can help.
+- **Playtime** (`author.playtime_last_two_weeks`, `author.playtime_at_review`):
+  - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
+  - Apply after the 0-imputation; the missing-indicator columns still record
+    which rows were imputed.
+
+### 4.2 Numeric scaling
+
+- For linear models or distance-based methods, **standardize** numeric
+  features (zero mean, unit variance) using statistics from the **training**
+  set only, then apply the same transform to validation/test.
+- Tree-based models (e.g. Random Forest, XGBoost) do not require scaling;
+  optional caps or log transforms still help with long tails.
+
+### 4.3 Where this lives
+
+- Implement in the **training pipeline** (e.g. `ColumnTransformer` with
+  `StandardScaler`, or custom transform that caps/logs), not inside
+  `filter_reviews` or `select_features`.
+- Document which columns are log-transformed or capped and at what values,
+  so evaluation and inference use the same transform.
+
+---
+
+## 5. Implementation mapping
 
 The filtering and selection logic is implemented in:
 
@@ -227,6 +249,7 @@ Key functions:
     - Keep English only.
     - Drop empty or null `review`.
     - Drop rows with negative playtime values.
+    - Drop rows where `votes_helpful` or `votes_funny` equals 4294967295 (sentinel).
 - `select_features(df: DataFrame) -> DataFrame`
   - Applies the column selection and derived feature rules in section 3:
     - Adds `is_helpful`.
@@ -253,7 +276,7 @@ filtering logic.
 
 ---
 
-## 5. Validation and iteration
+## 6. Validation and iteration
 
 To validate the rules and guard against regressions:
 
@@ -268,7 +291,12 @@ To validate the rules and guard against regressions:
   - Confirm that the proportion of dropped rows is reasonable and that we
     are not discarding the majority of data by mistake.
 
-These checks can be implemented as small helper cells in notebooks or
-as separate test functions (e.g., in `tests/test_preprocess.py`) as
-the project matures.
+These checks are implemented as:
+
+- **Unit tests** in `tests/test_preprocess.py`: row counts after filtering,
+  no sentinel vote values in output, derived columns present, no negative
+  playtime.
+- **Notebook / manual checks** (e.g. in a data-filtering or validation
+  notebook): class balance for `recommended` and `is_helpful`, distributions
+  of playtime and votes before/after imputation, proportion of rows dropped.
 
