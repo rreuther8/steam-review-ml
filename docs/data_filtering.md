@@ -214,6 +214,10 @@ They reduce skew and scale so models behave better; we do **not** drop rows here
   - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
   - Apply after the 0-imputation; the missing-indicator columns still record
     which rows were imputed.
+- **Owner Behavior** (`author.num_games_owned`, `author.num_reviews`)"
+  - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
+  - Apply after the 0-imputation; the missing-indicator columns still record
+    which rows were imputed.
 
 ### 4.2 Numeric scaling
 
