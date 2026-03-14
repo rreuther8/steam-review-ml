@@ -1,5 +1,5 @@
 """
-Clean the Steam reviews dataset from raw CSV to a single Parquet file.
+Clean the Steam reviews dataset from raw CSV to a single CSV file.
 
 Reads all options from a JSON config file (path is the only CLI argument).
 Uses the pipeline in docs/data_filtering.md §7: filter → dedupe → select_features → write.
@@ -22,7 +22,7 @@ def load_config(config_path: str | Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Clean Steam reviews CSV into a single Parquet using a JSON config."
+        description="Clean Steam reviews CSV into a single CSV file using a JSON config."
     )
     parser.add_argument(
         "config",

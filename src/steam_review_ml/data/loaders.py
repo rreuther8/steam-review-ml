@@ -3,8 +3,6 @@ from pathlib import Path
 from typing import Optional, Sequence, Union
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 from steam_review_ml.data.preprocess import filter_reviews, select_features
 
@@ -17,11 +15,14 @@ def export_cleaned_reviews(
     columns: Optional[Sequence[str]] = None,
 ) -> None:
     """
-    Stream raw CSV, apply filter → dedupe → select_features, write single Parquet.
+    Stream raw CSV, apply filter → dedupe → select_features, write single CSV.
 
     Matches docs/data_filtering.md §7: stream → filter → dedupe (by review_id,
     keep first) → select_features → write. Order is filter-then-dedupe so the
     seen-ID set only contains IDs from kept rows (e.g. English only).
+
+    Output is one CSV file (pandas only; no pyarrow). You can add Parquet
+    later if you want (e.g. with pyarrow or fastparquet).
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -34,7 +35,7 @@ def export_cleaned_reviews(
         read_kwargs["usecols"] = columns
 
     seen_review_ids: set = set()
-    writer = None
+    first_chunk = True
 
     for chunk in pd.read_csv(input_path, **read_kwargs):
         filtered = filter_reviews(chunk, language=language)
@@ -49,11 +50,10 @@ def export_cleaned_reviews(
             continue
 
         featured = select_features(filtered)
-        table = pa.Table.from_pandas(featured, preserve_index=False)
-
-        if writer is None:
-            writer = pq.ParquetWriter(output_path, table.schema)
-        writer.write_table(table)
-
-    if writer is not None:
-        writer.close()
+        featured.to_csv(
+            output_path,
+            mode="w" if first_chunk else "a",
+            header=first_chunk,
+            index=False,
+        )
+        first_chunk = False
