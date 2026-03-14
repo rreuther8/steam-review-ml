@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 
-from steam_review_ml.data.loaders import export_cleaned_reviews
+from steam_review_ml.data.export import export_cleaned_reviews
 
 
 def load_config(config_path: str | Path) -> dict:

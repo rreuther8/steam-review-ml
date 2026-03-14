@@ -1,59 +1,32 @@
-"""Data loading and streaming export for cleaned Steam reviews."""
+"""Data loading for Steam reviews (raw and cleaned streams)."""
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
 import pandas as pd
 
-from steam_review_ml.data.preprocess import filter_reviews, select_features
 
-
-def export_cleaned_reviews(
-    input_path: Union[str, Path],
-    output_path: Union[str, Path],
-    chunksize: int = 500_000,
-    language: str = "english",
-    columns: Optional[Sequence[str]] = None,
-) -> None:
+def load_raw_reviews(
+    path: Union[str, Path],
+    nrows: Optional[int] = None,
+    usecols: Optional[Sequence[str]] = None,
+    **read_csv_kwargs,
+) -> pd.DataFrame:
     """
-    Stream raw CSV, apply filter → dedupe → select_features, write single CSV.
+    Load the raw Steam reviews CSV into a DataFrame.
 
-    Matches docs/data_filtering.md §7: stream → filter → dedupe (by review_id,
-    keep first) → select_features → write. Order is filter-then-dedupe so the
-    seen-ID set only contains IDs from kept rows (e.g. English only).
-
-    Output is one CSV file (pandas only; no pyarrow). You can add Parquet
-    later if you want (e.g. with pyarrow or fastparquet).
+    Parameters
+    ----------
+    path:
+        Path to the raw CSV file.
+    nrows:
+        Optional limit on number of rows to read (for quick experiments).
+    usecols:
+        Optional subset of columns to read.
+    read_csv_kwargs:
+        Extra keyword arguments forwarded to ``pd.read_csv``.
     """
-    input_path = Path(input_path)
-    output_path = Path(output_path)
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input CSV not found: {input_path}")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_path = Path(path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Raw reviews file not found at: {csv_path}")
 
-    read_kwargs: dict = {"chunksize": chunksize}
-    if columns is not None:
-        read_kwargs["usecols"] = columns
-
-    seen_review_ids: set = set()
-    first_chunk = True
-
-    for chunk in pd.read_csv(input_path, **read_kwargs):
-        filtered = filter_reviews(chunk, language=language)
-        if len(filtered) == 0:
-            continue
-
-        # Dedupe: keep first occurrence per review_id (filter-then-dedupe order)
-        mask = ~filtered["review_id"].isin(seen_review_ids)
-        filtered = filtered[mask]
-        seen_review_ids.update(filtered["review_id"].tolist())
-        if len(filtered) == 0:
-            continue
-
-        featured = select_features(filtered)
-        featured.to_csv(
-            output_path,
-            mode="w" if first_chunk else "a",
-            header=first_chunk,
-            index=False,
-        )
-        first_chunk = False
+    return pd.read_csv(csv_path, nrows=nrows, usecols=usecols, **read_csv_kwargs)

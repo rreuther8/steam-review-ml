@@ -276,7 +276,7 @@ The filtering and selection logic is implemented in:
 
 Key functions:
 
-- `load_raw_reviews(path: Path | str, nrows: int | None = None, usecols=None) -> DataFrame`
+- `load_raw_reviews(path: Path | str, nrows: int | None = None, usecols=None) -> DataFrame` (in `loaders`)
   - Thin wrapper around `pd.read_csv` for the raw CSV, with optional column
     projection and row limit for experimentation.
 - `filter_reviews(df: DataFrame) -> DataFrame`
@@ -297,7 +297,8 @@ Example pipeline (pseudo-code):
 
 ```python
 from pathlib import Path
-from steam_review_ml.data.preprocess import load_raw_reviews, filter_reviews, select_features
+from steam_review_ml.data.loaders import load_raw_reviews
+from steam_review_ml.data.preprocess import filter_reviews, select_features
 
 RAW_PATH = Path(\"data/steam_reviews_full.csv\")
 

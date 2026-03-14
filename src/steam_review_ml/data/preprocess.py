@@ -5,36 +5,6 @@ from typing import Iterable, Optional, Sequence, Union
 
 import pandas as pd
 
-RawPath = Union[str, Path]
-
-
-def load_raw_reviews(
-    path: RawPath,
-    nrows: Optional[int] = None,
-    usecols: Optional[Sequence[str]] = None,
-    **read_csv_kwargs,
-) -> pd.DataFrame:
-    """
-    Load the raw Steam reviews CSV into a DataFrame.
-
-    Parameters
-    ----------
-    path:
-        Path to the raw CSV file.
-    nrows:
-        Optional limit on number of rows to read (for quick experiments).
-    usecols:
-        Optional subset of columns to read.
-    read_csv_kwargs:
-        Extra keyword arguments forwarded to ``pd.read_csv``.
-    """
-    csv_path = Path(path)
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Raw reviews file not found at: {csv_path}")
-
-    df = pd.read_csv(csv_path, nrows=nrows, usecols=usecols, **read_csv_kwargs)
-    return df
-
 
 def _is_empty_or_short_review_series(
     series: pd.Series, min_length: int = 4
