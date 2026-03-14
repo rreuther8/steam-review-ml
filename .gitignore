@@ -1,5 +1,5 @@
-# Data
-data/
+# Data (root-level only; src/steam_review_ml/data/ is the Python package, not ignored)
+/data/
 
 # Cursor rules
 .cursor/*

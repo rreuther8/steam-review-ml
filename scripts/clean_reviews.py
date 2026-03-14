@@ -1,13 +1,14 @@
 """
-Clean/reduce the Steam reviews CSV using options from a JSON config file.
+Clean the Steam reviews dataset from raw CSV to a single Parquet file.
 
-The only CLI argument is the path to the config JSON.
+Reads all options from a JSON config file (path is the only CLI argument).
+Uses the pipeline in docs/data_filtering.md §7: filter → dedupe → select_features → write.
 """
 import argparse
 import json
 from pathlib import Path
 
-from steam_review_ml.data.loaders import chunk_csv
+from steam_review_ml.data.loaders import export_cleaned_reviews
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -21,26 +22,23 @@ def load_config(config_path: str | Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Clean Steam reviews CSV using a JSON config (input_path, output_dir, chunksize, language, columns)."
+        description="Clean Steam reviews CSV into a single Parquet using a JSON config."
     )
     parser.add_argument(
         "config",
         type=str,
-        help="Path to JSON config file.",
+        help="Path to JSON config (input_path, output_path, chunksize, language, columns).",
     )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    # output_path in config can be a file; chunk_csv expects output_dir, so use parent
-    output_dir = Path(cfg["output_path"]).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    chunk_csv(
-        input_file=cfg["input_path"],
-        output_dir=str(output_dir),
+    export_cleaned_reviews(
+        input_path=cfg["input_path"],
+        output_path=cfg["output_path"],
         chunksize=cfg["chunksize"],
-        columns=cfg.get("columns"),
         language=cfg["language"],
+        columns=cfg.get("columns"),
     )
     print("DONE")
 
