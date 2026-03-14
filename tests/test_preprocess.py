@@ -86,7 +86,6 @@ class TestFilterReviews(unittest.TestCase):
         featured = select_features(filtered)
         self.assertLessEqual(len(featured), n_before)
         self.assertTrue((featured["votes_helpful"] < 4294967295).all())
-        self.assertTrue((featured["votes_funny"] < 4294967295).all())
         self.assertIn("is_helpful", featured.columns)
         self.assertIn("review_length_chars", featured.columns)
 

@@ -92,7 +92,28 @@ Rules:
 - We optionally **cap** these features during feature engineering (e.g., clip
   at a high percentile), not during row filtering.
 
-### 2.5 Optional spam/bot heuristics (placeholder)
+### 2.5 Duplicate `review_id`
+
+EDA (`notebooks/eda/eda_007_categorical_counts.ipynb`) shows that the raw CSV
+contains **duplicate `review_id` values** — the same review can appear more than
+once. For modeling and for train/val/test splits we must ensure each `review_id`
+appears at most once.
+
+- **Rule:** Drop rows that repeat a `review_id` already seen. **Keep first
+  occurrence, drop later ones** when processing in row order.
+- **Streaming:** We cannot load the full dataset into memory. When reading the
+  CSV in chunks, deduplication must maintain a **set of `review_id`s seen so
+  far** across chunks: for each row, drop the row if its `review_id` is already
+  in the set; otherwise add the id to the set and keep the row.
+- **Order:** Apply this deduplication **before** the train/val/test split (and
+  before other filtering that depends on row identity).
+- **Scale:** At current size (~21.6M unique `review_id`s), a set of IDs uses
+  on the order of ~1 GB RAM, which is acceptable. If the dataset grows to
+  hundreds of millions of unique reviews, the pipeline should switch to a
+  database-backed dedup (e.g. DuckDB/SQLite with unique constraint on
+  `review_id`) or another bounded-memory strategy.
+
+### 2.6 Optional spam/bot heuristics (placeholder)
 
 We currently **do not** remove suspected spam/bot reviews automatically.
 Future possible heuristics (to be added only if clearly justified by EDA):
@@ -108,6 +129,12 @@ Future possible heuristics (to be added only if clearly justified by EDA):
 
 These rules define which columns we **keep** as features/targets in the
 canonical modeling view. Implemented in `select_features(df, ...)`.
+
+**No leakage:** We keep only fields that exist **at the time the review is
+written**. Any quantity that is only known after the review is published (e.g.
+votes, comments, edits) must not be used as an input feature, or it would leak
+future information. Such columns are excluded from the feature set; they may
+still appear in the raw data and be used as **targets** (e.g. `votes_helpful`).
 
 ### 3.1 Targets
 
@@ -155,17 +182,22 @@ Kept:
 
 ### 3.5 Interaction and meta features
 
-Kept:
+Kept (all known at review-writing time):
 
-- `votes_helpful`
-- `votes_funny`
-- `comment_count`
+- `votes_helpful` (kept as **target** only; not used as input feature when
+  predicting that review’s helpfulness)
 - `steam_purchase`
 - `received_for_free`
 - `written_during_early_access`
 - `timestamp_created`
-- `timestamp_updated`
 - `author.last_played`
+
+Excluded (post-review / would leak):
+
+- `votes_funny` – vote counts exist only after the review is published.
+- `comment_count` – comments are added after the review exists.
+- `timestamp_updated` – reflects edits after creation; at write time only
+  `timestamp_created` is available.
 
 Derived (optional, initial scaffolding):
 
@@ -187,12 +219,11 @@ Applied in `select_features(df, ...)`:
   - Before imputation, create missing indicators:
     - `*_missing = df[col].isna()`.
   - Then fill NaNs with `0.0`.
-- **Vote and count columns**
-  - Expect no missing values in `votes_helpful`, `votes_funny`,
-    `comment_count`; if NaN appears, fill with `0`.
+- **Target columns**
+  - `votes_helpful` is a target; if NaN appears, fill with `0`.
 - **Timestamps**
-  - Keep raw Unix timestamps (`timestamp_created`, `timestamp_updated`,
-    `author.last_played`) as-is for now.
+  - Keep raw Unix timestamps (`timestamp_created`, `author.last_played`) as-is
+    for now. (`timestamp_updated` is not kept as a feature.)
   - Derived calendar/time-of-day features can be added later.
 
 ---
@@ -205,11 +236,11 @@ They reduce skew and scale so models behave better; we do **not** drop rows here
 
 ### 4.1 Long-tailed counts (votes, playtime)
 
-- **Votes** (`votes_helpful`, `votes_funny`):
+- **Target** (`votes_helpful`):
   - Optionally **cap** at a high percentile (e.g. 99th) or a fixed ceiling
     before modeling, to avoid a few extreme values dominating.
-  - Alternatively use **log(1 + x)** so the target/feature is less skewed;
-    for regression on `votes_helpful`, log-transform can help.
+  - Alternatively use **log(1 + x)** so the target is less skewed for
+    regression on helpfulness.
 - **Playtime** (`author.playtime_last_two_weeks`, `author.playtime_at_review`):
   - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
   - Apply after the 0-imputation; the missing-indicator columns still record
@@ -303,4 +334,8 @@ These checks are implemented as:
 - **Notebook / manual checks** (e.g. in a data-filtering or validation
   notebook): class balance for `recommended` and `is_helpful`, distributions
   of playtime and votes before/after imputation, proportion of rows dropped.
+
+## 7. Producing the cleaned dataset
+
+stream -> filter -> dedupe -> select -> write
 
