@@ -47,7 +47,9 @@ def filter_reviews(df: pd.DataFrame, language: str = "english") -> pd.DataFrame:
     def _drop_empty_or_short_reviews(filtered: pd.DataFrame) -> pd.DataFrame:
         """Remove rows with missing, empty, or very short review text."""
         if "review" in filtered.columns:
-            drop_mask = _is_empty_or_short_review_series(filtered["review"], min_length=4)
+            drop_mask = _is_empty_or_short_review_series(
+                filtered["review"], min_length=4
+            )
             filtered = filtered[~drop_mask]
         return filtered
 
@@ -149,3 +151,17 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return base
 
+
+def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply feature engineering to the DataFrame.
+
+    This function:
+    - Adds ``review_word_count`` from ``review``.
+    - Adds ``review_length_chars`` from ``review``.
+    """
+    df["review_word_count"] = (
+        df["review"].fillna("").apply(lambda x: len(str(x).split()))
+    )
+    df["review_length_chars"] = df["review"].fillna("").astype(str).str.len()
+    return df

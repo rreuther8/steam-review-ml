@@ -1,14 +1,16 @@
 """
-Clean the Steam reviews dataset from raw CSV to a single CSV file.
+Clean the Steam reviews dataset from raw CSV to a single Parquet file.
 
 Reads all options from a JSON config file (path is the only CLI argument).
-Uses the pipeline in docs/data_filtering.md §7: filter → dedupe → select_features → write.
+Pipeline: load+clean (iter_cleaned_chunks) then export (write_cleaned_to_parquet).
 """
+
 import argparse
 import json
 from pathlib import Path
 
-from steam_review_ml.data.export import export_cleaned_reviews
+from steam_review_ml.data.export import write_cleaned_to_parquet
+from steam_review_ml.data.loaders import iter_cleaned_chunks
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -22,7 +24,7 @@ def load_config(config_path: str | Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Clean Steam reviews CSV into a single CSV file using a JSON config."
+        description="Clean Steam reviews CSV into a single Parquet file using a JSON config."
     )
     parser.add_argument(
         "config",
@@ -33,13 +35,13 @@ def main() -> None:
 
     cfg = load_config(args.config)
 
-    export_cleaned_reviews(
-        input_path=cfg["input_path"],
-        output_path=cfg["output_path"],
-        chunksize=cfg["chunksize"],
+    chunks = iter_cleaned_chunks(
+        cfg["input_path"],
+        cfg["chunksize"],
         language=cfg["language"],
         columns=cfg.get("columns"),
     )
+    write_cleaned_to_parquet(chunks, cfg["output_path"])
     print("DONE")
 
 

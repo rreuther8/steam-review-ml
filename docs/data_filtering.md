@@ -310,6 +310,13 @@ df_features = select_features(df_clean)
 Notebooks and scripts should call this shared pipeline instead of duplicating
 filtering logic.
 
+**Full-dataset pipeline (streaming):** The cleaned dataset is produced by
+`iter_cleaned_chunks` (loaders: stream CSV → filter → dedupe → select_features,
+yields DataFrames) and `write_cleaned_to_parquet` (export: writes one Parquet
+from that iterator). The script `scripts/clean_reviews.py` composes them; see
+§7. The function `export_cleaned_reviews` (export) is a convenience wrapper
+that calls both.
+
 ---
 
 ## 6. Validation and iteration
@@ -338,5 +345,13 @@ These checks are implemented as:
 
 ## 7. Producing the cleaned dataset
 
-stream -> filter -> dedupe -> select -> write
+Pipeline: stream → filter → dedupe → select → write.
+
+- **Implemented as:** `iter_cleaned_chunks` (loaders) for load+clean;
+  `write_cleaned_to_parquet` (export) for writing a single Parquet. The script
+  `scripts/clean_reviews.py` takes a JSON config path and runs: chunks =
+  iter_cleaned_chunks(...); write_cleaned_to_parquet(chunks, output_path).
+- **Convenience:** `export_cleaned_reviews(input_path, output_path, ...)` in
+  export composes both and keeps the same signature for callers that prefer one
+  call.
 

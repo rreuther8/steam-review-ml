@@ -7,6 +7,7 @@ fields. Uses small in-memory DataFrames; no raw CSV required.
 
 Run: python -m unittest tests.test_preprocess
 """
+
 from __future__ import annotations
 
 import unittest
@@ -18,28 +19,30 @@ from steam_review_ml.data.preprocess import filter_reviews, select_features
 
 def _minimal_raw_df(overrides=None):
     """Minimal DataFrame with columns expected by filter_reviews / select_features."""
-    raw = pd.DataFrame({
-        "language": ["english", "english", "spanish", "english"],
-        "review": ["Good game.", "Okay.", "Buen juego.", "x"],  # last is short
-        "recommended": [True, False, True, True],
-        "votes_helpful": [0, 1, 0, 0],
-        "votes_funny": [0, 0, 0, 0],
-        "comment_count": [0, 0, 0, 0],
-        "app_id": [1, 1, 2, 1],
-        "app_name": ["A", "A", "B", "A"],
-        "review_id": [10, 11, 12, 13],
-        "author.steamid": ["u1", "u2", "u3", "u4"],
-        "author.num_games_owned": [5, 10, 3, 0],
-        "author.num_reviews": [1, 2, 0, 0],
-        "author.playtime_last_two_weeks": [0.0, 10.0, 5.0, 0.0],
-        "author.playtime_at_review": [100.0, 200.0, 50.0, 0.0],
-        "steam_purchase": [True, True, False, True],
-        "received_for_free": [False, False, True, False],
-        "written_during_early_access": [False, False, False, False],
-        "timestamp_created": [1000000, 1000001, 1000002, 1000003],
-        "timestamp_updated": [1000000, 1000001, 1000002, 1000003],
-        "author.last_played": [999000, 999001, 999002, 999003],
-    })
+    raw = pd.DataFrame(
+        {
+            "language": ["english", "english", "spanish", "english"],
+            "review": ["Good game.", "Okay.", "Buen juego.", "x"],  # last is short
+            "recommended": [True, False, True, True],
+            "votes_helpful": [0, 1, 0, 0],
+            "votes_funny": [0, 0, 0, 0],
+            "comment_count": [0, 0, 0, 0],
+            "app_id": [1, 1, 2, 1],
+            "app_name": ["A", "A", "B", "A"],
+            "review_id": [10, 11, 12, 13],
+            "author.steamid": ["u1", "u2", "u3", "u4"],
+            "author.num_games_owned": [5, 10, 3, 0],
+            "author.num_reviews": [1, 2, 0, 0],
+            "author.playtime_last_two_weeks": [0.0, 10.0, 5.0, 0.0],
+            "author.playtime_at_review": [100.0, 200.0, 50.0, 0.0],
+            "steam_purchase": [True, True, False, True],
+            "received_for_free": [False, False, True, False],
+            "written_during_early_access": [False, False, False, False],
+            "timestamp_created": [1000000, 1000001, 1000002, 1000003],
+            "timestamp_updated": [1000000, 1000001, 1000002, 1000003],
+            "author.last_played": [999000, 999001, 999002, 999003],
+        }
+    )
     if overrides:
         for k, v in overrides.items():
             raw[k] = v
@@ -52,7 +55,9 @@ class TestFilterReviews(unittest.TestCase):
     def test_drop_vote_sentinel(self):
         # Data that would pass language + review + playtime; only sentinel removes rows
         df = _minimal_raw_df()
-        df = df[(df["language"] == "english") & (df["review"].str.strip().str.len() >= 4)].copy()
+        df = df[
+            (df["language"] == "english") & (df["review"].str.strip().str.len() >= 4)
+        ].copy()
         df.loc[df.index[0], "votes_helpful"] = 4294967295
         df.loc[df.index[1], "votes_funny"] = 4294967295
         out = filter_reviews(df)
