@@ -1,7 +1,7 @@
 {
-    "input_path": "data/raw/steam_reviews_full.csv",
-    "output_path": "data/processed/steam_reviews_cleaned_english.csv",
-    "chunksize": 500000,
-    "language": "english",
-    "columns": null
-  }
+  "input_path": "data/raw/steam_reviews_full.csv",
+  "output_path": "data/interim/steam_reviews_cleaned_english.parquet",
+  "chunksize": 500000,
+  "language": "english",
+  "columns": null
+}
