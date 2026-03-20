@@ -1,10 +1,17 @@
-# Data
-data/
+# Data (root-level only; src/steam_review_ml/data/ is the Python package, not ignored)
+/data/
 
 # Cursor rules
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/*.mdc
 
+# Python
+__pycache__/
+*.egg-info/
+*.egg
+
 # Environment
 .vscode/*
+
+scrap/

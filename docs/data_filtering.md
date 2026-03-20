@@ -83,11 +83,37 @@ Columns:
 
 Rules:
 
-- Do **not** drop rows based on extreme vote counts.
-- We optionally **cap** these features during feature engineering, not during
-  row filtering (e.g., clip at a high percentile).
+- **Drop** rows where `votes_funny` or `votes_helpful` equals **4294967295**
+  (2³² − 1, the maximum unsigned 32-bit integer). This value is a sentinel or
+  overflow in the source data, not a real count; EDA found a small number of
+  such records (e.g. 14 for `votes_funny`). Implement as a row filter in
+  `filter_reviews` before other vote logic.
+- Do **not** drop rows based on other extreme vote counts.
+- We optionally **cap** these features during feature engineering (e.g., clip
+  at a high percentile), not during row filtering.
 
-### 2.5 Optional spam/bot heuristics (placeholder)
+### 2.5 Duplicate `review_id`
+
+EDA (`notebooks/eda/eda_007_categorical_counts.ipynb`) shows that the raw CSV
+contains **duplicate `review_id` values** — the same review can appear more than
+once. For modeling and for train/val/test splits we must ensure each `review_id`
+appears at most once.
+
+- **Rule:** Drop rows that repeat a `review_id` already seen. **Keep first
+  occurrence, drop later ones** when processing in row order.
+- **Streaming:** We cannot load the full dataset into memory. When reading the
+  CSV in chunks, deduplication must maintain a **set of `review_id`s seen so
+  far** across chunks: for each row, drop the row if its `review_id` is already
+  in the set; otherwise add the id to the set and keep the row.
+- **Order:** Apply this deduplication **before** the train/val/test split (and
+  before other filtering that depends on row identity).
+- **Scale:** At current size (~21.6M unique `review_id`s), a set of IDs uses
+  on the order of ~1 GB RAM, which is acceptable. If the dataset grows to
+  hundreds of millions of unique reviews, the pipeline should switch to a
+  database-backed dedup (e.g. DuckDB/SQLite with unique constraint on
+  `review_id`) or another bounded-memory strategy.
+
+### 2.6 Optional spam/bot heuristics (placeholder)
 
 We currently **do not** remove suspected spam/bot reviews automatically.
 Future possible heuristics (to be added only if clearly justified by EDA):
@@ -97,31 +123,18 @@ Future possible heuristics (to be added only if clearly justified by EDA):
   - Very high `votes_helpful` or `votes_funny`.
 - Users with extremely high `author.num_reviews` and clearly repetitive text.
 
-
-### 2.5 Votes / helpfulness outliers
-
-Columns:
-
-- `votes_helpful`
-- `votes_funny`
-
-Rules:
-
-- **Drop** rows where `votes_funny` or `votes_helpful` equals **4294967295**
-  (2³² − 1, the maximum unsigned 32-bit integer). This value is a sentinel or
-  overflow in the source data, not a real count; EDA found a small number of
-  such records (e.g. 14 for `votes_funny`). Implement as a row filter in
-  `filter_reviews` before other vote logic.
-- Do **not** drop rows based on other extreme vote counts.
-- We optionally **cap** these features during feature engineering, not during
-  row filtering (e.g., clip at a high percentile).
-
 ---
 
 ## 3. Column selection and derived features
 
 These rules define which columns we **keep** as features/targets in the
 canonical modeling view. Implemented in `select_features(df, ...)`.
+
+**No leakage:** We keep only fields that exist **at the time the review is
+written**. Any quantity that is only known after the review is published (e.g.
+votes, comments, edits) must not be used as an input feature, or it would leak
+future information. Such columns are excluded from the feature set; they may
+still appear in the raw data and be used as **targets** (e.g. `votes_helpful`).
 
 ### 3.1 Targets
 
@@ -169,17 +182,22 @@ Kept:
 
 ### 3.5 Interaction and meta features
 
-Kept:
+Kept (all known at review-writing time):
 
-- `votes_helpful`
-- `votes_funny`
-- `comment_count`
+- `votes_helpful` (kept as **target** only; not used as input feature when
+  predicting that review’s helpfulness)
 - `steam_purchase`
 - `received_for_free`
 - `written_during_early_access`
 - `timestamp_created`
-- `timestamp_updated`
 - `author.last_played`
+
+Excluded (post-review / would leak):
+
+- `votes_funny` – vote counts exist only after the review is published.
+- `comment_count` – comments are added after the review exists.
+- `timestamp_updated` – reflects edits after creation; at write time only
+  `timestamp_created` is available.
 
 Derived (optional, initial scaffolding):
 
@@ -201,17 +219,56 @@ Applied in `select_features(df, ...)`:
   - Before imputation, create missing indicators:
     - `*_missing = df[col].isna()`.
   - Then fill NaNs with `0.0`.
-- **Vote and count columns**
-  - Expect no missing values in `votes_helpful`, `votes_funny`,
-    `comment_count`; if NaN appears, fill with `0`.
+- **Target columns**
+  - `votes_helpful` is a target; if NaN appears, fill with `0`.
 - **Timestamps**
-  - Keep raw Unix timestamps (`timestamp_created`, `timestamp_updated`,
-    `author.last_played`) as-is for now.
+  - Keep raw Unix timestamps (`timestamp_created`, `author.last_played`) as-is
+    for now. (`timestamp_updated` is not kept as a feature.)
   - Derived calendar/time-of-day features can be added later.
 
 ---
 
-## 4. Implementation mapping
+## 4. Normalization and feature transforms
+
+These transforms are applied **after** filtering and column selection, typically
+at training time (e.g. in a sklearn `Pipeline` or a dedicated transform step).
+They reduce skew and scale so models behave better; we do **not** drop rows here.
+
+### 4.1 Long-tailed counts (votes, playtime)
+
+- **Target** (`votes_helpful`):
+  - Optionally **cap** at a high percentile (e.g. 99th) or a fixed ceiling
+    before modeling, to avoid a few extreme values dominating.
+  - Alternatively use **log(1 + x)** so the target is less skewed for
+    regression on helpfulness.
+- **Playtime** (`author.playtime_last_two_weeks`, `author.playtime_at_review`):
+  - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
+  - Apply after the 0-imputation; the missing-indicator columns still record
+    which rows were imputed.
+- **Owner Behavior** (`author.num_games_owned`, `author.num_reviews`)"
+  - Same idea: optional **log(1 + x)** or **cap** at a high percentile.
+  - Apply after the 0-imputation; the missing-indicator columns still record
+    which rows were imputed.
+
+### 4.2 Numeric scaling
+
+- For linear models or distance-based methods, **standardize** numeric
+  features (zero mean, unit variance) using statistics from the **training**
+  set only, then apply the same transform to validation/test.
+- Tree-based models (e.g. Random Forest, XGBoost) do not require scaling;
+  optional caps or log transforms still help with long tails.
+
+### 4.3 Where this lives
+
+- Implement in the **training pipeline** (e.g. `ColumnTransformer` with
+  `StandardScaler`, or custom transform that caps/logs), not inside
+  `filter_reviews` or `select_features`.
+- Document which columns are log-transformed or capped and at what values,
+  so evaluation and inference use the same transform.
+
+---
+
+## 5. Implementation mapping
 
 The filtering and selection logic is implemented in:
 
@@ -219,7 +276,7 @@ The filtering and selection logic is implemented in:
 
 Key functions:
 
-- `load_raw_reviews(path: Path | str, nrows: int | None = None, usecols=None) -> DataFrame`
+- `load_raw_reviews(path: Path | str, nrows: int | None = None, usecols=None) -> DataFrame` (in `loaders`)
   - Thin wrapper around `pd.read_csv` for the raw CSV, with optional column
     projection and row limit for experimentation.
 - `filter_reviews(df: DataFrame) -> DataFrame`
@@ -227,6 +284,7 @@ Key functions:
     - Keep English only.
     - Drop empty or null `review`.
     - Drop rows with negative playtime values.
+    - Drop rows where `votes_helpful` or `votes_funny` equals 4294967295 (sentinel).
 - `select_features(df: DataFrame) -> DataFrame`
   - Applies the column selection and derived feature rules in section 3:
     - Adds `is_helpful`.
@@ -239,7 +297,8 @@ Example pipeline (pseudo-code):
 
 ```python
 from pathlib import Path
-from steam_review_ml.data.preprocess import load_raw_reviews, filter_reviews, select_features
+from steam_review_ml.data.loaders import load_raw_reviews
+from steam_review_ml.data.preprocess import filter_reviews, select_features
 
 RAW_PATH = Path(\"data/steam_reviews_full.csv\")
 
@@ -251,9 +310,16 @@ df_features = select_features(df_clean)
 Notebooks and scripts should call this shared pipeline instead of duplicating
 filtering logic.
 
+**Full-dataset pipeline (streaming):** The cleaned dataset is produced by
+`iter_clean_chunks` (loaders: stream CSV → filter → dedupe → select_features,
+yields DataFrames) and `write_parquet_chunked` (export: writes one Parquet
+from that iterator). The script `scripts/clean_reviews.py` composes them; see
+§7. The function `export_cleaned_reviews` (export) is a convenience wrapper
+that calls both.
+
 ---
 
-## 5. Validation and iteration
+## 6. Validation and iteration
 
 To validate the rules and guard against regressions:
 
@@ -268,7 +334,24 @@ To validate the rules and guard against regressions:
   - Confirm that the proportion of dropped rows is reasonable and that we
     are not discarding the majority of data by mistake.
 
-These checks can be implemented as small helper cells in notebooks or
-as separate test functions (e.g., in `tests/test_preprocess.py`) as
-the project matures.
+These checks are implemented as:
+
+- **Unit tests** in `tests/test_preprocess.py`: row counts after filtering,
+  no sentinel vote values in output, derived columns present, no negative
+  playtime.
+- **Notebook / manual checks** (e.g. in a data-filtering or validation
+  notebook): class balance for `recommended` and `is_helpful`, distributions
+  of playtime and votes before/after imputation, proportion of rows dropped.
+
+## 7. Producing the cleaned dataset
+
+Pipeline: stream → filter → dedupe → select → write.
+
+- **Implemented as:** `iter_clean_chunks` (loaders) for load+clean;
+  `write_parquet_chunked` (export) for writing a single Parquet. The script
+  `scripts/clean_reviews.py` takes a JSON config path and runs: chunks =
+  iter_clean_chunks(...); write_parquet_chunked(chunks, output_path).
+- **Convenience:** `export_cleaned_reviews(input_path, output_path, ...)` in
+  export composes both and keeps the same signature for callers that prefer one
+  call.
 
