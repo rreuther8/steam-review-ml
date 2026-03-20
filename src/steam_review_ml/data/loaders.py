@@ -12,6 +12,7 @@ from steam_review_ml.data.preprocess import (
     filter_reviews,
     select_features,
     feature_engineering,
+    convert_to_int,
     add_stratify_group,
     stable_split_u,
 )
@@ -97,6 +98,16 @@ def iter_clean_chunks(
 
         featured = select_features(filtered)
         featured = feature_engineering(featured)
+        bool_cols = [
+            "recommended",
+            "is_helpful",
+            "steam_purchase",
+            "received_for_free",
+            "written_during_early_access",
+        ]
+        featured = convert_to_int(
+            featured, [col for col in bool_cols if col in featured.columns]
+        )
         yield featured
 
 def iter_split_chunks(

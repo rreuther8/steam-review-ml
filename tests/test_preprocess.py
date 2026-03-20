@@ -83,6 +83,12 @@ class TestFilterReviews(unittest.TestCase):
         out = filter_reviews(df)
         self.assertTrue((out["author.playtime_at_review"] >= 0).all())
 
+    def test_drop_missing_author_last_played(self):
+        df = _minimal_raw_df()
+        df.loc[0, "author.last_played"] = pd.NA
+        out = filter_reviews(df)
+        self.assertTrue(out["author.last_played"].notna().all())
+
     def test_full_pipeline_filter_then_select(self):
         """One big test: full pipeline, row count and invariants."""
         df = _minimal_raw_df()
@@ -105,13 +111,11 @@ class TestSelectFeatures(unittest.TestCase):
         self.assertIn("review_length_chars", out.columns)
         self.assertTrue(out["review_length_chars"].ge(0).all())
 
-    def test_adds_playtime_missing_indicators(self):
+    def test_fills_playtime_nans_with_zero(self):
         df = _minimal_raw_df()
         df.loc[0, "author.playtime_last_two_weeks"] = pd.NA
         df = filter_reviews(df)
         out = select_features(df)
-        self.assertIn("author_playtime_last_two_weeks_missing", out.columns)
-        self.assertGreaterEqual(out["author_playtime_last_two_weeks_missing"].sum(), 1)
         self.assertTrue(out["author.playtime_last_two_weeks"].notna().all())
 
     def test_drops_unnamed_0_if_present(self):

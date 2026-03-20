@@ -29,6 +29,7 @@ def filter_reviews(df: pd.DataFrame, language: str = "english") -> pd.DataFrame:
     - Keep only the specified language (default: English).
     - Drop rows with missing, empty, or very short (under 4 characters after strip) ``review`` text.
     - Drop rows with negative playtime values in any playtime column.
+    - Drop rows with missing ``author.last_played``.
     - Drop rows where votes_helpful or votes_funny equals 4294967295 (sentinel).
     """
     n_start = len(df)
@@ -82,11 +83,29 @@ def filter_reviews(df: pd.DataFrame, language: str = "english") -> pd.DataFrame:
                     logger.debug("  drop negative playtime (%s): %d -> %d (-%d)", col, before, len(filtered), dropped)
         return filtered
 
+    def _drop_missing_last_played_rows(filtered: pd.DataFrame) -> pd.DataFrame:
+        """Remove rows where author.last_played is missing."""
+        col = "author.last_played"
+        if col in filtered.columns:
+            before = len(filtered)
+            filtered = filtered[filtered[col].notna()]
+            dropped = before - len(filtered)
+            if dropped:
+                logger.debug(
+                    "  drop missing %s: %d -> %d (-%d)",
+                    col,
+                    before,
+                    len(filtered),
+                    dropped,
+                )
+        return filtered
+
     # Now apply the pipeline of internal steps
     filtered = _drop_vote_sentinel_rows(filtered)
     filtered = _filter_by_language(filtered, language)
     filtered = _drop_empty_or_short_reviews(filtered)
     filtered = _drop_negative_playtime_rows(filtered)
+    filtered = _drop_missing_last_played_rows(filtered)
 
     logger.info("filter_reviews: %d -> %d rows (kept %.1f%%)", n_start, len(filtered), 100.0 * len(filtered) / n_start if n_start else 0)
     return filtered
@@ -217,3 +236,9 @@ def stable_split_u(*, seed: int, stratify_group: str, review_id: int) -> float:
     digest = hashlib.md5(s).digest()
     x = int.from_bytes(digest[:4], "little", signed=False)  # 32-bit
     return x / 2**32
+
+def convert_to_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """
+    Convert boolean column to integer column.
+    """
+    return df.astype({col: int for col in cols})

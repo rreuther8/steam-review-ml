@@ -19,3 +19,7 @@ Working on Steam Recommendation system with FASTAPI frontend.
 - **End-to-end user experience**: expose these models via a GUI where a user can type a review (and optionally provide simple metadata such as playtime), then see predicted sentiment and helpfulness in real time.
 
 These supervised tasks and the GUI front end form the core ML workflows for the project and provide a base for later recommendation and ranking models.
+
+## Usage
+
+- Pipeline run order and commands: `docs/usage_pipeline.md`
