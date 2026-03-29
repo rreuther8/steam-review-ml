@@ -8,7 +8,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from steam_review_ml.data.loaders import iter_clean_chunks
 
 logger = logging.getLogger(__name__)
 
