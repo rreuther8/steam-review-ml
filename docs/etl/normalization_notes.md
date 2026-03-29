@@ -77,6 +77,12 @@ Effects:
 - Training code stays simple: load pre-normalized data and fit.
 - One place to re-run if you ever change the normalization (e.g. different percentile or columns): re-fit normalizer, re-transform, overwrite or version the saved datasets.
 
+**CLI (repo):** From the project root, with `src` on `PYTHONPATH` (or an editable install), run:
+
+`PYTHONPATH=src python scripts/normalize_split_parquets.py configs/normalize_splits.json`
+
+The sample config [`configs/normalize_splits.json`](../../configs/normalize_splits.json) reads the split Parquets from [`configs/split_reviews.json`](../../configs/split_reviews.json) and writes `*_norm.parquet` siblings plus [`data/processed/normalization_params.json`](../../data/processed/normalization_params.json) (paths are editable in the normalize config). Optional key `normalization_rules` overrides the default rule table from code. Normalized column names are `_norm_<source>` with `.` replaced by `__` in `<source>`.
+
 ---
 
 ## 3. Inference (e.g. in the app)
