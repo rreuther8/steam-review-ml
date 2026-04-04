@@ -5,6 +5,6 @@
   "train_output_path": "data/processed/steam_reviews_cleaned_english_train_norm.parquet",
   "val_output_path": "data/processed/steam_reviews_cleaned_english_val_norm.parquet",
   "test_output_path": "data/processed/steam_reviews_cleaned_english_test_norm.parquet",
-  "params_output_path": "data/processed/normalization_params.json",
+  "params_output_path": "artifacts/normalization_params.json",
   "chunksize": 100000
 }

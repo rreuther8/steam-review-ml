@@ -3,7 +3,7 @@
 This file is the runbook for getting processed data into the expected locations.
 
 - **Interim:** cleaned table, then **raw-scale** train/val/test splits (`data/interim/`).
-- **Processed:** modeling-ready Parquets with `_norm_*` columns plus `normalization_params.json` (`data/processed/`).
+- **Processed:** modeling-ready Parquets with `_norm_*` columns; normalization params are saved in `artifacts/`.
 
 ## 0) Run from repo root
 
@@ -33,6 +33,8 @@ Current config target:
 
 - `data/interim/steam_reviews_cleaned_english.parquet`
 
+The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (those are added when splitting).
+
 ## 3) Split cleaned Parquet -> train/val/test (interim)
 
 Uses `configs/split_reviews.json`.
@@ -46,6 +48,8 @@ Current config targets:
 - `data/interim/steam_reviews_cleaned_english_train.parquet`
 - `data/interim/steam_reviews_cleaned_english_val.parquet`
 - `data/interim/steam_reviews_cleaned_english_test.parquet`
+
+After each row is assigned to train/val/test, the split step runs **`feature_engineering`** (`review_word_count`, `review_length_chars`) and then **`review_age_seconds`**: seconds from `timestamp_created` to the **maximum `timestamp_created` in the training split only** (two-pass stream for the reference; then a second pass writes outputs).
 
 ## 4) Normalize splits -> modeling Parquets (processed)
 
@@ -62,7 +66,7 @@ Outputs:
 - `data/processed/steam_reviews_cleaned_english_train_norm.parquet`
 - `data/processed/steam_reviews_cleaned_english_val_norm.parquet`
 - `data/processed/steam_reviews_cleaned_english_test_norm.parquet`
-- `data/processed/normalization_params.json`
+- `artifacts/normalization_params.json`
 
 ## 5) Quick output checks
 
@@ -72,7 +76,7 @@ ls -lh data/interim/steam_reviews_cleaned_english_train.parquet
 ls -lh data/interim/steam_reviews_cleaned_english_val.parquet
 ls -lh data/interim/steam_reviews_cleaned_english_test.parquet
 ls -lh data/processed/steam_reviews_cleaned_english_*_norm.parquet
-ls -lh data/processed/normalization_params.json
+ls -lh artifacts/normalization_params.json
 ```
 
 Optional: row counts for interim splits:

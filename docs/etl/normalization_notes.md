@@ -4,7 +4,7 @@
 
 - **Transforms are fixed** for the listed numeric columns (cap at train 99th percentile + `log1p`, or `log1p` only). See the table below.
 - **Implementation:** [`src/steam_review_ml/transforms/normalization.py`](../../src/steam_review_ml/transforms/normalization.py) — `fit_normalization`, `add_normalized_columns`, `make_norm_col_name`, `inverse_norm_votes_helpful`.
-- **Batch step:** [`scripts/normalize_split_parquets.py`](../../scripts/normalize_split_parquets.py) with [`configs/normalize_splits.json`](../../configs/normalize_splits.json). Fits on **train** only; writes **`data/processed/..._norm.parquet`** plus **`normalization_params.json`**. Interim **raw-scale** splits live under `data/interim/` (see [`configs/split_reviews.json`](../../configs/split_reviews.json)).
+- **Batch step:** [`scripts/normalize_split_parquets.py`](../../scripts/normalize_split_parquets.py) with [`configs/normalize_splits.json`](../../configs/normalize_splits.json). Fits on **train** only; writes **`data/processed/..._norm.parquet`** plus **`artifacts/normalization_params.json`**. Interim **raw-scale** splits live under `data/interim/` (see [`configs/split_reviews.json`](../../configs/split_reviews.json)).
 - **Tests:** [`tests/test_normalization.py`](../../tests/test_normalization.py).
 - **Notebook checks (artifacts):** [`notebooks/etl/eda_010_normalization_validation.ipynb`](../../notebooks/etl/eda_010_normalization_validation.ipynb) — row counts, schema, recomputation vs JSON, optional inverse spot check for `votes_helpful`.
 - **Runbook:** [docs/usage_pipeline.md](../usage_pipeline.md).
@@ -76,7 +76,7 @@ Effects:
 
 `PYTHONPATH=src python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 
-[`configs/normalize_splits.json`](../../configs/normalize_splits.json) reads **interim** split paths (same outputs as [`configs/split_reviews.json`](../../configs/split_reviews.json)) and writes processed `*_norm.parquet` plus [`data/processed/normalization_params.json`](../../data/processed/normalization_params.json). Optional JSON key `normalization_rules` overrides the default rule dict from code. Normalized column names: **`_norm_<source>`** with `.` → `__` in `<source>`.
+[`configs/normalize_splits.json`](../../configs/normalize_splits.json) reads **interim** split paths (same outputs as [`configs/split_reviews.json`](../../configs/split_reviews.json)) and writes processed `*_norm.parquet` plus [`artifacts/normalization_params.json`](../../artifacts/normalization_params.json). Optional JSON key `normalization_rules` overrides the default rule dict from code. Normalized column names: **`_norm_<source>`** with `.` → `__` in `<source>`.
 
 ---
 

@@ -12,9 +12,16 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
 import pandas as pd
 
-from steam_review_ml.data.preprocess import filter_reviews, select_features
+from steam_review_ml.data.preprocess import (
+    add_review_age_seconds,
+    feature_engineering,
+    filter_reviews,
+    select_features,
+    train_max_timestamp_created,
+)
 
 
 def _minimal_raw_df(overrides=None):
@@ -90,7 +97,7 @@ class TestFilterReviews(unittest.TestCase):
         self.assertTrue(out["author.last_played"].notna().all())
 
     def test_full_pipeline_filter_then_select(self):
-        """One big test: full pipeline, row count and invariants."""
+        """One big test: clean pipeline through select_features (FE after split in prod)."""
         df = _minimal_raw_df()
         n_before = len(df)
         filtered = filter_reviews(df)
@@ -98,18 +105,25 @@ class TestFilterReviews(unittest.TestCase):
         self.assertLessEqual(len(featured), n_before)
         self.assertTrue((featured["votes_helpful"] < 4294967295).all())
         self.assertIn("is_helpful", featured.columns)
-        self.assertIn("review_length_chars", featured.columns)
+        self.assertNotIn("review_length_chars", featured.columns)
+        self.assertNotIn("review_word_count", featured.columns)
+        engineered = feature_engineering(featured)
+        self.assertIn("review_length_chars", engineered.columns)
+        self.assertIn("review_word_count", engineered.columns)
 
 
 class TestSelectFeatures(unittest.TestCase):
-    def test_adds_is_helpful_and_review_length(self):
+    def test_adds_is_helpful_not_text_derived_counts(self):
         df = _minimal_raw_df()
         df = filter_reviews(df)
         out = select_features(df)
         self.assertIn("is_helpful", out.columns)
         self.assertTrue((out["is_helpful"] == (out["votes_helpful"] >= 1)).all())
-        self.assertIn("review_length_chars", out.columns)
-        self.assertTrue(out["review_length_chars"].ge(0).all())
+        self.assertNotIn("review_length_chars", out.columns)
+        self.assertNotIn("review_word_count", out.columns)
+        fe = feature_engineering(out)
+        self.assertIn("review_length_chars", fe.columns)
+        self.assertTrue(fe["review_length_chars"].ge(0).all())
 
     def test_fills_playtime_nans_with_zero(self):
         df = _minimal_raw_df()
@@ -124,6 +138,32 @@ class TestSelectFeatures(unittest.TestCase):
         df = filter_reviews(df)
         out = select_features(df)
         self.assertNotIn("Unnamed: 0", out.columns)
+
+
+class TestReviewAge(unittest.TestCase):
+    def test_train_max_timestamp_created(self):
+        chunks = [
+            pd.DataFrame({"timestamp_created": [100, 200]}),
+            pd.DataFrame({"timestamp_created": [50, 300]}),
+        ]
+        self.assertEqual(train_max_timestamp_created(iter(chunks)), 300.0)
+
+    def test_train_max_timestamp_created_empty_raises(self):
+        with self.assertRaises(ValueError):
+            train_max_timestamp_created(iter([pd.DataFrame({"timestamp_created": []})]))
+
+    def test_add_review_age_seconds(self):
+        df = pd.DataFrame({"timestamp_created": [1000, 1500, np.nan]})
+        out = add_review_age_seconds(df, reference_timestamp=2000)
+        self.assertIn("review_age_seconds", out.columns)
+        self.assertAlmostEqual(float(out.loc[0, "review_age_seconds"]), 1000.0)
+        self.assertAlmostEqual(float(out.loc[1, "review_age_seconds"]), 500.0)
+        self.assertTrue(pd.isna(out.loc[2, "review_age_seconds"]))
+
+    def test_add_review_age_seconds_clips_negative_to_zero(self):
+        df = pd.DataFrame({"timestamp_created": [2500]})
+        out = add_review_age_seconds(df, reference_timestamp=2000)
+        self.assertAlmostEqual(float(out.loc[0, "review_age_seconds"]), 0.0)
 
 
 if __name__ == "__main__":

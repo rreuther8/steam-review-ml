@@ -145,9 +145,14 @@ still appear in the raw data and be used as **targets** (e.g. `votes_helpful`).
 
 ### 3.2 Text feature
 
-- `review` – raw text.
-- `review_length_chars` (int, **derived**):
-  - `len(review)` after stripping.
+- `review` – raw text (kept through `select_features`).
+
+**After train/val/test assignment** (in `scripts/split_reviews.py`), `feature_engineering` adds:
+
+- `review_word_count` (int) – token count (split on whitespace).
+- `review_length_chars` (int) – character length of `review` as string.
+
+The cleaned single-file Parquet from `clean_reviews.py` does **not** include these columns yet.
 
 ### 3.3 User features
 
@@ -199,10 +204,9 @@ Excluded (post-review / would leak):
 - `timestamp_updated` – reflects edits after creation; at write time only
   `timestamp_created` is available.
 
-Derived (optional, initial scaffolding):
+Derived on split (see `split_reviews.py`):
 
-- `review_age_days` (float, **optional**, placeholder – can be added once
-  a reference “current time” is decided).
+- `review_age_seconds` (float/int) – `max_train(timestamp_created) - timestamp_created`, clipped at 0; train max is from the **training** split only.
 
 ### 3.6 Columns to drop
 
@@ -286,12 +290,14 @@ Key functions:
     - Drop rows with negative playtime values.
     - Drop rows where `votes_helpful` or `votes_funny` equals 4294967295 (sentinel).
 - `select_features(df: DataFrame) -> DataFrame`
-  - Applies the column selection and derived feature rules in section 3:
+  - Applies the column selection and derived rules in section 3:
     - Adds `is_helpful`.
-    - Adds `review_length_chars`.
-    - Adds playtime missing indicators and fills NaNs with 0.
-    - Drops `Unnamed: 0` and any columns not in the defined feature set
-      plus identifiers/targets.
+    - Fills playtime NaNs with `0.0` (missing-indicator flags are optional /
+      not enabled in the current code path).
+    - Drops `Unnamed: 0` and projects to the defined column set.
+- `feature_engineering(df: DataFrame) -> DataFrame`
+  - Adds `review_word_count` and `review_length_chars`. The main pipeline
+    invokes this **after** splitting (same script as `review_age_seconds`).
 
 Example pipeline (pseudo-code):
 

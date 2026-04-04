@@ -1,6 +1,9 @@
 # Data (root-level only; src/steam_review_ml/data/ is the Python package, not ignored)
 /data/
 
+# Generated artifacts (metrics, plots, exports)
+artifacts/
+
 # Cursor rules
 .cursor/*
 !.cursor/rules/
