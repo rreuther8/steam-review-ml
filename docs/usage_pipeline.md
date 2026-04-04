@@ -93,14 +93,24 @@ for name, p in [
 "
 ```
 
-## 6) Baseline / modeling notebooks (optional)
+## 6) Tabular baseline / modeling notebooks (optional)
 
 Use the **`data/processed/..._norm.parquet`** files (raw columns are still present; `_norm_*` columns are added).
 
-Example notebooks:
+These live under **`notebooks/models/tabular/`** (numeric / engineered features — separate from recommender work).
 
-- `notebooks/models/model_000_dumb_002.ipynb`
-- `notebooks/models/model_001_linreg__votes_helpful.ipynb`
+- `notebooks/models/tabular/model_000_dumb_002.ipynb`
+- `notebooks/models/tabular/model_001_linreg__votes_helpful.ipynb`
+- `notebooks/models/tabular/model_002_logreg__recommended.ipynb`
+
+## 7) Recommender artifacts (v1)
+
+After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
+
+- Notebook: `notebooks/models/recs/recs_001_game_profiles.ipynb`
+- Output: `artifacts/recs/game_profile.parquet` (`app_id`, `app_name`, `profile_text`, review counts)
+
+See `docs/recommender_transition_plan.md` for the full v1 path.
 
 ---
 
@@ -109,5 +119,6 @@ Example notebooks:
 1. `python scripts/clean_reviews.py configs/clean_reviews.json`
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
-4. (Optional) run modeling notebooks
+4. (Optional) run tabular modeling notebooks
+5. (Recommender v1) run `notebooks/models/recs/recs_001_game_profiles.ipynb`
 

@@ -1,3 +1,13 @@
+# Classification metrics (reference)
+
+## Targets in this repo
+
+- **`recommended`** — binary classification; threshold-dependent metrics (accuracy, precision, recall, F1, MCC, …) and threshold-free scores (ROC-AUC, PR-AUC / AUPRC) apply as documented below.
+- **Helpfulness** — modeled as **`votes_helpful`** (regression, often on a normalized target such as `_norm_votes_helpful`). Use regression metrics (MAE, RMSE, R², etc.) and ranking-style diagnostics where appropriate; see notebooks and `regression_metrics` in `steam_review_ml.evaluation`.
+- **`is_helpful`** — **not** a separate primary modeling target: it is **derived** from `votes_helpful` (e.g. `>= 1`). Do not treat it as an independent label for a second classifier unless you have a product reason to threshold a *predicted* count.
+
+---
+
 # the confusion matrix
 
 Everything comes from:

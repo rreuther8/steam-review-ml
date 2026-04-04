@@ -13,10 +13,10 @@ Working on Steam Recommendation system with FASTAPI frontend.
 
 ## Project goals
 
-- **Content-led recommendations (v1)**: after a user writes a review, suggest other games using **text ↔ game-profile** similarity (retrieval-first). **Hybrid ranking (v2)** adds blended signals (e.g. ALS, popularity, metadata); see [`docs/recommender_transition_plan.md`](docs/recommender_transition_plan.md).
-- **Product vision (recs + coaching)**: broader UX and how review feedback fits alongside recommendations — [`docs/product_vision_recommender_and_review_coaching.md`](docs/product_vision_recommender_and_review_coaching.md).
+- **Content-led recommendations (v1)**: **preference extraction** (draft → structured taste → embedding input) is **core**; then **similarity vs game profiles** (retrieval-first). **Hybrid ranking (v2)** adds blended signals (e.g. ALS, popularity, metadata); see [`docs/recommender_transition_plan.md`](docs/recommender_transition_plan.md).
+- **Product vision**: **recommendations + extraction are core**; **review coaching** is **optional** and **separate** from extraction — [`docs/product_vision_recommender_and_review_coaching.md`](docs/product_vision_recommender_and_review_coaching.md).
 - **Predict review sentiment (`recommended`)**: build models that use both review text and metadata (playtime, user stats, purchase flags, etc.) to predict whether a review will be positive or negative.
-- **Predict review helpfulness (`votes_helpful`)**: using the same feature set, predict which reviews are likely to receive helpful votes, framed either as a regression task (number of helpful votes) or a classification task (helpful vs. not).
+- **Predict review helpfulness (`votes_helpful`)**: using the same feature set, predict helpful vote counts—typically **regression** on raw or **normalized** counts (e.g. `_norm_votes_helpful`). A binary “any helpful vote?” view (`is_helpful` / `votes_helpful >= 1`) is **derived** from the count; we do **not** treat it as a separate primary supervised task alongside the count model.
 - **End-to-end user experience**: expose these capabilities via a GUI (FastAPI): e.g. draft review → suggestions + sentiment/helpfulness (and later, structured review coaching per the product vision doc).
 
 Supervised tasks support analysis and **v2 hybrid reranking**; the recommender **v1 thesis** is content retrieval (transition plan above).
