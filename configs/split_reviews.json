@@ -1,8 +1,8 @@
 {
   "input_path": "data/interim/steam_reviews_cleaned_english.parquet",
-  "train_output_path": "data/processed/steam_reviews_cleaned_english_train.parquet",
-  "val_output_path": "data/processed/steam_reviews_cleaned_english_val.parquet",
-  "test_output_path": "data/processed/steam_reviews_cleaned_english_test.parquet",
+  "train_output_path": "data/interim/steam_reviews_cleaned_english_train.parquet",
+  "val_output_path": "data/interim/steam_reviews_cleaned_english_val.parquet",
+  "test_output_path": "data/interim/steam_reviews_cleaned_english_test.parquet",
   "val_size": 0.15,
   "test_size": 0.15,
   "random_state": 2026,

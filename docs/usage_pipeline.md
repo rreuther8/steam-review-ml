@@ -2,6 +2,9 @@
 
 This file is the runbook for getting processed data into the expected locations.
 
+- **Interim:** cleaned table, then **raw-scale** train/val/test splits (`data/interim/`).
+- **Processed:** modeling-ready Parquets with `_norm_*` columns; normalization params are saved in `artifacts/`.
+
 ## 0) Run from repo root
 
 ```bash
@@ -30,7 +33,9 @@ Current config target:
 
 - `data/interim/steam_reviews_cleaned_english.parquet`
 
-## 3) Split cleaned Parquet -> train/val/test Parquet
+The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (those are added when splitting).
+
+## 3) Split cleaned Parquet -> train/val/test (interim)
 
 Uses `configs/split_reviews.json`.
 
@@ -40,42 +45,62 @@ python scripts/split_reviews.py configs/split_reviews.json
 
 Current config targets:
 
-- `data/processed/steam_reviews_cleaned_english_train.parquet`
-- `data/processed/steam_reviews_cleaned_english_val.parquet`
-- `data/processed/steam_reviews_cleaned_english_test.parquet`
+- `data/interim/steam_reviews_cleaned_english_train.parquet`
+- `data/interim/steam_reviews_cleaned_english_val.parquet`
+- `data/interim/steam_reviews_cleaned_english_test.parquet`
 
-## 4) Quick output checks
+After each row is assigned to train/val/test, the split step runs **`feature_engineering`** (`review_word_count`, `review_length_chars`) and then **`review_age_seconds`**: seconds from `timestamp_created` to the **maximum `timestamp_created` in the training split only** (two-pass stream for the reference; then a second pass writes outputs).
 
-Check that expected files exist:
+## 4) Normalize splits -> modeling Parquets (processed)
+
+Fits caps/quantiles on **train** only; applies the same parameters to val and test.
+
+Uses `configs/normalize_splits.json`.
+
+```bash
+python scripts/normalize_split_parquets.py configs/normalize_splits.json
+```
+
+Outputs:
+
+- `data/processed/steam_reviews_cleaned_english_train_norm.parquet`
+- `data/processed/steam_reviews_cleaned_english_val_norm.parquet`
+- `data/processed/steam_reviews_cleaned_english_test_norm.parquet`
+- `artifacts/normalization_params.json`
+
+## 5) Quick output checks
 
 ```bash
 ls -lh data/interim/steam_reviews_cleaned_english.parquet
-ls -lh data/processed/steam_reviews_cleaned_english_train.parquet
-ls -lh data/processed/steam_reviews_cleaned_english_val.parquet
-ls -lh data/processed/steam_reviews_cleaned_english_test.parquet
+ls -lh data/interim/steam_reviews_cleaned_english_train.parquet
+ls -lh data/interim/steam_reviews_cleaned_english_val.parquet
+ls -lh data/interim/steam_reviews_cleaned_english_test.parquet
+ls -lh data/processed/steam_reviews_cleaned_english_*_norm.parquet
+ls -lh artifacts/normalization_params.json
 ```
 
-Optional: check row counts quickly:
+Optional: row counts for interim splits:
 
 ```bash
-python - <<'PY'
+python -c "
 import pandas as pd
-paths = {
-    "train": "data/processed/steam_reviews_cleaned_english_train.parquet",
-    "val": "data/processed/steam_reviews_cleaned_english_val.parquet",
-    "test": "data/processed/steam_reviews_cleaned_english_test.parquet",
-}
-for name, p in paths.items():
+for name, p in [
+    ('train', 'data/interim/steam_reviews_cleaned_english_train.parquet'),
+    ('val', 'data/interim/steam_reviews_cleaned_english_val.parquet'),
+    ('test', 'data/interim/steam_reviews_cleaned_english_test.parquet'),
+]:
     print(name, len(pd.read_parquet(p)))
-PY
+"
 ```
 
-## 5) Baseline notebook (optional)
+## 6) Baseline / modeling notebooks (optional)
 
-To run dumb baselines after data is prepared:
+Use the **`data/processed/..._norm.parquet`** files (raw columns are still present; `_norm_*` columns are added).
 
-- Open `notebooks/models/model_000_dumb.ipynb`
-- Run all cells
+Example notebooks:
+
+- `notebooks/models/model_000_dumb_002.ipynb`
+- `notebooks/models/model_001_linreg__votes_helpful.ipynb`
 
 ---
 
@@ -83,5 +108,6 @@ To run dumb baselines after data is prepared:
 
 1. `python scripts/clean_reviews.py configs/clean_reviews.json`
 2. `python scripts/split_reviews.py configs/split_reviews.json`
-3. (Optional) run `notebooks/models/model_000_dumb.ipynb`
+3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
+4. (Optional) run modeling notebooks
 

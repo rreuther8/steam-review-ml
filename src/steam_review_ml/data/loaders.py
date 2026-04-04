@@ -11,7 +11,6 @@ from tqdm import tqdm
 from steam_review_ml.data.preprocess import (
     filter_reviews,
     select_features,
-    feature_engineering,
     convert_to_int,
     add_stratify_group,
     stable_split_u,
@@ -69,9 +68,12 @@ def iter_clean_chunks(
     columns: Optional[Sequence[str]] = None,
 ) -> Iterator[pd.DataFrame]:
     """
-    Stream raw CSV in chunks, apply filter → dedupe → select_features, yield each featured DataFrame.
+    Stream raw CSV in chunks, apply filter → dedupe → select_features, yield each chunk.
 
-    Pipeline only; no file output. Use write_parquet_chunked (export) or export_cleaned_reviews to write.
+    Row-level feature engineering (``review_word_count``, ``review_length_chars``) runs **after**
+    the train/val/test split (see ``scripts/split_reviews.py``), not here.
+
+    Pipeline only; no file output. Use write_parquet_chunked to write the cleaned Parquet.
     """
     input_path = Path(input_path)
     if not input_path.exists():
@@ -97,7 +99,6 @@ def iter_clean_chunks(
             continue
 
         featured = select_features(filtered)
-        featured = feature_engineering(featured)
         bool_cols = [
             "recommended",
             "is_helpful",

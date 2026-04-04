@@ -2,7 +2,8 @@
 Clean the Steam reviews dataset from raw CSV to a single Parquet file.
 
 Reads all options from a JSON config file (path is the only CLI argument).
-Pipeline: load+clean (iter_clean_chunks) then export (write_parquet_chunked).
+Pipeline: load+clean (iter_clean_chunks: filter, dedupe, select_features only) then export.
+Text counts are added after split (see split_reviews.py).
 """
 
 import argparse
@@ -44,7 +45,10 @@ def main() -> None:
     logger.info("  input_path=%s  output_path=%s  chunksize=%s  language=%s",
                 cfg["input_path"], cfg["output_path"], cfg["chunksize"], cfg["language"])
 
-    logger.info("Stage: reading CSV in chunks, filtering, deduping, feature selection")
+    logger.info(
+        "Stage: reading CSV in chunks, filtering, deduping, feature selection "
+        "(no text-derived counts; those run after split)"
+    )
     chunks = iter_clean_chunks(
         cfg["input_path"],
         cfg["chunksize"],

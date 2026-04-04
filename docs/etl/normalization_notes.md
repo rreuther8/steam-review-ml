@@ -1,49 +1,45 @@
-# Normalization: plan and follow-up checks
+# Normalization
 
-## Current status
+## Status and validation
 
-- Deciding on the transformation(s) for numeric features (log vs cap vs standardize, and which columns).
-- No implementation of the "quick checks" below yet—those will go in once the transformation is chosen.
+- **Transforms are fixed** for the listed numeric columns (cap at train 99th percentile + `log1p`, or `log1p` only). See the table below.
+- **Implementation:** [`src/steam_review_ml/transforms/normalization.py`](../../src/steam_review_ml/transforms/normalization.py) — `fit_normalization`, `add_normalized_columns`, `make_norm_col_name`, `inverse_norm_votes_helpful`.
+- **Batch step:** [`scripts/normalize_split_parquets.py`](../../scripts/normalize_split_parquets.py) with [`configs/normalize_splits.json`](../../configs/normalize_splits.json). Fits on **train** only; writes **`data/processed/..._norm.parquet`** plus **`artifacts/normalization_params.json`**. Interim **raw-scale** splits live under `data/interim/` (see [`configs/split_reviews.json`](../../configs/split_reviews.json)).
+- **Tests:** [`tests/test_normalization.py`](../../tests/test_normalization.py).
+- **Notebook checks (artifacts):** [`notebooks/etl/eda_010_normalization_validation.ipynb`](../../notebooks/etl/eda_010_normalization_validation.ipynb) — row counts, schema, recomputation vs JSON, optional inverse spot check for `votes_helpful`.
+- **Runbook:** [docs/usage_pipeline.md](../usage_pipeline.md).
 
-## Plan
+## Optional EDA checks (signal, not plumbing)
 
-1. **Decide transformation** – Use eda_006 and the data_filtering spec to pick, per column or group:
-   - Long-tailed counts (votes, playtime): log(1+x), cap at a percentile, or both.
-   - Other numerics (e.g. author.num_games_owned, author.num_reviews, review_length_chars): same options if skewed.
-   - Scaling: which columns get StandardScaler (or similar) for linear/distance models, if any.
-2. **Add a "Quick checks" section** – After the chosen transform is applied (in a notebook or script), run the checks below to validate that the transform preserves or improves signal and doesn’t break assumptions.
+Use these when you **change the transform table**, add features, or want reassurance before modeling. They assume you are working on a dataframe that already includes **`_norm_*`** columns (e.g. loaded from `*_norm.parquet` or built in a notebook).
 
-## Quick checks (to add later)
-
-Run these **after** applying the chosen transformation to the modeling dataframe (filtered + feature-selected). They don’t need to be implemented until the normalization method is fixed.
+**Runnable on-repo:** [Section 6 of `eda_010_normalization_validation.ipynb`](../../notebooks/etl/eda_010_normalization_validation.ipynb) runs a **subsampled** version of these checks against processed train (`*_norm.parquet`): raw vs `_norm_*` skew/histograms, separation by `recommended` / `is_helpful`, `_norm_*` correlation heatmap, coarse tail (z) stats, and scatters vs `_norm_votes_helpful`.
 
 - **Feature vs target (from eda_004)**  
-  Re-run the same "numeric feature vs recommended" and "vs helpfulness" views (e.g. boxplots/violins) on the **transformed** features. Confirm separation is preserved or improved; if it gets worse, revisit the transform for that column.
+  Re-run numeric feature vs `recommended` and vs helpfulness views (e.g. boxplots/violins) on **`_norm_*`**. Confirm separation is preserved or improved; if it worsens for a column, revisit that transform.
 
 - **Correlation (from eda_005)**  
-  Correlation heatmap on the **transformed** numerics. Use it to spot redundancy and multicollinearity before modeling (and to decide regularization or dropping one of a pair).
+  Correlation heatmap on **`_norm_*`** numerics to spot redundancy and multicollinearity before modeling.
 
-- **Outliers (from eda_005)**  
-  Use the same outlier logic (e.g. z-score or percentile) on transformed columns to confirm that capping/trimming choices are consistent and that no new issues appear.
+- **Outliers**  
+  Re-run your usual outlier logic on **`_norm_*`** to confirm capping/logging behaved as expected and no new pathologies appear.
 
-- **review_length_chars**  
-  If this (or other count-like derived numerics) is included in the model, check its distribution after any log/cap and include it in the same correlation and feature-vs-target checks.
+- **`review_word_count` / other derived counts**  
+  If included in the model, include them in the same distribution and correlation checks. (Current pipeline table includes `review_word_count` only; extend checks if you add more columns.)
 
-- **Target transform (if regression on votes_helpful)**  
-  If the target is `votes_helpful` (regression), consider log(1 + votes_helpful) and document it in the same place as the feature transforms.
+- **Regression target**  
+  For `votes_helpful` regression, the table uses cap + `log1p` on train; use **`_norm_votes_helpful`** in the modeling frame and **`inverse_norm_votes_helpful`** when you need raw-scale metrics or baselines.
 
 ## Where this lives
 
-- **Decisions and spec:** [data_filtering.md](data_filtering.md) Section 4 (Normalization and feature transforms).
-- **Exploration and plots:** [notebooks/eda/eda_006_normalization.ipynb](../notebooks/eda/eda_006_normalization.ipynb).
-- **Quick-checks section:** To be added in eda_006 (or a short "Validation" subsection) once the normalization method is decided.
+- **Spec:** [data_filtering.md](data_filtering.md) Section 4 (Normalization and feature transforms) — keep aligned with the table below.
+- **Exploration / TF–sklearn refs:** [notebooks/eda/eda_006_normalization_002.ipynb](../../notebooks/eda/eda_006_normalization_002.ipynb), [eda_006_normalization.ipynb](../../notebooks/eda/eda_006_normalization.ipynb).
 
+---
 
-# Normalization: chosen transforms and pipeline plan
+## Chosen transforms (per column)
 
-## 1. Chosen transforms (per column)
-
-Decisions from EDA (see [notebooks/eda/eda_006_normalization_002.ipynb](../notebooks/eda/eda_006_normalization_002.ipynb)):
+Decisions from EDA (see [notebooks/eda/eda_006_normalization_002.ipynb](../../notebooks/eda/eda_006_normalization_002.ipynb)):
 
 | Column | Transform |
 |--------|-----------|
@@ -55,46 +51,52 @@ Decisions from EDA (see [notebooks/eda/eda_006_normalization_002.ipynb](../noteb
 | `author.num_reviews` | log1p only |
 | `review_word_count` | log1p only |
 
-- **Cap-then-log:** fit the cap (e.g. 99th percentile) on training data; apply `min(x, cap)` then `log1p`.
+- **Cap-then-log:** fit the cap on **training** data only; apply `min(x, cap)` then `log1p`.
 - **Log only:** `log1p(x)` with no capping.
 
-Same behavior is implemented in three equivalent ways in the ref notebook: manual (NumPy), scikit-learn (`ColumnTransformer` + `CapThenLogTransformer`), and TensorFlow (`SteamNormalizer` layer).
+The reference notebook also shows equivalent manual, scikit-learn, and TensorFlow patterns. The **repo default** for saved Parquets is the Python helpers above.
 
 ---
 
-## 2. Pipeline: where normalization runs
+## Pipeline: where normalization runs
 
 Normalization is done **once** as a data-preparation step, not per model.
 
-1. **Fit the normalizer** on a large portion of training data (e.g. full train or a large sample).
-2. **Save the normalizer** (e.g. fitted caps + column list, or a small TF/Keras model that applies the same logic). This artifact is needed later only for **inference** on new raw inputs.
-3. **Transform** train, validation, and test sets with the fitted normalizer.
-4. **Save the normalized datasets** in final form (e.g. Parquet or CSV). All downstream models use these pre-normalized datasets for training and evaluation.
+1. **Fit** on the training split only (full train column slice used by `fit_normalization`).
+2. **Save** fitted parameters to **`normalization_params.json`**
+3. **Transform** train, validation, and test with the same frozen params.
+4. **Save** modeling Parquets under **`data/processed/`** (`*_norm.parquet`). Downstream notebooks load these; raw source columns remain alongside `_norm_*`.
 
 Effects:
 
-- All models (NN, logistic regression, linear regression, random baseline) consume the same pre-normalized data; no need to run the normalizer again during training.
-- Training code stays simple: load pre-normalized data and fit.
-- One place to re-run if you ever change the normalization (e.g. different percentile or columns): re-fit normalizer, re-transform, overwrite or version the saved datasets.
+- All models can share the same pre-normalized tables.
+- One place to re-run if you change percentiles or columns: re-fit, re-transform, version or overwrite outputs.
+
+**CLI:** From repo root (with `pip install -e .` or `PYTHONPATH=src`):
+
+`PYTHONPATH=src python scripts/normalize_split_parquets.py configs/normalize_splits.json`
+
+[`configs/normalize_splits.json`](../../configs/normalize_splits.json) reads **interim** split paths (same outputs as [`configs/split_reviews.json`](../../configs/split_reviews.json)) and writes processed `*_norm.parquet` plus [`artifacts/normalization_params.json`](../../artifacts/normalization_params.json). Optional JSON key `normalization_rules` overrides the default rule dict from code. Normalized column names: **`_norm_<source>`** with `.` → `__` in `<source>`.
 
 ---
 
-## 3. Inference (e.g. in the app)
+## Inference (e.g. in the app)
 
-New inputs are raw, so they must be normalized before calling any model.
+New inputs are raw; normalize them with the **saved** params (or the same code path) before calling the model.
 
-- **Load the saved normalizer** (or its parameters: caps + column list) once at startup or on first request.
-- For each new sample: run the normalizer on the raw feature vector, then pass the normalized vector to the model (NN, logreg, or linear).
+- Load `normalization_params.json` (or equivalent) once.
+- For each row: build `_norm_*` from raw fields, then score.
 
-So we keep two things from the pipeline:
+Artifacts to keep:
 
-- **Pre-normalized datasets** — used for training and validation.
-- **Saved normalizer** — used only at inference to transform new raw data.
+- **Pre-normalized datasets** for training and evaluation.
+- **Saved params** (and code using `add_normalized_columns`) for inference on new raw rows.
 
 ---
 
-## 4. References
+## References
 
-- **Clean ref (transforms + manual/sklearn/TF):** [notebooks/eda/eda_006_normalization_002.ipynb](../notebooks/eda/eda_006_normalization_002.ipynb)
-- **Data filtering and feature selection:** [data_filtering.md](data_filtering.md)
-- **Older notes and quick checks:** [normalization_notes.md](normalization_notes.md)
+- **Transforms reference notebook:** [notebooks/eda/eda_006_normalization_002.ipynb](../../notebooks/eda/eda_006_normalization_002.ipynb)
+- **Data filtering / feature selection:** [data_filtering.md](data_filtering.md)
+- **Pipeline runbook:** [docs/usage_pipeline.md](../usage_pipeline.md)
+- **Artifact validation notebook:** [notebooks/etl/eda_010_normalization_validation.ipynb](../../notebooks/etl/eda_010_normalization_validation.ipynb)

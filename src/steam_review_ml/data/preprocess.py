@@ -4,6 +4,7 @@ import logging
 import hashlib
 from typing import Iterable, Optional, Sequence, Union
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -117,9 +118,11 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
 
     This function:
     - Keeps a curated set of identifier, feature, and target columns.
-    - Adds ``is_helpful`` from ``votes_helpful``.
-    - Adds ``review_length_chars`` from ``review``.
-    - Adds playtime missing-indicator columns and fills playtime NaNs with 0.0.
+    - Adds ``is_helpful`` from ``votes_helpful`` (for stratified splitting).
+    - Fills playtime NaNs with 0.0.
+
+    Text-derived columns ``review_word_count`` and ``review_length_chars`` are added in
+    :func:`feature_engineering`, which the main pipeline runs **after** splitting.
     """
     logger.debug("select_features: %d rows, selecting and deriving columns", len(df))
     base = df.copy()
@@ -172,13 +175,6 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
     if "votes_helpful" in base.columns:
         base["is_helpful"] = base["votes_helpful"] >= 1
 
-    # Derived: review_length_chars
-    if "review" in base.columns:
-        # Use empty string for missing reviews to avoid errors; most have been
-        # filtered out already.
-        review_filled = base["review"].fillna("")
-        base["review_length_chars"] = review_filled.astype(str).str.len()
-
     # Playtime missing indicators and simple imputation
     playtime_cols = ["author.playtime_last_two_weeks", "author.playtime_at_review"]
     for col in playtime_cols:
@@ -191,9 +187,60 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
     return base
 
 
+def train_max_timestamp_created(
+    train_chunks: Iterable[pd.DataFrame],
+    col: str = "timestamp_created",
+) -> float:
+    """
+    Maximum timestamp in ``col`` across train chunk DataFrames only.
+
+    Used as a frozen reference for ``review_age_seconds`` so val/test rows are
+    not used when choosing the reference (avoids leakage).
+    """
+    m: Optional[float] = None
+    for train_df in train_chunks:
+        if col not in train_df.columns or len(train_df) == 0:
+            continue
+        chunk_max = pd.to_numeric(train_df[col], errors="coerce").max()
+        if pd.isna(chunk_max):
+            continue
+        m = float(chunk_max) if m is None else max(m, float(chunk_max))
+    if m is None:
+        raise ValueError(
+            f"train_max_timestamp_created: no non-null {col} values in train chunks"
+        )
+    return m
+
+
+def add_review_age_seconds(
+    df: pd.DataFrame,
+    reference_timestamp: float,
+    *,
+    col: str = "timestamp_created",
+    out_col: str = "review_age_seconds",
+) -> pd.DataFrame:
+    """
+    Seconds from ``timestamp_created`` to a fixed reference (non-negative).
+
+    ``reference_timestamp`` should be the max ``timestamp_created`` over the
+    **training** split only (see :func:`train_max_timestamp_created`). Missing
+    ``timestamp_created`` yields NaN in ``out_col``.
+    """
+    out = df.copy()
+    if col not in out.columns:
+        raise KeyError(f"add_review_age_seconds: missing column {col!r}")
+    ts = pd.to_numeric(out[col], errors="coerce")
+    ref = float(reference_timestamp)
+    age = ref - ts
+    age = age.where(ts.notna(), np.nan)
+    out[out_col] = age.clip(lower=0.0)
+    return out
+
+
 def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Apply feature engineering to the DataFrame.
+    Apply row-level text feature engineering (safe before or after split; main
+    pipeline runs this **after** assigning train/val/test rows).
 
     This function:
     - Adds ``review_word_count`` from ``review``.

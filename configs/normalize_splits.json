@@ -1,0 +1,10 @@
+{
+  "train_input_path": "data/interim/steam_reviews_cleaned_english_train.parquet",
+  "val_input_path": "data/interim/steam_reviews_cleaned_english_val.parquet",
+  "test_input_path": "data/interim/steam_reviews_cleaned_english_test.parquet",
+  "train_output_path": "data/processed/steam_reviews_cleaned_english_train_norm.parquet",
+  "val_output_path": "data/processed/steam_reviews_cleaned_english_val_norm.parquet",
+  "test_output_path": "data/processed/steam_reviews_cleaned_english_test_norm.parquet",
+  "params_output_path": "artifacts/normalization_params.json",
+  "chunksize": 100000
+}
