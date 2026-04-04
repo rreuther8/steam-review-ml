@@ -2,6 +2,8 @@
 
 End-to-end direction for this repo: **Steam review data** powering a product where a person **writes a review** and gets **(1) other game recommendations** and **(2) actionable feedback** on how to write a stronger review (e.g. moving from "good" to concrete detail about gameplay or story).
 
+This review ultimately could be used as signal to understand what other content to recommend.
+
 This note splits one UX flow into **separate technical problems** so the roadmap stays shippable and easy to defend in interviews.
 
 **Technical recommender path:** content-led v1 → hybrid ranking v2 — see [`recommender_transition_plan.md`](recommender_transition_plan.md).
