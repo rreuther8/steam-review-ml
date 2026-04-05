@@ -215,6 +215,8 @@ Dropped in the modeling view:
 - `Unnamed: 0` – index-only.
 - Any other columns not explicitly listed above.
 
+**Also kept (metadata):** `language` – Steam’s language tag for the row (e.g. `english`). It is included in interim/processed Parquets for auditing; `filter_reviews` still selects rows by this field, not by detecting language in `review` text.
+
 ### 3.7 Imputation / basic transforms
 
 Applied in `select_features(df, ...)`:

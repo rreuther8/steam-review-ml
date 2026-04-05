@@ -117,6 +117,7 @@ class TestSelectFeatures(unittest.TestCase):
         df = _minimal_raw_df()
         df = filter_reviews(df)
         out = select_features(df)
+        self.assertIn("language", out.columns)
         self.assertIn("is_helpful", out.columns)
         self.assertTrue((out["is_helpful"] == (out["votes_helpful"] >= 1)).all())
         self.assertNotIn("review_length_chars", out.columns)

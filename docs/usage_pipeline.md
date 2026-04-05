@@ -107,8 +107,17 @@ These live under **`notebooks/models/tabular/`** (numeric / engineered features 
 
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
-- Notebook: `notebooks/models/recs/recs_001_game_profiles.ipynb`
-- Output: `artifacts/recs/game_profile.parquet` (`app_id`, `app_name`, `profile_text`, review counts)
+- Notebook: `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
+- Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
+
+**Dense game vectors** (TensorFlow + TensorFlow Hub; see `pyproject.toml` `[recs]` extra and `recs_002` notebook):
+
+- Notebook: `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
+- Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
+
+**Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
+
+- Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb`
 
 See `docs/recommender_transition_plan.md` for the full v1 path.
 
@@ -120,5 +129,16 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 4. (Optional) run tabular modeling notebooks
-5. (Recommender v1) run `notebooks/models/recs/recs_001_game_profiles.ipynb`
+5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
+6. (Optional) install recs extras and run `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
+7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb` after `recs_002` artifacts exist
 
+
+
+## Full run
+
+```
+python scripts/clean_reviews.py configs/clean_reviews.json && \
+python scripts/split_reviews.py configs/split_reviews.json && \
+python scripts/normalize_split_parquets.py configs/normalize_splits.json
+```

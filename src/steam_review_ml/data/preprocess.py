@@ -118,6 +118,8 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
 
     This function:
     - Keeps a curated set of identifier, feature, and target columns.
+    - Keeps ``language`` (Steam metadata) for auditing / filtering even though
+      :func:`filter_reviews` already restricted rows by language.
     - Adds ``is_helpful`` from ``votes_helpful`` (for stratified splitting).
     - Fills playtime NaNs with 0.0.
 
@@ -131,7 +133,7 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
     target_cols = ["recommended", "votes_helpful"]
 
     # Identifiers / metadata
-    id_cols = ["review_id", "app_id", "app_name", "author.steamid"]
+    id_cols = ["review_id", "app_id", "app_name", "author.steamid", "language"]
 
     # Core text feature
     text_cols = ["review"]
