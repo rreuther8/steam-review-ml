@@ -40,20 +40,34 @@ If time is tight, **do not** let tabular modeling block **preference extraction 
   - `model_001_linreg__votes_helpful.ipynb` — baselines + **linear regression** on normalized helpful votes; metrics e.g. `artifacts/metrics/votes_helpful_metrics.csv` when run.  
   - `model_002_logreg__recommended.ipynb` — baselines + **logistic regression** on `recommended` (full numeric feature set + 3-feature variant).  
 
-- **Recommender v1 (primary lane) — game profiles** — `notebooks/models/recs/recs_001_game_profiles.ipynb` → `artifacts/recs/game_profile.parquet` (train, positive reviews only).  
+- **Recommender v1 (primary lane) — content index + demo retrieval** — notebooks under `notebooks/models/game_embeddings/` and `notebooks/models/query_embeddings/`: **`recs_001_game_profiles.ipynb`** → **`game_profile_reviews.parquet`**; **`recs_002_embed_game_profiles.ipynb`** → dense **per-game** vectors (TF Hub USE, mean pool, L2 norm); **`recs_003_query_retrieve.ipynb`** → hand-written query → embed → **top‑K** vs `X`. Artifacts: **`artifacts/recs/`**.
 
 ---
 
 ## Roadmap (by lane)
 
-**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles, **preference extraction** + `build_embedding_input`, retrieval, **raw vs structured embedding** comparison, @K eval, then API and v2.
+**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles + demo retrieval (**done**), then **preference extraction** + `build_embedding_input`, wire that into the same retrieval, **raw vs structured embedding** comparison, @K eval, then API and v2.
+
+### v1 recommender — living checklist (update as you go)
+
+Use this as the single “where are we?” list; **`docs/recommender_transition_plan.md`** stays the architecture narrative.
+
+- [x] **`recs_001`** — train split, thumbs-up table → `artifacts/recs/game_profile_reviews.parquet`
+- [x] **`recs_002`** — per-review embed, mean per `app_id`, L2 normalize → `game_profile_embeddings.npz` + index Parquet + `meta.json`
+- [x] **`recs_003`** — load artifacts, TF Hub query embed, dot-product **top‑K** (demo / smoke test)
+- [ ] **`extract_preferences` + `build_embedding_input`** — core v1 query text (not coaching); LLM or rules v0 OK
+- [ ] **Wire retrieval** — same `top_k` path with **structured** query string; keep **raw draft → embed** as an ablation only
+- [ ] **@K evaluation** — Precision@K / Recall@K / MAP@K / NDCG@K vs baselines (e.g. popularity); structured vs raw on fixed drafts
+- [ ] **API** — minimal endpoint: draft or prefs → recommendations (after eval loop is acceptable)
+- [ ] **v2 hybrid** — defer until baseline above holds; see transition plan
 
 ### Primary — recommendation
 
 | Phase | Status | Notes |
 |-------|--------|--------|
+| **Game index + demo retrieval (`recs_001`–`003`)** | **Done** | Notebooks: `game_embeddings/recs_001_*`, `recs_002_*`; `query_embeddings/recs_003_*`. Next work is **product path**, not re-embedding unless you change caps/model. |
 | **Preference extraction (core v1)** | Todo | `extract_preferences` + `build_embedding_input` → text for embedding. **Not** coaching; separate module. Prompt/schema v0 acceptable; validate vs raw-embed baseline. |
-| **Recommender v1 (content retrieval)** | Todo | **Step 1:** run `notebooks/models/recs/recs_001_game_profiles.ipynb` for `artifacts/recs/game_profile.parquet`. Then vectorizer/embeddings + similarity **top‑N** using **structured query** from extraction. Raw draft embed only for **ablation**. |
+| **Recommender v1 (product retrieval path)** | Todo | Reuse **`recs_003`** mechanics with **structured** query from extraction; optional refactor into `src/` for API/tests. |
 | **Recommender @K evaluation** | Todo | Precision@K, Recall@K, MAP@K, NDCG@K vs. simple baselines (e.g. popularity); coverage/diversity as needed. Include **structured vs raw** query comparison on fixed drafts. |
 | **API: recommendations** | Todo | Expose v1 retrieval (then extend for v2). Can ship after a minimal v1 + eval loop exists. |
 | **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; blend similarity + priors/metadata + **optional** tabular scores (`p(recommended)`, expected helpful votes). ALS only when justified. |
@@ -95,5 +109,7 @@ If time is tight, **do not** let tabular modeling block **preference extraction 
   `docs/eda_plan.md`
 - **Recommender path (v1 → v2):**  
   `docs/recommender_transition_plan.md`
+- **v1 checklist (check off as you finish steps):**  
+  this file → **§ v1 recommender — living checklist**
 - **Product vision (core recs + optional coaching):**  
   `docs/product_vision_recommender_and_review_coaching.md`
