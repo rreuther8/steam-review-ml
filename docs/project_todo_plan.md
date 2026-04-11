@@ -2,16 +2,16 @@
 
 ## Alignment with the recommender transition plan
 
-The **[recommender transition plan](recommender_transition_plan.md)** sets the **north star**: **v1** = **preference extraction** (core) + **content-led retrieval** (structured query → embed → game profiles), then **@K metrics**, then **v2 hybrid** reranking. **Review coaching** is **optional** and **separate** from preference extraction (see product vision). **ALS / collaborative filtering is deferred** until after that baseline exists.
+The **[recommender transition plan](recommender_transition_plan.md)** sets the **north star**: **v1** = **content-led retrieval** (embed **raw** review vs game profiles as **default** until structured beats raw on **val**; **structured** = `extract_preferences` + `build_embedding_input` as **ablation**), then **@K / proxy metrics**, then **v2 hybrid** reranking. **Preference extraction** stays in scope as product/experiment tooling, not the default embed until validated. **Review coaching** is **optional** and **separate** from preference extraction (see product vision). **ALS / collaborative filtering is deferred** until after that baseline exists.
 
 This todo list follows that priority:
 
 | Lane | Role |
 |------|------|
-| **Primary** | **Preference extraction** + game profiles + similarity retrieval → @K evaluation → API for recommendations → v2 hybrid. |
+| **Primary** | Game profiles + similarity retrieval (**raw embed default**; structured when it wins on val) → proxy / @K evaluation → API → v2 hybrid. **Preference extraction** supports structured path and UX. |
 | **Supporting** | Data pipeline, **tabular** `recommended` / `votes_helpful` models (baselines + simple learners). These support **analysis** and **optional v2 features**; they are **not** a replacement for extraction + retrieval. |
 
-If time is tight, **do not** let tabular modeling block **preference extraction + game profiles + similarity retrieval**.
+If time is tight, **do not** let tabular modeling block **game profiles + similarity retrieval + proxy eval**; structured extraction can iterate in parallel.
 
 ---
 
@@ -46,7 +46,7 @@ If time is tight, **do not** let tabular modeling block **preference extraction 
 
 ## Roadmap (by lane)
 
-**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles + demo retrieval (**done**), then **preference extraction** + `build_embedding_input`, wire that into the same retrieval, **raw vs structured embedding** comparison, @K eval, then API and v2.
+**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles + demo retrieval (**done**), **`recs_004`** proxy on val (**raw default** vs structured + baselines), iterate **preference extraction** until structured wins if desired, then API and v2.
 
 ### v1 recommender — living checklist (update as you go)
 
@@ -55,9 +55,12 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 - [x] **`recs_001`** — train split, thumbs-up table → `artifacts/recs/game_profile_reviews.parquet`
 - [x] **`recs_002`** — per-review embed, mean per `app_id`, L2 normalize → `game_profile_embeddings.npz` + index Parquet + `meta.json`
 - [x] **`recs_003`** — load artifacts, TF Hub query embed, dot-product **top‑K** (demo / smoke test)
+- [ ] **`recs_004`** — same-user held-out likes proxy on **val**: **raw vs structured** vs **random** + **popularity** baselines; optional **multi-review** mean/concat (`notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`)
 - [ ] **`extract_preferences` + `build_embedding_input`** — core v1 query text (not coaching); LLM or rules v0 OK
-- [ ] **Wire retrieval** — same `top_k` path with **structured** query string; keep **raw draft → embed** as an ablation only
-- [ ] **@K evaluation** — Precision@K / Recall@K / MAP@K / NDCG@K vs baselines (e.g. popularity); structured vs raw on fixed drafts
+- [ ] **Wire retrieval** — same `top_k` path; **default** embed = **raw** draft until structured wins on val; **structured** string as ablation / optional flag
+- [ ] **@K evaluation** — Precision@K / Recall@K / MAP@K / NDCG@K vs baselines (e.g. popularity); structured vs raw on fixed drafts; **user held-out likes** proxy (other `recommended` games by the same user — see **`docs/recommender_transition_plan.md`** → *Offline proxy task*)
+- [ ] **A/B matrix eval** — compare 4 variants on a fixed set: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index
+- [ ] **Negative profile sampling/balance policy** — for any dual-index run, cap/symmetrize pos/neg per-game review counts; guard against noisy/event-driven negatives
 - [ ] **API** — minimal endpoint: draft or prefs → recommendations (after eval loop is acceptable)
 - [ ] **v2 hybrid** — defer until baseline above holds; see transition plan
 
@@ -66,9 +69,9 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 | Phase | Status | Notes |
 |-------|--------|--------|
 | **Game index + demo retrieval (`recs_001`–`003`)** | **Done** | Notebooks: `game_embeddings/recs_001_*`, `recs_002_*`; `query_embeddings/recs_003_*`. Next work is **product path**, not re-embedding unless you change caps/model. |
-| **Preference extraction (core v1)** | Todo | `extract_preferences` + `build_embedding_input` → text for embedding. **Not** coaching; separate module. Prompt/schema v0 acceptable; validate vs raw-embed baseline. |
-| **Recommender v1 (product retrieval path)** | Todo | Reuse **`recs_003`** mechanics with **structured** query from extraction; optional refactor into `src/` for API/tests. |
-| **Recommender @K evaluation** | Todo | Precision@K, Recall@K, MAP@K, NDCG@K vs. simple baselines (e.g. popularity); coverage/diversity as needed. Include **structured vs raw** query comparison on fixed drafts. |
+| **Preference extraction (structured path)** | Todo | `extract_preferences` + `build_embedding_input` → embedding **ablation**; beat **raw** on val proxy before making default. |
+| **Recommender v1 (product retrieval path)** | Todo | Reuse **`recs_003`** mechanics; **default** query = **raw** embed; optional structured + refactor into `src/` for API/tests. |
+| **Recommender @K evaluation** | Todo | Precision@K, Recall@K, MAP@K, NDCG@K vs. simple baselines (e.g. popularity); coverage/diversity as needed. Include **structured vs raw** and, where data allows, the **held-out same-user likes** proxy in the transition plan. |
 | **API: recommendations** | Todo | Expose v1 retrieval (then extend for v2). Can ship after a minimal v1 + eval loop exists. |
 | **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; blend similarity + priors/metadata + **optional** tabular scores (`p(recommended)`, expected helpful votes). ALS only when justified. |
 

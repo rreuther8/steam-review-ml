@@ -119,6 +119,10 @@ After processed train Parquet exists, build **game profiles** (train split, posi
 
 - Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb`
 
+**Offline eval (same-user held-out likes proxy)** — **val** queries; **raw vs structured** vs **random** and **train popularity** baselines; optional multi-review pooling (see transition plan):
+
+- Notebook: `notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`
+
 See `docs/recommender_transition_plan.md` for the full v1 path.
 
 ---
@@ -132,6 +136,7 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
 6. (Optional) install recs extras and run `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
 7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb` after `recs_002` artifacts exist
+8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb` for proxy metrics (uses **val** `*_val_norm.parquet` by default; reserve **test** for final holdout)
 
 
 
