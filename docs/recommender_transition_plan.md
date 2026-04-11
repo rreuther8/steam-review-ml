@@ -108,7 +108,7 @@ flowchart TB
 
 ## User representation beyond the current review (planned extension)
 
-The **default v1 retrieval path** today is **raw draft → embed** → cosine vs per-game profile vectors (see **Online flow** above). You also have **library / playtime / recency** and **the user’s other Steam reviews**. Those belong in the **same embedding space** as game profiles so you can combine **long-term taste**, **how the user writes about games**, and **this session’s intent** (`recs_004` §4 experiments with **multi-review** pooling on val).
+The **default v1 retrieval path** today is **raw draft → embed** → cosine vs per-game profile vectors (see **Online flow** above). You also have **library / playtime / recency** and **the user’s other Steam reviews**. Those belong in the **same embedding space** as game profiles so you can combine **long-term taste**, **how the user writes about games**, and **this session’s intent** (`recs_004` **§3** ablation: **val** queries/labels; **train**-only text for **multi_mean_train** / **multi_concat_train** / **tw_train_mean_*** pooling.)
 
 **Three complementary signals**
 
@@ -200,6 +200,21 @@ The dataset is **multi-review**: many users have reviewed more than one game. Th
 
 **Caveats (call these out in any write-up):** sparse users (one review only → skip or use global baselines); **franchise / sequel** correlation; **cold users**; positives are **retrospective** (“they liked it enough to review”) not **counterfactual** (“they would have liked a suggestion”).
 
+### Selection bias: multi-review vs single-review users (important)
+
+`recs_004` (and any “same-user other likes” proxy) only includes users who have **at least two** indexed thumbs-up games in the **eval split**, so the **label set** (other likes) exists. In practice that is a **small fraction** of all accounts in typical Steam samples; many users have **zero or one** review in the corpus.
+
+**That subset is not a random draw of “all users.”** Multi-review / multi-game-like users can differ systematically from single-review or non-reviewing users in ways that affect both **metrics** and **product**:
+
+- **Engagement** — they write more; they may be heavier platform users or more inclined to review.
+- **Taste breadth** — more distinct liked games changes co-like structure and how hard recall@K is.
+- **Text behavior** — review length, style, and vocabulary may differ from one-shot writers; the same embedding model may transfer differently.
+- **Coverage** — users with **no** review text are a different problem entirely for **content-only** retrieval (cold start); this proxy says nothing about them unless you add other signals (metadata, implicit data, etc.).
+
+**What to claim:** Offline numbers from `recs_004` are best read as performance on **“users for whom we can define this task”** (multi-game likes in val), **not** as an automatic estimate for the **full user base**. In interviews: *“We subset to users with ≥2 likes so positives are defined; that cohort is skewed vs everyone, so we treat these metrics as a defined slice, not a population average—single-review and cold users need separate framing or experiments.”*
+
+**Optional follow-ups:** report the **fraction** of users in each bucket (see EDA on reviews per user); stratify metrics by review-count decile where sample size allows; pair with **popularity / metadata** baselines that do not rely on user text for cold users.
+
 **Split hygiene:** `recs_004` reads query rows from **`steam_reviews_cleaned_english_val_norm.parquet`** so **test** stays a true final holdout. Use **`test_norm`** only for a **one-shot** report after you freeze the method.
 
 **Baselines in `recs_004`:** **random** ranking (query game masked) and **popularity** (train thumbs-up counts per `app_id`) contextualize raw vs structured scores.
@@ -208,7 +223,7 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 
 ## Concrete next tasks (execution order)
 
-**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **preference extraction + content retrieval + @K** for recommendations. **Game index:** `recs_001` → `game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K smoke test.
+**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **content retrieval + validation metrics** (raw embed default today; structured as ablation). **Game index:** `recs_001` → `game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K; **`recs_004`** → val proxy vs baselines.
 
 **v1**
 
@@ -224,6 +239,19 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 2. Optionally fold in `recommended` / helpfulness model scores as features.
 3. Add a simple API endpoint for recommendations if not already present.
 4. Iterate on weights/features and document findings.
+5. **Optional / when ready:** explore **learned user-side vectors** (see *Future: learned user embeddings* below)—not v1 scope, but a good v2/v3 direction once hybrid + data density justify it.
+
+### Future: learned user embeddings (v2 / v3)
+
+**v1** maps “the user” to a vector only through **frozen USE + text** (raw, structured, or train-pooled in `recs_004`). That is intentional: one space, cold-start friendly, no user-specific training loop.
+
+**Later**, it can be compelling to **train** user representations so they **optimize** (or at least target) your retrieval objective, e.g.:
+
+- **Two-tower / dual encoder** — user tower on history (review ids, text aggregates, or sequence) vs item tower; contrastive or sampled-softmax training on **(history → next like)**.
+- **Collaborative factors** — ALS / WMF / graph methods: user and item latent vectors from interaction matrix; blend with content similarity in hybrid reranking.
+- **Fine-tuned text encoder** — adapt the sentence model on Steam review data with a proper train/val objective (harder operationally; watch leakage and overfitting on sparse users).
+
+**Prereqs to do it seriously:** enough **dense interaction** or repeated engagement for many users (your EDA shows most users have very few reviews), a clear **split / time** protocol, and an explicit **cold-start** path (new users still use text-only or popularity). Revisit after **v1 retrieval + API** and an initial **v2 hybrid** baseline exist so you can compare “pooled text” vs “learned user vec + same candidates.”
 
 ## Pseudocode sketch (MVP retrieval)
 
@@ -242,9 +270,9 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 
 ## Idea only (not adopting): two query embeddings
 
-**Status:** recorded for later reference. **v1 stays as-is:** one structured preference paragraph → one query embedding → cosine vs game profiles.
+**Status:** recorded for later reference. **Current default:** one **raw** (or structured-ablation) string → one query embedding → cosine vs game profiles (`recs_003` / `recs_004`).
 
-Some teams split the user side into **two strings** embedded with the same model—e.g. positive intent vs things to avoid—then rank with something like `score = sim(q_pos, game) - λ * sim(q_neg, game)` (two dot products against the same game matrix; `recs_003` sketches this as `rank_with_negative_penalty`). That pushes negation to the **scoring** step instead of asking a single embedding to reconcile praise and criticism.
+Some teams split the user side into **two strings** embedded with the same model—e.g. positive intent vs things to avoid—then rank with something like `score = sim(q_pos, game) - λ * sim(q_neg, game)` (two dot products against the same game matrix; `recs_003` §8 sketches this as `rank_with_negative_penalty`). That pushes negation to the **scoring** step instead of asking a single embedding to reconcile praise and criticism.
 
-We are **not** pursuing this path for now; single-query structured retrieval remains the default product and eval setup.
+We are **not** pursuing this as the primary path for now; **`recs_003` §9** can still compare it for demos.
 

@@ -55,10 +55,10 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 - [x] **`recs_001`** — train split, thumbs-up table → `artifacts/recs/game_profile_reviews.parquet`
 - [x] **`recs_002`** — per-review embed, mean per `app_id`, L2 normalize → `game_profile_embeddings.npz` + index Parquet + `meta.json`
 - [x] **`recs_003`** — load artifacts, TF Hub query embed, dot-product **top‑K** (demo / smoke test)
-- [ ] **`recs_004`** — same-user held-out likes proxy on **val**: **raw vs structured** vs **random** + **popularity** baselines; optional **multi-review** mean/concat (`notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`)
-- [ ] **`extract_preferences` + `build_embedding_input`** — core v1 query text (not coaching); LLM or rules v0 OK
-- [ ] **Wire retrieval** — same `top_k` path; **default** embed = **raw** draft until structured wins on val; **structured** string as ablation / optional flag
-- [ ] **@K evaluation** — Precision@K / Recall@K / MAP@K / NDCG@K vs baselines (e.g. popularity); structured vs raw on fixed drafts; **user held-out likes** proxy (other `recommended` games by the same user — see **`docs/recommender_transition_plan.md`** → *Offline proxy task*)
+- [x] **`recs_004`** — same-user held-out likes proxy on **val**: **§3 ablation** — baselines, raw/structured, train-pool multi, time-weighted train (`notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`). **Caveat:** eval subset = multi-game-like users; see **`recommender_transition_plan.md`** → *Selection bias: multi-review vs single-review users*.
+- [x] **`extract_preferences` + `build_embedding_input`** — rules **v0** in `src/steam_review_ml/recommender/preferences.py` (not coaching); LLM upgrade optional
+- [x] **Wire retrieval (product/API)** — `ContentRetriever` in `steam_review_ml.recommender` (`retrieve.py`); optional FastAPI in `steam_review_ml.api` (`create_app`); **default** embed = **raw** (`structured=` flag)
+- [ ] **@K evaluation (extended)** — `recs_004` adds MAP@K / NDCG@K; still open: fixed-draft matrix, popularity-aware slices; **test** via `RECS004_EVAL_SPLIT=test` when frozen
 - [ ] **A/B matrix eval** — compare 4 variants on a fixed set: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index
 - [ ] **Negative profile sampling/balance policy** — for any dual-index run, cap/symmetrize pos/neg per-game review counts; guard against noisy/event-driven negatives
 - [ ] **API** — minimal endpoint: draft or prefs → recommendations (after eval loop is acceptable)
@@ -69,10 +69,10 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 | Phase | Status | Notes |
 |-------|--------|--------|
 | **Game index + demo retrieval (`recs_001`–`003`)** | **Done** | Notebooks: `game_embeddings/recs_001_*`, `recs_002_*`; `query_embeddings/recs_003_*`. Next work is **product path**, not re-embedding unless you change caps/model. |
-| **Preference extraction (structured path)** | Todo | `extract_preferences` + `build_embedding_input` → embedding **ablation**; beat **raw** on val proxy before making default. |
-| **Recommender v1 (product retrieval path)** | Todo | Reuse **`recs_003`** mechanics; **default** query = **raw** embed; optional structured + refactor into `src/` for API/tests. |
-| **Recommender @K evaluation** | Todo | Precision@K, Recall@K, MAP@K, NDCG@K vs. simple baselines (e.g. popularity); coverage/diversity as needed. Include **structured vs raw** and, where data allows, the **held-out same-user likes** proxy in the transition plan. |
-| **API: recommendations** | Todo | Expose v1 retrieval (then extend for v2). Can ship after a minimal v1 + eval loop exists. |
+| **Preference extraction (structured path)** | **Rules v0 done** | Module in `src/`; **ablation** vs raw — beat **raw** on val proxy (and popularity) before promoting to default. |
+| **Recommender v1 (product retrieval path)** | **Partial** | **`ContentRetriever.top_k`** + optional **`steam_review_ml.api`**; notebooks **`recs_003`** / **`recs_004`**; extend product integration as needed. |
+| **Recommender @K evaluation** | **Partial** | **`recs_004`**: Hit/Recall/MRR/MAP/NDCG; `RECS004_EVAL_SPLIT=test` for holdout; fixed drafts / slices still open. |
+| **API: recommendations** | **Partial** | FastAPI **`/recommendations`** behind `.[api]` extra; harden deploy + auth as needed. |
 | **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; blend similarity + priors/metadata + **optional** tabular scores (`p(recommended)`, expected helpful votes). ALS only when justified. |
 
 ### Supporting — data pipeline & tabular review models
@@ -93,8 +93,8 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 
 | Phase | Status | Notes |
 |-------|--------|--------|
-| **Evaluation** | Partial | Tabular: `docs/classification_metrics.md` + `steam_review_ml.evaluation` in notebooks. **Recommender @K** still Todo until v1 exists. |
-| **API / frontend (full product)** | Todo | FastAPI: draft → **preference extraction + recommendations** (core); optional tabular endpoints; **optional** coaching per product vision (separate from extraction). |
+| **Evaluation** | Partial | Tabular: `docs/classification_metrics.md` + `steam_review_ml.evaluation`. **Recommender:** `recs_004` proxy metrics on val; extended @K / test holdout still open. |
+| **API / frontend (full product)** | Todo | FastAPI: draft → **raw (default) or structured** embed → recommendations; optional tabular endpoints; **optional** coaching (separate). |
 
 \*Confirm in your checkout; paths and artifacts reflect a typical run.
 
