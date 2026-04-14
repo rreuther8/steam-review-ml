@@ -37,7 +37,7 @@ def create_app() -> Any:
             "ui": "/ui",
             "docs": "/docs",
             "health": "/health",
-            "games": "/games?q=civil&limit=30 (typeahead; omit q for first *limit* names A–Z)",
+            "games": "/games?q=civil&limit=30 (typeahead; omit q for first *limit* names A-Z)",
             "recommendations": "/recommendations?q=your+review+draft&k=10&exclude_app_id=8930",
         }
 
@@ -66,7 +66,7 @@ def create_app() -> Any:
         q: str | None = Query(
             None,
             max_length=200,
-            description="Substring on app name (case-insensitive). Omit to list the first *limit* games sorted A–Z.",
+            description="Substring on app name (case-insensitive). Omit to list the first *limit* games sorted A-Z.",
         ),
         limit: int = Query(50, ge=1, le=200),
     ) -> list[dict[str, Any]]:
@@ -89,7 +89,7 @@ def create_app() -> Any:
         k: int = Query(10, ge=1, le=500),
         structured: bool = Query(
             False,
-            description="If true, use extract_preferences → build_embedding_input",
+            description="Experimental path: If true, use extract_preferences → build_embedding_input; default is raw query embedding.",
         ),
         exclude_app_id: int | None = Query(
             None,

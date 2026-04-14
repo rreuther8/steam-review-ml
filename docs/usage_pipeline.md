@@ -149,6 +149,21 @@ After processed train Parquet exists, build **game profiles** (train split, posi
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`
 
+**4-way raw/structured comparison + regression baseline (recs_006):**
+
+- Build structured index artifact first: `notebooks/models/game_embeddings/recs_005_structured_game_embeddings.ipynb`
+- Run comparison/eval: `notebooks/models/query_embeddings/recs_006_eval_queries.ipynb`
+- Save/compare `raw_raw` regression guard:
+
+```bash
+python scripts/check_recs_006_regression.py
+```
+
+Decision/log artifacts:
+- `docs/retrieval_decision_log.md`
+- `artifacts/recs/active_retrieval_config.json`
+- `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
 **Programmatic retrieval (v1 wire)** — `steam_review_ml.recommender.ContentRetriever` loads `artifacts/recs/` and exposes `top_k(...)` (raw or structured). Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
 

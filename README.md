@@ -24,3 +24,9 @@ Supervised tasks support analysis and **v2 hybrid reranking**; the recommender *
 ## Usage
 
 - Pipeline run order and commands: `docs/usage_pipeline.md`
+- Retrieval decision log (current default + rationale): `docs/retrieval_decision_log.md`
+- Quick regression check after running `recs_006`:
+
+```bash
+python scripts/check_recs_006_regression.py
+```

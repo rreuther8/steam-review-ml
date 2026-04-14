@@ -56,7 +56,7 @@ Example blended score (illustrative only; tune on validation):
 
 - **Per-review profile table** (train, thumbs-up only): `artifacts/recs/game_profile_reviews.parquet` — one row per review; capped per game. **Game vector:** embed each row, **mean-pool per `app_id`**, L2-normalize (`recs_002`).
 
-**Notebooks:** `recs_001_game_profiles.ipynb` → `game_profile_reviews.parquet`. `recs_002_embed_game_profiles.ipynb` → `game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_same_user_proxy.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling).
+**Notebooks:** `recs_001_game_profiles.ipynb` → `game_profile_reviews.parquet`. `recs_002_embed_game_profiles.ipynb` → `game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_same_user_proxy.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_structured_game_embeddings.ipynb` → structured index artifacts (experimental). `recs_006_eval_queries.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV.
 
 - `vectorizer.pkl` (or embedding model reference)
 
@@ -228,7 +228,7 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 **v1**
 
 1. ~~Build `**game_profile_reviews.parquet`** from training reviews (`recs_001`), then **per-game vectors** (`recs_002`).~~ **Done** (see `docs/project_todo_plan.md` checklist).
-2. Implement **preference extraction** + `build_embedding_input` (**ablation** path); **default** retrieval embed = **raw** text until structured wins on **val** (`recs_004`).
+2. Implement **preference extraction** + `build_embedding_input` (**ablation** path); **default** retrieval embed = **raw** text until structured wins on **val** (`recs_004` / `recs_006`). Current decision is tracked in `docs/retrieval_decision_log.md`.
 3. **Demo done:** `recs_003` — retrieval + **§9** raw vs structured vs negative penalty. **`recs_004`** — val proxy vs **random** + **popularity** baselines; optional **multi-review** pooling.
 4. Evaluate with @K metrics; document vs. baselines; **raw vs structured** on val proxy (and fixed drafts as needed).
 5. Run an A/B matrix on fixed drafts: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index (if dual-index is available).
