@@ -11,7 +11,7 @@ We commit to **one ordering** so content retrieval and collaborative filtering a
 
 | Version | Role                                                                                                                                                   | Collaborative / ALS                                                                                                                                                                       |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **v1**  | **Preference extraction** (draft → structured taste) → **embed the structured query** → **content retrieval** vs game-profile vectors → similar games. | **Out of scope for v1.**                                                                                                                                                                  |
+| **v1**  | **Content retrieval** vs game-profile vectors: **default query = embed raw review text** (USE) until **structured** extraction wins on **validation** proxy metrics (`recs_004`); structured path = `extract_preferences` → `build_embedding_input` → embed (ablation / stress-query tool today). | **Out of scope for v1.**                                                                                                                                                                  |
 | **v2**  | **Hybrid ranking** on the **same candidate set** as v1: rerank with blended signals.                                                                   | **Planned upgrade:** ALS or item–item factors are **one** optional term alongside popularity, metadata, similarity priors, and optional tabular model scores — not a parallel v1 product. |
 
 
@@ -34,7 +34,7 @@ Same pattern for v1 and v2; v2 enriches stage 2 only.
 
 1. **Candidate generation**
   - Produce a shortlist of possible games.
-  - **v1:** **Structured preference text** (from `extract_preferences` + `build_embedding_input`) embedded and matched to **game profiles** — not raw draft embedding as the default product path. (You may still use raw-text embedding for **baselines / A–B evaluation**.)
+  - **v1:** **Embed the user’s review text (raw)** and match to **game profiles** — current **default** for USE + the **val same-user proxy** in `recs_004` (rules-based structured underperforms raw there). **Structured** text (`extract_preferences` + `build_embedding_input`) remains the **comparison / ablation** path until it **beats raw on validation** (or for targeted negation-heavy queries).
   - **v2 (optional):** widen or dedupe candidates if you add multiple generators; primary v1 path can remain similarity-based top‑M.
 2. **Ranking / scoring**
   - Re-rank candidates using blended signals.
@@ -56,15 +56,28 @@ Example blended score (illustrative only; tune on validation):
 
 - **Per-review profile table** (train, thumbs-up only): `artifacts/recs/game_profile_reviews.parquet` — one row per review; capped per game. **Game vector:** embed each row, **mean-pool per `app_id`**, L2-normalize (`recs_002`).
 
-**Notebooks:** `recs_001_game_profiles.ipynb` → `game_profile_reviews.parquet`. `recs_002_embed_game_profiles.ipynb` → `game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`).
+**Notebooks:** `recs_001_game_profile_reviews.ipynb` → `game_profile_reviews.parquet`. `recs_002_game_embeddings_raw.ipynb` → `game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve_smoke.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_proxy_same_user.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_game_embeddings_structured.ipynb` → structured index artifacts (experimental). `recs_006_eval_ablation_4way.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV.
 
 - `vectorizer.pkl` (or embedding model reference)
 
 ### Online flow
 
-**Core product path (v1):** `extract_preferences` (e.g. LLM → structured JSON) → `build_embedding_input` → **embed that string** → cosine similarity vs game profiles → top‑N. Noisy drafts become **high-signal query text** before vectorization.
+**Default retrieval query (v1, USE + current metrics):** **embed the raw draft / review** → cosine similarity vs game profiles → top‑N. Validated against the **held-out same-user likes** proxy on **val** in `recs_004`; **rules-based** structured text currently **trails** raw there.
 
-**Evaluation / ablation:** compare **raw draft → embed** vs **structured prefs → embed** on a fixed test set; improve extraction if the structured path does not win.
+**Structured path (ablation / product experiment):** `extract_preferences` (heuristic today; LLM optional later) → `build_embedding_input` → embed → same retrieval. Keep improving extraction and **re-check on val** before promoting structured to default.
+
+**Evaluation / ablation:** compare **raw → embed** vs **structured → embed** (and baselines) on **val**; reserve **test** for a final frozen run. `recs_004` adds **random** and **train popularity** baselines.
+
+**Raw vs structured (explicit):**
+
+- **Raw query** = embed the user draft as-is (**default** until structured wins on validation).
+- **Structured query** = run `extract_preferences` then `build_embedding_input`, and embed that normalized preference text (**ablation** / targeted use cases).
+
+**Negative preference handling (without external tags/metadata):**
+
+- Do not interpret lowest cosine as "opposite taste".
+- Use a positive+negative query formulation, e.g. `score = sim(q_pos, game) - lambda * sim(q_neg, game)`.
+- If adding a dual-index (`game_pos`, `game_neg`), sample/balance negatives carefully (caps/ratios) to avoid noisy/event-driven complaints dominating game vectors.
 
 **Review coaching** is **not** this step. It is an **optional**, **separate** product feature: feedback to help the user **write** a better review (rules, checklist, phrasing). It must **not** be conflated with preference extraction; do not use coaching output as the retrieval query unless you deliberately merge them (out of scope for the default design).
 
@@ -72,31 +85,80 @@ Example blended score (illustrative only; tune on validation):
 flowchart TB
   IN["User draft + optional metadata (e.g. playtime, liked/disliked games)"]
 
-  IN --> EXT["extract_preferences — CORE (e.g. LLM → JSON schema)"]
-  EXT --> BUILD["build_embedding_input (normalized preference paragraph)"]
-  BUILD --> SYNTH["Query text for embedding"]
-
-  SYNTH --> VEC["Vectorize (same model as game profiles)"]
+  IN --> VEC["Vectorize (same model as game profiles)"]
   VEC --> SIM["Cosine similarity vs game profile vectors"]
   SIM --> TOP["Top-N recommendations"]
+
+  IN -.->|ablation / experiment| EXT["extract_preferences (rules or LLM)"]
+  EXT --> BUILD["build_embedding_input"]
+  BUILD --> SYNTH["Structured query text"]
+  SYNTH -.-> VEC
 
   IN -.->|optional: separate product| COACH["Review coaching (rules / checklist / phrasing)"]
   COACH -.-> UI["Writer-facing feedback (not used for retrieval query)"]
 
-  IN -.->|ablation only| RAW["Raw draft → embed (baseline for eval)"]
-  RAW -.-> VEC
-
   style COACH stroke-dasharray: 5 5
   style UI stroke-dasharray: 5 5
-  style RAW stroke-dasharray: 5 5
-  style EXT stroke-width:2px
-  style BUILD stroke-width:2px
-  style SYNTH stroke-width:2px
+  style EXT stroke-dasharray: 5 5
+  style BUILD stroke-dasharray: 5 5
+  style SYNTH stroke-dasharray: 5 5
+  style VEC stroke-width:2px
+  style SIM stroke-width:2px
 ```
 
+## User representation beyond the current review (planned extension)
 
+The **default v1 retrieval path** today is **raw draft → embed** → cosine vs per-game profile vectors (see **Online flow** above). You also have **library / playtime / recency** and **the user’s other Steam reviews**. Those belong in the **same embedding space** as game profiles so you can combine **long-term taste**, **how the user writes about games**, and **this session’s intent** (`recs_004` **§3** ablation: **val** queries/labels; **train**-only text for **multi_mean_train** / **multi_concat_train** / **tw_train_mean_*** pooling.)
 
-This creates a true recommender quickly and matches the **write-a-review** moment.
+**Three complementary signals**
+
+1. **Behavioral user vector** — aggregate **game embeddings** over owned / played titles with weights from hours, recency, and engagement (vs backlog). Encodes *what they actually spend time in*.
+2. **Review-history user vector** — same pipeline as game profiles: embed **this user’s past reviews** (chunks or full text), then pool (mean, weighted by recency, etc.). Encodes *language and themes* behavior alone can miss.
+3. **Session query vector** — **current review** text or `build_embedding_input` output. Encodes *what they are judging right now* and steers retrieval within broad taste.
+
+**Fusion (implementation choices, still content-based)**
+
+- **Single retrieval:** e.g. `q_eff = normalize(α·u_behavior + β·u_reviews + γ·q_session)` then cosine vs game vectors (tune α, β, γ; shrink β or γ when history is sparse).
+- **Two-stage:** retrieve top‑M with **u_behavior** or **u_reviews**, then **rerank** with **q_session** (clear separation of “habit” vs “this review’s angle”).
+
+This remains **content-led**: no ALS required. It is **orthogonal** to **v2 hybrid** in this doc (tabular scores, optional ALS, priors)—those are extra **ranking** terms; user vectors are extra **retrieval / rerank** context in embedding space.
+
+**Cold start:** When hours or past reviews are few, rely more on **q_session** (and optional popularity priors already mentioned for v1). When history is rich, **u_behavior** and **u_reviews** stabilize recommendations and reduce overfitting to a single draft.
+
+```mermaid
+flowchart TB
+  subgraph behavioral["Behavioral signal"]
+    L["Owned games + hours + recency"]
+    L --> EB["Pool game embeddings → u_behavior"]
+  end
+
+  subgraph linguistic["Review corpus signal"]
+    UR["User's other reviews (same space as game profiles)"]
+    UR --> EU["Embed + aggregate → u_reviews"]
+  end
+
+  subgraph session["Write-moment signal (v1 core path)"]
+    DR["Current draft"]
+    DR --> EXT2["extract_preferences → build_embedding_input"]
+    EXT2 --> EQ["query_vec"]
+    DR -.->|ablation| RAW2["raw draft → embed"]
+    RAW2 -.-> EQ
+  end
+
+  EB --> FUSE{{Weighted sum or retrieve-then-rerank}}
+  EU --> FUSE
+  EQ --> FUSE
+
+  GAMES[("Game profile vectors (per app_id)")]
+  FUSE --> GAMES
+  GAMES --> TOP["Top-K recommendations"]
+
+  style EXT2 stroke-width:2px
+  style EQ stroke-width:2px
+  style FUSE stroke-width:2px
+```
+
+This creates a true recommender quickly and matches the **write-a-review** moment; the extension above adds **portfolio- and history-aware** context without changing the north star of **embedding-based retrieval vs game profiles**.
 
 ## Phase 2 — v2 (hybrid ranking)
 
@@ -127,16 +189,49 @@ Also track:
 - popularity bias
 - per-game / per-segment quality
 
+### Offline proxy task: other games the same user liked
+
+The dataset is **multi-review**: many users have reviewed more than one game. That supports a **concrete relevance definition** without LLM labels or live traffic:
+
+1. **Positive labels (per evaluation example)** — For user *u*, pick a **query review** (text of one of their reviews, optionally the game under review as context you exclude from candidates). Treat **other games *u* reviewed with `recommended == true`** (thumbs-up) as **relevant** items for retrieval—held out so they are not the query game.
+2. **Query** — Embed that review (raw or structured path). Retrieve top‑K over the **game index** (excluding the query `app_id`).
+3. **Metrics** — **Recall@K**, **HitRate@K**, **MRR**, **NDCG@K** if you add graded relevance (e.g. weight by `votes_helpful` only as a *secondary* experiment—mind leakage and “helpful ≠ good rec”).
+4. **Splits** — Hold out by **user** or **time** so you are not evaluating on the same review-generation process you “trained” heuristics on; cap how many positives exist per user so metrics are interpretable.
+
+**Caveats (call these out in any write-up):** sparse users (one review only → skip or use global baselines); **franchise / sequel** correlation; **cold users**; positives are **retrospective** (“they liked it enough to review”) not **counterfactual** (“they would have liked a suggestion”).
+
+### Selection bias: multi-review vs single-review users (important)
+
+`recs_004` (and any “same-user other likes” proxy) only includes users who have **at least two** indexed thumbs-up games in the **eval split**, so the **label set** (other likes) exists. In practice that is a **small fraction** of all accounts in typical Steam samples; many users have **zero or one** review in the corpus.
+
+**That subset is not a random draw of “all users.”** Multi-review / multi-game-like users can differ systematically from single-review or non-reviewing users in ways that affect both **metrics** and **product**:
+
+- **Engagement** — they write more; they may be heavier platform users or more inclined to review.
+- **Taste breadth** — more distinct liked games changes co-like structure and how hard recall@K is.
+- **Text behavior** — review length, style, and vocabulary may differ from one-shot writers; the same embedding model may transfer differently.
+- **Coverage** — users with **no** review text are a different problem entirely for **content-only** retrieval (cold start); this proxy says nothing about them unless you add other signals (metadata, implicit data, etc.).
+
+**What to claim:** Offline numbers from `recs_004` are best read as performance on **“users for whom we can define this task”** (multi-game likes in val), **not** as an automatic estimate for the **full user base**. In interviews: *“We subset to users with ≥2 likes so positives are defined; that cohort is skewed vs everyone, so we treat these metrics as a defined slice, not a population average—single-review and cold users need separate framing or experiments.”*
+
+**Optional follow-ups:** report the **fraction** of users in each bucket (see EDA on reviews per user); stratify metrics by review-count decile where sample size allows; pair with **popularity / metadata** baselines that do not rely on user text for cold users.
+
+**Split hygiene:** `recs_004` reads query rows from **`steam_reviews_cleaned_english_val_norm.parquet`** so **test** stays a true final holdout. Use **`test_norm`** only for a **one-shot** report after you freeze the method.
+
+**Baselines in `recs_004`:** **random** ranking (query game masked) and **popularity** (train thumbs-up counts per `app_id`) contextualize raw vs structured scores.
+
+This proxy is **aligned with content-based retrieval** you already built: if neighbor games in embedding space match **other likes** of the same user, the pipeline is doing something right—compare **raw vs structured vs negative-penalty** on the **same** held-out sets.
+
 ## Concrete next tasks (execution order)
 
-**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **preference extraction + content retrieval + @K** for recommendations. **Game index:** `recs_001` → `game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K smoke test.
+**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **content retrieval + validation metrics** (raw embed default today; structured as ablation). **Game index:** `recs_001` → `game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K; **`recs_004`** → val proxy vs baselines.
 
 **v1**
 
 1. ~~Build `**game_profile_reviews.parquet`** from training reviews (`recs_001`), then **per-game vectors** (`recs_002`).~~ **Done** (see `docs/project_todo_plan.md` checklist).
-2. Implement **preference extraction** + `build_embedding_input` (core query path); keep **raw-embed** only for **A/B** vs structured query.
-3. **Demo done:** `recs_003` — similarity retrieval + top‑K with a **hand-written** query. **Still to do:** same pipeline with **structured** query from step 2.
-4. Evaluate with @K metrics; document vs. simple baselines (e.g. popularity); include **raw vs structured embedding** comparison on fixed drafts.
+2. Implement **preference extraction** + `build_embedding_input` (**ablation** path); **default** retrieval embed = **raw** text until structured wins on **val** (`recs_004` / `recs_006`). Current decision is tracked in `docs/retrieval_decision_log.md`.
+3. **Demo done:** `recs_003` — retrieval + **§9** raw vs structured vs negative penalty. **`recs_004`** — val proxy vs **random** + **popularity** baselines; optional **multi-review** pooling.
+4. Evaluate with @K metrics; document vs. baselines; **raw vs structured** on val proxy (and fixed drafts as needed).
+5. Run an A/B matrix on fixed drafts: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index (if dual-index is available).
 
 **v2 (after v1 baseline exists)**
 
@@ -144,18 +239,40 @@ Also track:
 2. Optionally fold in `recommended` / helpfulness model scores as features.
 3. Add a simple API endpoint for recommendations if not already present.
 4. Iterate on weights/features and document findings.
+5. **Optional / when ready:** explore **learned user-side vectors** (see *Future: learned user embeddings* below)—not v1 scope, but a good v2/v3 direction once hybrid + data density justify it.
+
+### Future: learned user embeddings (v2 / v3)
+
+**v1** maps “the user” to a vector only through **frozen USE + text** (raw, structured, or train-pooled in `recs_004`). That is intentional: one space, cold-start friendly, no user-specific training loop.
+
+**Later**, it can be compelling to **train** user representations so they **optimize** (or at least target) your retrieval objective, e.g.:
+
+- **Two-tower / dual encoder** — user tower on history (review ids, text aggregates, or sequence) vs item tower; contrastive or sampled-softmax training on **(history → next like)**.
+- **Collaborative factors** — ALS / WMF / graph methods: user and item latent vectors from interaction matrix; blend with content similarity in hybrid reranking.
+- **Fine-tuned text encoder** — adapt the sentence model on Steam review data with a proper train/val objective (harder operationally; watch leakage and overfitting on sparse users).
+
+**Prereqs to do it seriously:** enough **dense interaction** or repeated engagement for many users (your EDA shows most users have very few reviews), a clear **split / time** protocol, and an explicit **cold-start** path (new users still use text-only or popularity). Revisit after **v1 retrieval + API** and an initial **v2 hybrid** baseline exist so you can compare “pooled text” vs “learned user vec + same candidates.”
 
 ## Pseudocode sketch (MVP retrieval)
 
 ```python
-# Core path: structured preferences -> vectorize -> cosine similarity -> top_k
-# prefs = extract_preferences(user_text, optional_context)
-# query_text = build_embedding_input(prefs)
-# user_vec = vectorizer.transform([query_text])
+# Default path (today): raw draft -> vectorize -> cosine similarity -> top_k
+# user_vec = vectorizer.transform([user_text])
 # sims = cosine_similarity(user_vec, game_profile_matrix).ravel()
 # top_idx = np.argsort(-sims)[:10]
 # recommendations = game_profiles.iloc[top_idx][["app_id", "app_name"]]
 
-# Ablation: same pipeline with query_text = user_text (raw draft)
+# Ablation: structured preferences -> same retrieval
+# prefs = extract_preferences(user_text, optional_context)
+# query_text = build_embedding_input(prefs)
+# user_vec = vectorizer.transform([query_text])
 ```
+
+## Idea only (not adopting): two query embeddings
+
+**Status:** recorded for later reference. **Current default:** one **raw** (or structured-ablation) string → one query embedding → cosine vs game profiles (`recs_003` / `recs_004`).
+
+Some teams split the user side into **two strings** embedded with the same model—e.g. positive intent vs things to avoid—then rank with something like `score = sim(q_pos, game) - λ * sim(q_neg, game)` (two dot products against the same game matrix; `recs_003` §8 sketches this as `rank_with_negative_penalty`). That pushes negation to the **scoring** step instead of asking a single embedding to reconcile praise and criticism.
+
+We are **not** pursuing this as the primary path for now; **`recs_003` §9** can still compare it for demos.
 

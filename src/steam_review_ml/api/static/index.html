@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Review → recommendations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1218;
+      --panel: #181c24;
+      --border: #2a3140;
+      --text: #e8eaef;
+      --muted: #8b93a5;
+      --accent: #6ee7b7;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.75rem;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+    }
+    .field { margin-bottom: 1.25rem; position: relative; }
+    input[type="text"], input[type="number"], textarea {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 1rem;
+    }
+    textarea { min-height: 8rem; resize: vertical; }
+    input:focus, textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .dropdown {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      margin-top: 4px;
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #1e232e;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+      z-index: 10;
+      display: none;
+    }
+    .dropdown.open { display: block; }
+    .dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    .dropdown button:hover, .dropdown button:focus {
+      background: #2a3142;
+    }
+    .dropdown .meta {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .selected-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      padding: 0.35rem 0.65rem;
+      background: #243033;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      border: 1px solid var(--border);
+    }
+    .selected-pill button {
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0 0.15rem;
+    }
+    .selected-pill button:hover { color: var(--danger); }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-end;
+    }
+    .row .field { flex: 1; min-width: 8rem; margin-bottom: 0; }
+    label.checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .primary {
+      margin-top: 1rem;
+      padding: 0.7rem 1.25rem;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #0f1218;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .primary:hover { filter: brightness(1.05); }
+    .primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .status {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: var(--danger);
+      min-height: 1.25rem;
+    }
+    .results {
+      margin-top: 2rem;
+    }
+    .results h2 {
+      font-size: 1rem;
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+    }
+    ol.results-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    ol.results-list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--border);
+      align-items: baseline;
+    }
+    ol.results-list .name { font-weight: 500; }
+    ol.results-list .score {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Steam review → similar games</h1>
+    <p class="sub">Pick the game you’re reviewing (so it’s hidden from results), paste your draft, then get content-based picks from the same embedding space as <code>recs_002</code>.</p>
+
+    <div class="field">
+      <label for="gameSearch">Game you’re reviewing</label>
+      <input type="text" id="gameSearch" autocomplete="off" placeholder="Start typing a game name…" />
+      <div id="gameDropdown" class="dropdown" role="listbox" aria-label="Matching games"></div>
+      <div id="selectedWrap" hidden>
+        <div class="selected-pill">
+          <span id="selectedLabel"></span>
+          <button type="button" id="clearGame" title="Clear">×</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="review">Review draft</label>
+      <textarea id="review" placeholder="What you liked, what you didn’t, style of game you want next…"></textarea>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="k">How many results (k)</label>
+        <input type="number" id="k" min="1" max="500" value="10" />
+      </div>
+      <div class="field">
+        <label class="checkbox">
+          <input type="checkbox" id="structured" />
+          Structured query (experimental; default is raw query embedding)
+        </label>
+      </div>
+    </div>
+
+    <button type="button" class="primary" id="go">Get recommendations</button>
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <section class="results" id="resultsSection" hidden>
+      <h2>Recommendations</h2>
+      <ol class="results-list" id="resultsList"></ol>
+    </section>
+  </main>
+
+  <script>
+    const gameSearch = document.getElementById("gameSearch");
+    const gameDropdown = document.getElementById("gameDropdown");
+    const selectedWrap = document.getElementById("selectedWrap");
+    const selectedLabel = document.getElementById("selectedLabel");
+    const clearGame = document.getElementById("clearGame");
+    const review = document.getElementById("review");
+    const kInput = document.getElementById("k");
+    const structuredEl = document.getElementById("structured");
+    const goBtn = document.getElementById("go");
+    const statusEl = document.getElementById("status");
+    const resultsSection = document.getElementById("resultsSection");
+    const resultsList = document.getElementById("resultsList");
+
+    let selectedAppId = null;
+    let debounceTimer = null;
+
+    function setStatus(msg) {
+      statusEl.textContent = msg || "";
+    }
+
+    function closeDropdown() {
+      gameDropdown.classList.remove("open");
+      gameDropdown.innerHTML = "";
+    }
+
+    function selectGame(appId, appName) {
+      selectedAppId = appId;
+      selectedLabel.textContent = appName + " (" + appId + ")";
+      selectedWrap.hidden = false;
+      gameSearch.value = "";
+      closeDropdown();
+      gameSearch.placeholder = "Change game…";
+    }
+
+    clearGame.addEventListener("click", () => {
+      selectedAppId = null;
+      selectedWrap.hidden = true;
+      gameSearch.placeholder = "Start typing a game name…";
+      setStatus("");
+    });
+
+    async function fetchGames(q) {
+      const params = new URLSearchParams();
+      if (q.trim()) params.set("q", q.trim());
+      params.set("limit", "30");
+      const r = await fetch("/games?" + params.toString());
+      if (!r.ok) throw new Error("Games search failed (" + r.status + ")");
+      return r.json();
+    }
+
+    function renderDropdown(items) {
+      gameDropdown.innerHTML = "";
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.style.padding = "0.6rem 0.75rem";
+        empty.style.color = "var(--muted)";
+        empty.textContent = "No matches";
+        gameDropdown.appendChild(empty);
+        gameDropdown.classList.add("open");
+        return;
+      }
+      items.forEach((g) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        const title = document.createElement("div");
+        title.textContent = g.app_name;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = "app_id: " + g.app_id;
+        btn.appendChild(title);
+        btn.appendChild(meta);
+        btn.addEventListener("click", () => selectGame(g.app_id, g.app_name));
+        gameDropdown.appendChild(btn);
+      });
+      gameDropdown.classList.add("open");
+    }
+
+    gameSearch.addEventListener("input", () => {
+      const q = gameSearch.value;
+      clearTimeout(debounceTimer);
+      if (!q.trim()) {
+        closeDropdown();
+        return;
+      }
+      debounceTimer = setTimeout(async () => {
+        try {
+          const items = await fetchGames(q);
+          renderDropdown(items);
+        } catch (e) {
+          setStatus(e.message);
+          closeDropdown();
+        }
+      }, 220);
+    });
+
+    gameSearch.addEventListener("focus", async () => {
+      const q = gameSearch.value;
+      if (q.trim()) return;
+      try {
+        const items = await fetchGames("");
+        renderDropdown(items);
+      } catch (e) {
+        setStatus(e.message);
+      }
+    });
+
+    document.addEventListener("click", (ev) => {
+      if (!gameSearch.contains(ev.target) && !gameDropdown.contains(ev.target)) {
+        closeDropdown();
+      }
+    });
+
+    goBtn.addEventListener("click", async () => {
+      setStatus("");
+      resultsSection.hidden = true;
+      resultsList.innerHTML = "";
+
+      const text = review.value.trim();
+      if (!text) {
+        setStatus("Enter some review text.");
+        return;
+      }
+      if (selectedAppId == null) {
+        setStatus("Choose the game you’re reviewing from the dropdown (so it can be excluded from results).");
+        return;
+      }
+
+      const k = Math.min(500, Math.max(1, parseInt(kInput.value, 10) || 10));
+      const params = new URLSearchParams();
+      params.set("q", text);
+      params.set("k", String(k));
+      if (structuredEl.checked) params.set("structured", "true");
+      params.set("exclude_app_id", String(selectedAppId));
+
+      goBtn.disabled = true;
+      try {
+        const r = await fetch("/recommendations?" + params.toString());
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || "Request failed (" + r.status + ")");
+        }
+        const data = await r.json();
+        data.forEach((row, i) => {
+          const li = document.createElement("li");
+          const name = document.createElement("span");
+          name.className = "name";
+          name.textContent = (i + 1) + ". " + row.app_name;
+          const score = document.createElement("span");
+          score.className = "score";
+          score.textContent = typeof row.score === "number" ? row.score.toFixed(4) : row.score;
+          li.appendChild(name);
+          li.appendChild(score);
+          resultsList.appendChild(li);
+        });
+        resultsSection.hidden = false;
+      } catch (e) {
+        setStatus(e.message);
+      } finally {
+        goBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

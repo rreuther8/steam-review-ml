@@ -2,16 +2,16 @@
 
 ## Alignment with the recommender transition plan
 
-The **[recommender transition plan](recommender_transition_plan.md)** sets the **north star**: **v1** = **preference extraction** (core) + **content-led retrieval** (structured query → embed → game profiles), then **@K metrics**, then **v2 hybrid** reranking. **Review coaching** is **optional** and **separate** from preference extraction (see product vision). **ALS / collaborative filtering is deferred** until after that baseline exists.
+The **[recommender transition plan](recommender_transition_plan.md)** sets the **north star**: **v1** = **content-led retrieval** (embed **raw** review vs game profiles as **default** until structured beats raw on **val**; **structured** = `extract_preferences` + `build_embedding_input` as **ablation**), then **@K / proxy metrics**, then **v2 hybrid** reranking. **Preference extraction** stays in scope as product/experiment tooling, not the default embed until validated. **Review coaching** is **optional** and **separate** from preference extraction (see product vision). **ALS / collaborative filtering is deferred** until after that baseline exists.
 
 This todo list follows that priority:
 
 | Lane | Role |
 |------|------|
-| **Primary** | **Preference extraction** + game profiles + similarity retrieval → @K evaluation → API for recommendations → v2 hybrid. |
+| **Primary** | Game profiles + similarity retrieval (**raw embed default**; structured when it wins on val) → proxy / @K evaluation → API → v2 hybrid. **Preference extraction** supports structured path and UX. |
 | **Supporting** | Data pipeline, **tabular** `recommended` / `votes_helpful` models (baselines + simple learners). These support **analysis** and **optional v2 features**; they are **not** a replacement for extraction + retrieval. |
 
-If time is tight, **do not** let tabular modeling block **preference extraction + game profiles + similarity retrieval**.
+If time is tight, **do not** let tabular modeling block **game profiles + similarity retrieval + proxy eval**; structured extraction can iterate in parallel.
 
 ---
 
@@ -36,17 +36,17 @@ If time is tight, **do not** let tabular modeling block **preference extraction 
   - **Tests:** `tests/test_preprocess.py` for filtering and feature selection.
 
 - **Tabular baselines & simple models (supporting lane)** — under `notebooks/models/tabular/`:  
-  - `model_000_dumb_002.ipynb` — dumb baselines for **`recommended`** and **`_norm_votes_helpful`**.  
-  - `model_001_linreg__votes_helpful.ipynb` — baselines + **linear regression** on normalized helpful votes; metrics e.g. `artifacts/metrics/votes_helpful_metrics.csv` when run.  
-  - `model_002_logreg__recommended.ipynb` — baselines + **logistic regression** on `recommended` (full numeric feature set + 3-feature variant).  
+  - `model_000_baseline_dumb.ipynb` — dumb baselines for **`recommended`** and **`_norm_votes_helpful`**.  
+  - `model_001_regression_votes_helpful.ipynb` — baselines + **linear regression** on normalized helpful votes; metrics e.g. `artifacts/metrics/votes_helpful_metrics.csv` when run.  
+  - `model_002_classification_recommended.ipynb` — baselines + **logistic regression** on `recommended` (full numeric feature set + 3-feature variant).  
 
-- **Recommender v1 (primary lane) — content index + demo retrieval** — notebooks under `notebooks/models/game_embeddings/` and `notebooks/models/query_embeddings/`: **`recs_001_game_profiles.ipynb`** → **`game_profile_reviews.parquet`**; **`recs_002_embed_game_profiles.ipynb`** → dense **per-game** vectors (TF Hub USE, mean pool, L2 norm); **`recs_003_query_retrieve.ipynb`** → hand-written query → embed → **top‑K** vs `X`. Artifacts: **`artifacts/recs/`**.
+- **Recommender v1 (primary lane) — content index + demo retrieval** — notebooks under `notebooks/models/game_embeddings/` and `notebooks/models/query_embeddings/`: **`recs_001_game_profile_reviews.ipynb`** → **`game_profile_reviews.parquet`**; **`recs_002_game_embeddings_raw.ipynb`** → dense **per-game** vectors (TF Hub USE, mean pool, L2 norm); **`recs_003_query_retrieve_smoke.ipynb`** → hand-written query → embed → **top‑K** vs `X`. Artifacts: **`artifacts/recs/`**.
 
 ---
 
 ## Roadmap (by lane)
 
-**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles + demo retrieval (**done**), then **preference extraction** + `build_embedding_input`, wire that into the same retrieval, **raw vs structured embedding** comparison, @K eval, then API and v2.
+**Suggested execution order for the primary lane** matches **`docs/recommender_transition_plan.md`** → game profiles + demo retrieval (**done**), **`recs_004`** proxy on val (**raw default** vs structured + baselines), iterate **preference extraction** until structured wins if desired, then API and v2.
 
 ### v1 recommender — living checklist (update as you go)
 
@@ -55,9 +55,13 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 - [x] **`recs_001`** — train split, thumbs-up table → `artifacts/recs/game_profile_reviews.parquet`
 - [x] **`recs_002`** — per-review embed, mean per `app_id`, L2 normalize → `game_profile_embeddings.npz` + index Parquet + `meta.json`
 - [x] **`recs_003`** — load artifacts, TF Hub query embed, dot-product **top‑K** (demo / smoke test)
-- [ ] **`extract_preferences` + `build_embedding_input`** — core v1 query text (not coaching); LLM or rules v0 OK
-- [ ] **Wire retrieval** — same `top_k` path with **structured** query string; keep **raw draft → embed** as an ablation only
-- [ ] **@K evaluation** — Precision@K / Recall@K / MAP@K / NDCG@K vs baselines (e.g. popularity); structured vs raw on fixed drafts
+- [x] **`recs_004`** — same-user held-out likes proxy on **val**: **§3 ablation** — baselines, raw/structured, train-pool multi, time-weighted train (`notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`). **Caveat:** eval subset = multi-game-like users; see **`recommender_transition_plan.md`** → *Selection bias: multi-review vs single-review users*.
+- [x] **`extract_preferences` + `build_embedding_input`** — rules **v0** in `src/steam_review_ml/recommender/preferences.py` (not coaching); LLM upgrade optional
+- [x] **Wire retrieval (product/API)** — `ContentRetriever` in `steam_review_ml.recommender` (`retrieve.py`); optional FastAPI in `steam_review_ml.api` (`create_app`); **default** embed = **raw** (`structured=` flag)
+- [ ] **@K evaluation (extended)** — `recs_004` adds MAP@K / NDCG@K; still open: fixed-draft matrix, popularity-aware slices; **test** via `RECS004_EVAL_SPLIT=test` when frozen
+- [ ] **A/B matrix eval** — compare 4 variants on a fixed set: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index
+- [ ] **Optional exploration: stronger embedding model for structured text** — rerun `recs_006` 4-way matrix with an LLM embedding model (same splits/seeds) to test whether structured query/index text gains appear when moving beyond USE.
+- [ ] **Negative profile sampling/balance policy** — for any dual-index run, cap/symmetrize pos/neg per-game review counts; guard against noisy/event-driven negatives
 - [ ] **API** — minimal endpoint: draft or prefs → recommendations (after eval loop is acceptable)
 - [ ] **v2 hybrid** — defer until baseline above holds; see transition plan
 
@@ -66,10 +70,10 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 | Phase | Status | Notes |
 |-------|--------|--------|
 | **Game index + demo retrieval (`recs_001`–`003`)** | **Done** | Notebooks: `game_embeddings/recs_001_*`, `recs_002_*`; `query_embeddings/recs_003_*`. Next work is **product path**, not re-embedding unless you change caps/model. |
-| **Preference extraction (core v1)** | Todo | `extract_preferences` + `build_embedding_input` → text for embedding. **Not** coaching; separate module. Prompt/schema v0 acceptable; validate vs raw-embed baseline. |
-| **Recommender v1 (product retrieval path)** | Todo | Reuse **`recs_003`** mechanics with **structured** query from extraction; optional refactor into `src/` for API/tests. |
-| **Recommender @K evaluation** | Todo | Precision@K, Recall@K, MAP@K, NDCG@K vs. simple baselines (e.g. popularity); coverage/diversity as needed. Include **structured vs raw** query comparison on fixed drafts. |
-| **API: recommendations** | Todo | Expose v1 retrieval (then extend for v2). Can ship after a minimal v1 + eval loop exists. |
+| **Preference extraction (structured path)** | **Rules v0 done** | Module in `src/`; **ablation** vs raw — beat **raw** on val proxy (and popularity) before promoting to default. |
+| **Recommender v1 (product retrieval path)** | **Partial** | **`ContentRetriever.top_k`** + optional **`steam_review_ml.api`**; notebooks **`recs_003`** / **`recs_004`**; extend product integration as needed. |
+| **Recommender @K evaluation** | **Partial** | **`recs_004`**: Hit/Recall/MRR/MAP/NDCG; `RECS004_EVAL_SPLIT=test` for holdout; fixed drafts / slices still open. |
+| **API: recommendations** | **Partial** | FastAPI **`/recommendations`** behind `.[api]` extra; harden deploy + auth as needed. |
 | **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; blend similarity + priors/metadata + **optional** tabular scores (`p(recommended)`, expected helpful votes). ALS only when justified. |
 
 ### Supporting — data pipeline & tabular review models
@@ -90,8 +94,8 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 
 | Phase | Status | Notes |
 |-------|--------|--------|
-| **Evaluation** | Partial | Tabular: `docs/classification_metrics.md` + `steam_review_ml.evaluation` in notebooks. **Recommender @K** still Todo until v1 exists. |
-| **API / frontend (full product)** | Todo | FastAPI: draft → **preference extraction + recommendations** (core); optional tabular endpoints; **optional** coaching per product vision (separate from extraction). |
+| **Evaluation** | Partial | Tabular: `docs/classification_metrics.md` + `steam_review_ml.evaluation`. **Recommender:** `recs_004` proxy metrics on val; extended @K / test holdout still open. |
+| **API / frontend (full product)** | Todo | FastAPI: draft → **raw (default) or structured** embed → recommendations; optional tabular endpoints; **optional** coaching (separate). |
 
 \*Confirm in your checkout; paths and artifacts reflect a typical run.
 

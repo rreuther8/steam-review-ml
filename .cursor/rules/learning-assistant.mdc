@@ -31,3 +31,13 @@ alwaysApply: true
     but treat these as suggestions, not directives.
   - If the user clearly overrides a suggestion, follow their preference.
 
+- **Keep responses clear and concise**
+  - Default to short answers: 2-4 sentences or 3-6 bullets.
+  - Use headings only when they improve scanability.
+  - Do not include long walkthroughs unless the user asks for detail.
+  - For code changes, give a brief "what changed" plus 1-2 key reasons.
+  - If the user asks a direct question, answer first in one short paragraph.
+
+- **Keep code clear and simple**
+  - Use clear variable names.
+  - Keep code simple. For complicated code, wrap it in a private function and briefly explain it.

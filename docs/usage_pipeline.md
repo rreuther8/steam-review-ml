@@ -99,25 +99,75 @@ Use the **`data/processed/..._norm.parquet`** files (raw columns are still prese
 
 These live under **`notebooks/models/tabular/`** (numeric / engineered features — separate from recommender work).
 
-- `notebooks/models/tabular/model_000_dumb_002.ipynb`
-- `notebooks/models/tabular/model_001_linreg__votes_helpful.ipynb`
-- `notebooks/models/tabular/model_002_logreg__recommended.ipynb`
+- `notebooks/models/tabular/model_000_baseline_dumb.ipynb`
+- `notebooks/models/tabular/model_001_regression_votes_helpful.ipynb`
+- `notebooks/models/tabular/model_002_classification_recommended.ipynb`
 
 ## 7) Recommender artifacts (v1)
 
+**TensorFlow + TensorFlow Hub** (for `recs_002`–`recs_004`, `ContentRetriever`, and the optional API): use **conda-forge** for the TF stack, then install this repo with pip (no `tensorflow` from PyPI in the same env).
+
+**NVIDIA Blackwell (e.g. RTX 5070, sm_120):** PyPI wheels are built with a fixed set of SMs (often up through **sm_90**). They may **not register your GPU** (empty `list_physical_devices("GPU")`) or hit library/ cuDNN errors. Conda-forge’s **GPU** builds are labeled with **`cuda128`** in the package build string (CUDA 12.8) and include **sm_120** in `get_build_info()` when you need native Blackwell kernels.
+
+```bash
+conda activate <your-env>
+# Remove any pip TensorFlow metapackage so conda owns the namespace:
+pip uninstall -y tensorflow tensorflow-intel 2>/dev/null || true
+
+# Prefer a CUDA 12.8 GPU build (build string contains cuda128, not cpu_):
+conda install -c conda-forge "tensorflow==2.19.1=*cuda128*" tensorflow-hub
+
+pip install -e .
+pip install -e '.[api]'   # optional: FastAPI server
+```
+
+**Sanity checks**
+
+- `conda list tensorflow` — **Build** should look like `cuda128py311h…`, not `pypi` or `cpu_py…`.
+- After `import tensorflow as tf`, `tf.sysconfig.get_build_info()["cuda_compute_capabilities"]` should list **`sm_120`** / **`compute_120`** (not only through `compute_90`).
+- Jupyter: kernel must be **this** conda env (not another env that still has pip TF 2.2x).
+
+If the solver still picks a **cpu** build, tighten constraints or create a fresh env with `conda-forge` as the only channel for TF-related packages.
+
+Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extra that replaces this. For **pip-only** environments (e.g. a minimal container), use `pip install -e '.[recs-pip]'` instead — do **not** mix that with conda-managed TensorFlow.
+
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
-- Notebook: `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
+- Notebook: `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
 - Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
 
-**Dense game vectors** (TensorFlow + TensorFlow Hub; see `pyproject.toml` `[recs]` extra and `recs_002` notebook):
+**Dense game vectors** (TensorFlow + TensorFlow Hub; see TF install notes above and `recs_002` notebook):
 
-- Notebook: `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
+- Notebook: `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
 - Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
 
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 
-- Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb`
+- Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb`
+
+**Offline eval (same-user held-out likes proxy)** — default **val** queries (`*_val_norm.parquet`); **raw / structured** vs **random** and **train popularity**; train-pool multi + time windows; **MAP@K** / **NDCG@K**. For a **one-shot test holdout** after freezing the method: `RECS004_EVAL_SPLIT=test` (requires `*_test_norm.parquet`).
+
+- Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
+
+**4-way raw/structured comparison + regression baseline (recs_006):**
+
+- Build structured index artifact first: `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
+- Run comparison/eval: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
+- Save/compare `raw_raw` regression guard:
+
+```bash
+python scripts/check_recs_006_regression.py
+```
+
+Decision/log artifacts:
+- `docs/retrieval_decision_log.md`
+- `artifacts/recs/active_retrieval_config.json`
+- `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
+**Programmatic retrieval (v1 wire)** — `steam_review_ml.recommender.ContentRetriever` loads `artifacts/recs/` and exposes `top_k(...)` (raw or structured). Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
+`uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
+
+Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** set to the selected game so it never appears in results.
 
 See `docs/recommender_transition_plan.md` for the full v1 path.
 
@@ -129,9 +179,11 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 4. (Optional) run tabular modeling notebooks
-5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
-6. (Optional) install recs extras and run `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
-7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb` after `recs_002` artifacts exist
+5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
+7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after `recs_002` artifacts exist
+8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for proxy metrics (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
+9. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
 
 
 

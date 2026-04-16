@@ -1,0 +1,43 @@
+# Retrieval Decision Log
+
+## 2026-04-14: Default retrieval path
+
+Decision:
+- Use `raw_query + raw_index` as the default serving path.
+- Keep structured query/index paths available as experimental ablations only.
+
+Why:
+- In the apples-to-apples 4-way same-user proxy comparison (`recs_006`), `raw_raw` is best across ranking metrics.
+- `structured_structured` is the closest experimental variant, but still below `raw_raw` on current data.
+
+Evidence:
+- Notebook: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
+- Metrics artifact: `artifacts/recs/eval_review_style_4way_proxy_metrics.csv`
+- Active baseline snapshot: `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
+Serving implications:
+- API default remains `structured=false`.
+- UI keeps the structured toggle as opt-in and labeled experimental.
+
+Regression policy:
+- Before changing retrieval behavior or index build logic, rerun `recs_006`.
+- Compare fresh `raw_raw` metrics against `eval_review_style_4way_proxy_baseline_raw_raw.json`.
+- Treat drops beyond tolerance as regressions to investigate before promoting.
+
+## 2026-04-16: Qualitative review + failure tags checkpoint
+
+Decision:
+- Keep `raw_query + raw_index` as the default v1 serving path.
+- Keep structured paths as optional experiments only.
+
+Why:
+- Manual review in `recs_007` remains mostly positive overall, but failure analysis shows recurring top-rank issues (`bad_top_1`, occasional `flipped_rank`) rather than a structured-path win signal.
+- Current evidence still supports raw as the safest default for user-facing behavior.
+
+Evidence:
+- Notebook: `notebooks/models/query_embeddings/recs_007_eval_qual_user_facing.ipynb`
+- Manual labels/tags: `notebooks/models/query_embeddings/failure_tags.yaml`
+
+Serving implications:
+- API default is explicitly pinned to `structured=false` in `src/steam_review_ml/api/app.py`.
+- Structured retrieval remains opt-in for exploration.
