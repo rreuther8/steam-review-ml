@@ -1,0 +1,126 @@
+tag_definitions:
+  bad_top_1: "The top-1 game is not a good match for the quality label."
+  flipped_rank: "One of the other top-3 games should have been ranked #1."
+  bad_top_3: "At least one of the top-3 games is not a good match for the quality label."
+
+reviews:
+  - id: r001
+    quality_label: good
+    failure_tags: [flipped_rank]
+    notes: "Titan Souls does not have parrying, but is still a good combat game."
+  - id: r002
+    quality_label: good
+    failure_tags: []
+    notes: "Great."
+  - id: r003
+    quality_label: good
+    failure_tags: [bad_top_1]
+    notes: "Sniper Elite is not a turn-based tactics game, though it is very tactical."
+  - id: r004
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r005
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r006
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r007
+    quality_label: good
+    failure_tags: []
+    notes: "May have been better games here, but still a good recommendation."
+  - id: r008
+    quality_label: bad
+    failure_tags: [bad_top_1]
+    notes: "Outlast has many jump scares; bad recommendation for this query despite investigation elements."
+  - id: r009
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r010
+    quality_label: mixed
+    failure_tags: [bad_top_1]
+    notes: "Not really open-world exploration. Gorgeous game though."
+  - id: r011
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r012
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r013
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r014
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r015
+    quality_label: bad
+    failure_tags: [bad_top_1]
+    notes: "Football Manager is not a racing game. Dirt 4 (rank 2) was better."
+  - id: r016
+    quality_label: bad
+    failure_tags: [bad_top_1]
+    notes: "Bad recommendation for this query despite heavy investigation content."
+  - id: r017
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r018
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r019
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r020
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r021
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r022
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r023
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r024
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r025
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r026
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r027
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r028
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r029
+    quality_label: good
+    failure_tags: []
+    notes: ""
+  - id: r030
+    quality_label: good
+    failure_tags: [flipped_rank]
+    notes: "Could have had Civilization (recs #2 and #3) as #1."

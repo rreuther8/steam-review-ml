@@ -36,11 +36,11 @@ If time is tight, **do not** let tabular modeling block **game profiles + simila
   - **Tests:** `tests/test_preprocess.py` for filtering and feature selection.
 
 - **Tabular baselines & simple models (supporting lane)** — under `notebooks/models/tabular/`:  
-  - `model_000_dumb_002.ipynb` — dumb baselines for **`recommended`** and **`_norm_votes_helpful`**.  
-  - `model_001_linreg__votes_helpful.ipynb` — baselines + **linear regression** on normalized helpful votes; metrics e.g. `artifacts/metrics/votes_helpful_metrics.csv` when run.  
-  - `model_002_logreg__recommended.ipynb` — baselines + **logistic regression** on `recommended` (full numeric feature set + 3-feature variant).  
+  - `model_000_baseline_dumb.ipynb` — dumb baselines for **`recommended`** and **`_norm_votes_helpful`**.  
+  - `model_001_regression_votes_helpful.ipynb` — baselines + **linear regression** on normalized helpful votes; metrics e.g. `artifacts/metrics/votes_helpful_metrics.csv` when run.  
+  - `model_002_classification_recommended.ipynb` — baselines + **logistic regression** on `recommended` (full numeric feature set + 3-feature variant).  
 
-- **Recommender v1 (primary lane) — content index + demo retrieval** — notebooks under `notebooks/models/game_embeddings/` and `notebooks/models/query_embeddings/`: **`recs_001_game_profiles.ipynb`** → **`game_profile_reviews.parquet`**; **`recs_002_embed_game_profiles.ipynb`** → dense **per-game** vectors (TF Hub USE, mean pool, L2 norm); **`recs_003_query_retrieve.ipynb`** → hand-written query → embed → **top‑K** vs `X`. Artifacts: **`artifacts/recs/`**.
+- **Recommender v1 (primary lane) — content index + demo retrieval** — notebooks under `notebooks/models/game_embeddings/` and `notebooks/models/query_embeddings/`: **`recs_001_game_profile_reviews.ipynb`** → **`game_profile_reviews.parquet`**; **`recs_002_game_embeddings_raw.ipynb`** → dense **per-game** vectors (TF Hub USE, mean pool, L2 norm); **`recs_003_query_retrieve_smoke.ipynb`** → hand-written query → embed → **top‑K** vs `X`. Artifacts: **`artifacts/recs/`**.
 
 ---
 
@@ -55,11 +55,12 @@ Use this as the single “where are we?” list; **`docs/recommender_transition_
 - [x] **`recs_001`** — train split, thumbs-up table → `artifacts/recs/game_profile_reviews.parquet`
 - [x] **`recs_002`** — per-review embed, mean per `app_id`, L2 normalize → `game_profile_embeddings.npz` + index Parquet + `meta.json`
 - [x] **`recs_003`** — load artifacts, TF Hub query embed, dot-product **top‑K** (demo / smoke test)
-- [x] **`recs_004`** — same-user held-out likes proxy on **val**: **§3 ablation** — baselines, raw/structured, train-pool multi, time-weighted train (`notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`). **Caveat:** eval subset = multi-game-like users; see **`recommender_transition_plan.md`** → *Selection bias: multi-review vs single-review users*.
+- [x] **`recs_004`** — same-user held-out likes proxy on **val**: **§3 ablation** — baselines, raw/structured, train-pool multi, time-weighted train (`notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`). **Caveat:** eval subset = multi-game-like users; see **`recommender_transition_plan.md`** → *Selection bias: multi-review vs single-review users*.
 - [x] **`extract_preferences` + `build_embedding_input`** — rules **v0** in `src/steam_review_ml/recommender/preferences.py` (not coaching); LLM upgrade optional
 - [x] **Wire retrieval (product/API)** — `ContentRetriever` in `steam_review_ml.recommender` (`retrieve.py`); optional FastAPI in `steam_review_ml.api` (`create_app`); **default** embed = **raw** (`structured=` flag)
 - [ ] **@K evaluation (extended)** — `recs_004` adds MAP@K / NDCG@K; still open: fixed-draft matrix, popularity-aware slices; **test** via `RECS004_EVAL_SPLIT=test` when frozen
 - [ ] **A/B matrix eval** — compare 4 variants on a fixed set: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index
+- [ ] **Optional exploration: stronger embedding model for structured text** — rerun `recs_006` 4-way matrix with an LLM embedding model (same splits/seeds) to test whether structured query/index text gains appear when moving beyond USE.
 - [ ] **Negative profile sampling/balance policy** — for any dual-index run, cap/symmetrize pos/neg per-game review counts; guard against noisy/event-driven negatives
 - [ ] **API** — minimal endpoint: draft or prefs → recommendations (after eval loop is acceptable)
 - [ ] **v2 hybrid** — defer until baseline above holds; see transition plan

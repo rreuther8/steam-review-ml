@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 _UI_HTML = Path(__file__).resolve().parent / "static" / "index.html"
+DEFAULT_STRUCTURED = False  # Serve raw-query retrieval by default.
 
 
 def create_app() -> Any:
@@ -42,7 +43,7 @@ def create_app() -> Any:
         }
 
     @app.get("/ui")
-    def ui() -> FileResponse:
+    def ui() -> Any:
         """Small browser UI: game typeahead + review text → masked recommendations."""
         if not _UI_HTML.is_file():
             raise RuntimeError(f"Missing UI file: {_UI_HTML}")
@@ -88,7 +89,7 @@ def create_app() -> Any:
         q: str = Query(..., min_length=1, description="User draft or query text"),
         k: int = Query(10, ge=1, le=500),
         structured: bool = Query(
-            False,
+            DEFAULT_STRUCTURED,
             description="Experimental path: If true, use extract_preferences → build_embedding_input; default is raw query embedding.",
         ),
         exclude_app_id: int | None = Query(

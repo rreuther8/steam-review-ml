@@ -99,9 +99,9 @@ Use the **`data/processed/..._norm.parquet`** files (raw columns are still prese
 
 These live under **`notebooks/models/tabular/`** (numeric / engineered features — separate from recommender work).
 
-- `notebooks/models/tabular/model_000_dumb_002.ipynb`
-- `notebooks/models/tabular/model_001_linreg__votes_helpful.ipynb`
-- `notebooks/models/tabular/model_002_logreg__recommended.ipynb`
+- `notebooks/models/tabular/model_000_baseline_dumb.ipynb`
+- `notebooks/models/tabular/model_001_regression_votes_helpful.ipynb`
+- `notebooks/models/tabular/model_002_classification_recommended.ipynb`
 
 ## 7) Recommender artifacts (v1)
 
@@ -133,26 +133,26 @@ Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extr
 
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
-- Notebook: `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
+- Notebook: `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
 - Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
 
 **Dense game vectors** (TensorFlow + TensorFlow Hub; see TF install notes above and `recs_002` notebook):
 
-- Notebook: `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
+- Notebook: `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
 - Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
 
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 
-- Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb`
+- Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb`
 
 **Offline eval (same-user held-out likes proxy)** — default **val** queries (`*_val_norm.parquet`); **raw / structured** vs **random** and **train popularity**; train-pool multi + time windows; **MAP@K** / **NDCG@K**. For a **one-shot test holdout** after freezing the method: `RECS004_EVAL_SPLIT=test` (requires `*_test_norm.parquet`).
 
-- Notebook: `notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb`
+- Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
 **4-way raw/structured comparison + regression baseline (recs_006):**
 
-- Build structured index artifact first: `notebooks/models/game_embeddings/recs_005_structured_game_embeddings.ipynb`
-- Run comparison/eval: `notebooks/models/query_embeddings/recs_006_eval_queries.ipynb`
+- Build structured index artifact first: `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
+- Run comparison/eval: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
 - Save/compare `raw_raw` regression guard:
 
 ```bash
@@ -179,10 +179,10 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 4. (Optional) run tabular modeling notebooks
-5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profiles.ipynb`
-6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `notebooks/models/game_embeddings/recs_002_embed_game_profiles.ipynb`
-7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve.ipynb` after `recs_002` artifacts exist
-8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_same_user_proxy.ipynb` for proxy metrics (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
+5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
+7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after `recs_002` artifacts exist
+8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for proxy metrics (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
 9. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
 
 
