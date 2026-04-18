@@ -92,6 +92,28 @@ def create_app() -> Any:
             DEFAULT_STRUCTURED,
             description="Experimental path: If true, use extract_preferences → build_embedding_input; default is raw query embedding.",
         ),
+        history_text: list[str] | None = Query(
+            None,
+            description="Optional repeated prior review text entries for the same user. Used only when history_alpha > 0.",
+        ),
+        history_alpha: float = Query(
+            0.0,
+            ge=0.0,
+            le=1.0,
+            description="Optional blend weight for history-aware retrieval (0 disables history blending).",
+        ),
+        history_top_k: int = Query(
+            3,
+            ge=1,
+            le=20,
+            description="Maximum number of prior reviews to blend after relevance filtering.",
+        ),
+        history_min_similarity: float = Query(
+            0.2,
+            ge=-1.0,
+            le=1.0,
+            description="Minimum cosine(query, prior_review) required to include prior review in blending.",
+        ),
         exclude_app_id: int | None = Query(
             None,
             description="Steam app_id of the game being reviewed — exclude from hits (use selected row from GET /games)",
@@ -99,7 +121,16 @@ def create_app() -> Any:
     ) -> list[dict[str, Any]]:
         """JSON list of rows from the retrieval index, each with a ``score`` column."""
         mask = {int(exclude_app_id)} if exclude_app_id is not None else None
-        hits = retriever().top_k(q, k=k, structured=structured, exclude_app_ids=mask)
+        hits = retriever().top_k(
+            q,
+            k=k,
+            structured=structured,
+            exclude_app_ids=mask,
+            history_texts=history_text,
+            history_blend_alpha=history_alpha,
+            history_top_k=history_top_k,
+            history_min_similarity=history_min_similarity,
+        )
         return hits.to_dict(orient="records")
 
     return app

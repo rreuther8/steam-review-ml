@@ -178,6 +178,48 @@ class ContentRetriever:
                 break
         return np.asarray(chosen, dtype=np.int64)
 
+    def _relevant_history_vectors(
+        self,
+        query_vector: np.ndarray,
+        history_texts: list[str] | None,
+        *,
+        min_similarity: float,
+    ) -> list[tuple[float, np.ndarray]]:
+        if not history_texts:
+            return []
+        cleaned_history = [str(text).strip() for text in history_texts if str(text).strip()]
+        if not cleaned_history:
+            return []
+
+        vectors_with_sim: list[tuple[float, np.ndarray]] = []
+        for text in cleaned_history:
+            history_vector = self.embed_text(text)
+            similarity = float(np.dot(query_vector, history_vector))
+            if similarity >= float(min_similarity):
+                vectors_with_sim.append((similarity, history_vector))
+        return vectors_with_sim
+
+    def _blend_with_history(
+        self,
+        query_vector: np.ndarray,
+        vectors_with_sim: list[tuple[float, np.ndarray]],
+        *,
+        alpha: float,
+        history_top_k: int,
+    ) -> np.ndarray:
+        if not vectors_with_sim:
+            return query_vector
+
+        vectors_with_sim.sort(key=lambda item: item[0], reverse=True)
+        selected = vectors_with_sim[: max(1, int(history_top_k))]
+        sims = np.asarray([max(0.0, sim) for sim, _ in selected], dtype=np.float32)
+        vecs = np.stack([vec for _, vec in selected], axis=0).astype(np.float32)
+        if float(sims.sum()) > _L2_EPS:
+            history_vector = self._l2_normalize((vecs * sims[:, None]).sum(axis=0))
+        else:
+            history_vector = self._l2_normalize(vecs.mean(axis=0))
+        return self._l2_normalize((1.0 - alpha) * query_vector + alpha * history_vector)
+
     def top_k(
         self,
         query_text: str,
@@ -186,6 +228,10 @@ class ContentRetriever:
         structured: bool = False,
         context: str | None = None,
         exclude_app_ids: set[int] | None = None,
+        history_texts: list[str] | None = None,
+        history_blend_alpha: float = 0.0,
+        history_top_k: int = 3,
+        history_min_similarity: float = 0.2,
     ) -> pd.DataFrame:
         """Rank indexed games by dot product (cosine, since vectors are L2-normalized).
 
@@ -202,9 +248,31 @@ class ContentRetriever:
             Optional second argument to ``build_embedding_input`` (defaults to ``query_text``).
         exclude_app_ids
             e.g. mask the query game so it never appears in results.
+        history_texts
+            Optional prior user review texts to blend with the query embedding.
+        history_blend_alpha
+            Blend weight in [0, 1] for history contribution. Default 0 keeps behavior unchanged.
+        history_top_k
+            Maximum number of prior reviews to blend after relevance filtering.
+        history_min_similarity
+            Keep prior reviews with cosine(query, review) >= this threshold to avoid unrelated history.
         """
         to_embed = self._text_to_embed(query_text, structured=structured, context=context)
         query_vector = self.embed_text(to_embed)
+        alpha = float(np.clip(history_blend_alpha, 0.0, 1.0))
+        if alpha > 0.0:
+            relevant_vectors = self._relevant_history_vectors(
+                query_vector,
+                history_texts,
+                min_similarity=history_min_similarity,
+            )
+            query_vector = self._blend_with_history(
+                query_vector,
+                relevant_vectors,
+                alpha=alpha,
+                history_top_k=history_top_k,
+            )
+
         similarities = (self._X @ query_vector).astype(np.float32)
 
         row_indices = self._row_indices_top_k(
