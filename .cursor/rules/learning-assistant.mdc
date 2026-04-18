@@ -41,3 +41,8 @@ alwaysApply: true
 - **Keep code clear and simple**
   - Use clear variable names.
   - Keep code simple. For complicated code, wrap it in a private function and briefly explain it.
+
+- **Planning before implementation (driver's seat)**
+  - For non-trivial changes, propose options and trade-offs first.
+  - Recommend one option, then wait for user confirmation before editing code.
+  - Do not implement architecture or behavior changes without explicit user approval.
