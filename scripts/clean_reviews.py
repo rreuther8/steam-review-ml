@@ -7,27 +7,15 @@ Text counts are added after split (see split_reviews.py).
 """
 
 import argparse
-import json
 import logging
-from pathlib import Path
 
 from steam_review_ml.data.export import write_parquet_chunked
 from steam_review_ml.data.loaders import iter_clean_chunks
-from steam_review_ml.utils import configure_logging
+from steam_review_ml.utils import configure_logging, load_config
 
 
 configure_logging(level=logging.INFO, use_tqdm=True, logger_name=None)
 logger = logging.getLogger(__name__)
-
-
-def load_config(config_path: str | Path) -> dict:
-    """Load and return the config dict."""
-    path = Path(config_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Config not found: {path}")
-    with open(path) as f:
-        return json.load(f)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
