@@ -5,5 +5,11 @@
   "test_output_path": "data/interim/steam_reviews_cleaned_english_test.parquet",
   "val_size": 0.15,
   "test_size": 0.15,
-  "chunksize": 100000
+  "chunksize": 100000,
+  "split_mode": "hybrid_user_temporal",
+  "sparse_user_threshold": 3,
+  "user_col": "author.steamid",
+  "timestamp_col": "timestamp_created",
+  "per_user_val_n": 1,
+  "per_user_test_n": 1
 }
