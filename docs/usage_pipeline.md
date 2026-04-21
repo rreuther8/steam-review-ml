@@ -37,7 +37,7 @@ The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (tho
 
 ## 3) Split cleaned Parquet -> train/val/test (interim)
 
-Uses `configs/split_reviews.json`.
+Uses `configs/split_reviews.json`. The stratified split **`random_state`** is **not** in the JSON; it always comes from **`steam_review_ml.constants.PROJECT_RANDOM_SEED`** (currently `2026`). To override for an experiment only, set **`STEAM_REVIEWS_RANDOM_STATE`** in the environment before running the script.
 
 ```bash
 python scripts/split_reviews.py configs/split_reviews.json
