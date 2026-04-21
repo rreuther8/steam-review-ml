@@ -8,7 +8,9 @@ Pipeline: stream Parquet (iter_split_chunks) → post-split ``feature_engineerin
 
 import argparse
 import logging
+import os
 
+from steam_review_ml.constants import PROJECT_RANDOM_SEED
 from steam_review_ml.data.export import write_split_parquets
 from steam_review_ml.data.loaders import iter_split_chunks
 from steam_review_ml.data.preprocess import (
@@ -30,14 +32,30 @@ def main() -> None:
     parser.add_argument(
         "config",
         type=str,
-        help="Path to JSON config (input_path, train_output_path, val_output_path, test_output_path, val_size, test_size, random_state, chunksize).",
+        help="Path to JSON config (input_path, train_output_path, val_output_path, test_output_path, val_size, test_size, chunksize). random_state comes from steam_review_ml.constants.PROJECT_RANDOM_SEED unless STEAM_REVIEWS_RANDOM_STATE is set.",
     )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    env_seed = os.environ.get("STEAM_REVIEWS_RANDOM_STATE")
+    if env_seed is not None and env_seed.strip() != "":
+        random_state = int(env_seed.strip())
+        logger.info("Using random_state from STEAM_REVIEWS_RANDOM_STATE=%s", random_state)
+    else:
+        random_state = PROJECT_RANDOM_SEED
+        logger.info("Using random_state from steam_review_ml.constants.PROJECT_RANDOM_SEED=%s", random_state)
+
     logger.info("Starting Steam reviews split (config: %s)", args.config)
-    logger.info("  input_path=%s  train_output_path=%s  val_output_path=%s  test_output_path=%s  val_size=%s  test_size=%s  random_state=%s",
-                cfg["input_path"], cfg["train_output_path"], cfg["val_output_path"], cfg["test_output_path"], cfg["val_size"], cfg["test_size"], cfg["random_state"])
+    logger.info(
+        "  input_path=%s  train_output_path=%s  val_output_path=%s  test_output_path=%s  val_size=%s  test_size=%s  random_state=%s",
+        cfg["input_path"],
+        cfg["train_output_path"],
+        cfg["val_output_path"],
+        cfg["test_output_path"],
+        cfg["val_size"],
+        cfg["test_size"],
+        random_state,
+    )
 
     logger.info("Stage: streaming Parquet (pass 1 — train max timestamp_created)")
     split_iter_ref = iter_split_chunks(
@@ -45,7 +63,7 @@ def main() -> None:
         cfg["chunksize"],
         cfg["val_size"],
         cfg["test_size"],
-        cfg["random_state"],
+        random_state,
     )
     ref_ts = train_max_timestamp_created(train for train, _, _ in split_iter_ref)
     logger.info("  review_age reference (train max timestamp_created) = %s", ref_ts)
@@ -58,7 +76,7 @@ def main() -> None:
         cfg["chunksize"],
         cfg["val_size"],
         cfg["test_size"],
-        cfg["random_state"],
+        random_state,
     )
 
     def _post_split_chunk(df):

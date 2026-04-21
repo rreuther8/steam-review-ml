@@ -5,6 +5,5 @@
   "test_output_path": "data/interim/steam_reviews_cleaned_english_test.parquet",
   "val_size": 0.15,
   "test_size": 0.15,
-  "random_state": 2026,
   "chunksize": 100000
 }
