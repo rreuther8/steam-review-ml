@@ -202,7 +202,7 @@ The dataset is **multi-review**: many users have reviewed more than one game. Th
 
 ### Selection bias: multi-review vs single-review users (important)
 
-`recs_004` (and any “same-user other likes” proxy) only includes users who have **at least two** indexed thumbs-up games in the **eval split**, so the **label set** (other likes) exists. In practice that is a **small fraction** of all accounts in typical Steam samples; many users have **zero or one** review in the corpus.
+`recs_004` Task A is the primary proxy for recommendation-quality decisions. Depending on cohort configuration, many sampled users can still have sparse positives (`n_pos` often 0 or 1), so metric interpretation must explicitly track evaluable coverage (`n_multi_pos`, `n_single_pos`, `n_zero_pos`) and not rely on one headline number.
 
 **That subset is not a random draw of “all users.”** Multi-review / multi-game-like users can differ systematically from single-review or non-reviewing users in ways that affect both **metrics** and **product**:
 
@@ -211,7 +211,7 @@ The dataset is **multi-review**: many users have reviewed more than one game. Th
 - **Text behavior** — review length, style, and vocabulary may differ from one-shot writers; the same embedding model may transfer differently.
 - **Coverage** — users with **no** review text are a different problem entirely for **content-only** retrieval (cold start); this proxy says nothing about them unless you add other signals (metadata, implicit data, etc.).
 
-**What to claim:** Offline numbers from `recs_004` are best read as performance on **“users for whom we can define this task”** (multi-game likes in val), **not** as an automatic estimate for the **full user base**. In interviews: *“We subset to users with ≥2 likes so positives are defined; that cohort is skewed vs everyone, so we treat these metrics as a defined slice, not a population average—single-review and cold users need separate framing or experiments.”*
+**What to claim:** Offline numbers from `recs_004` are best read as performance on a **defined Task A slice with reported coverage**, not as an automatic estimate for the full user base. In interviews: *“Task A is our strict offline benchmark for ‘recommend something else the same user likes’; we pair ranking metrics with coverage counts so sparse users do not silently disappear from the decision.”*
 
 **Optional follow-ups:** report the **fraction** of users in each bucket (see EDA on reviews per user); stratify metrics by review-count decile where sample size allows; pair with **popularity / metadata** baselines that do not rely on user text for cold users.
 
