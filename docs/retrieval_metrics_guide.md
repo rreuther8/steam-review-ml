@@ -104,3 +104,56 @@ Use the same semantics as `recs_004`:
 - If `Recall@K` improves with stable precision, we are covering more relevant items without adding too much noise.
 - If `MRR` improves, first relevant hit appears earlier (better user-perceived quality for top results).
 
+## Decision policy for sparse users (two-panel)
+
+When many users have only one positive target, use a **two-panel decision** instead of forcing one metric across all users.
+
+### Panel 1 (primary): multi-positive ranking quality
+
+- **Eligibility:** queries/users with `n_pos >= 2`.
+- **Primary metric:** `NDCG@10` (higher is better).
+- **Secondary checks:** `MAP@10`, `Recall@10`, `MRR`.
+- **Purpose:** evaluates whether the model can rank *multiple* relevant games well.
+
+### Panel 2 (coverage): single-positive success rate
+
+- **Eligibility:** queries/users with `n_pos == 1`.
+- **Primary metric:** `Hit@10` (equivalent to `Recall@10` when denominator is 1).
+- **Secondary check:** `MRR` (optional, to reward earlier first hit).
+- **Purpose:** captures performance on sparse users where deeper ranking metrics are not meaningful.
+
+### Required reporting fields
+
+Always report these next to metrics:
+
+- `n_total`: total queries/users considered.
+- `n_multi_pos`: count with `n_pos >= 2`.
+- `n_single_pos`: count with `n_pos == 1`.
+- `n_zero_pos`: count with `n_pos == 0`.
+- `coverage_multi_pos = n_multi_pos / n_total`.
+
+This prevents headline metrics from hiding exclusion caused by sparse targets.
+
+### Model selection rule
+
+Use this order:
+
+1. Pick the model with best **Panel 1 `NDCG@10`**.
+2. If models are close on Panel 1 (absolute delta <= 0.01), choose the one with better **Panel 2 `Hit@10`**.
+3. If still tied, choose better **Panel 1 `MAP@10`**, then better **Panel 1 `MRR`**.
+4. If still tied, prefer the simpler/more stable method (fewer moving parts, lower variance across reruns/cohorts).
+
+### Scope note for `recs_004` tasks
+
+- For rigorous recommendation comparison, use **Task A** as primary.
+- Treat **Task B/C** as diagnostic views (they allow anchor recovery via `q_app` and are not directly comparable to Task A).
+
+## Current evaluation contract (Task A)
+
+Use this as the default offline contract when deciding retrieval changes:
+
+- **Primary benchmark:** `recs_004` Task A (`task_a_other_val_apps`).
+- **Release-gating metrics:** Panel 1 first (`n_pos >= 2`, `NDCG@10` primary), then Panel 2 (`n_pos == 1`, `Hit@10`).
+- **Required context fields:** `n_total`, `n_multi_pos`, `n_single_pos`, `n_zero_pos`, and coverage fractions.
+- **Task B/C role:** keep as diagnostics only; do not compare them head-to-head with Task A as if they are the same task.
+

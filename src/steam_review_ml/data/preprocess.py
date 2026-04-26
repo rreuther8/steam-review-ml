@@ -8,6 +8,101 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+VOTE_SENTINEL = 4294967295  # 2^32 - 1
+
+
+def _drop_vote_sentinel_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove rows where votes_helpful or votes_funny are sentinel value (4294967295)."""
+    out = df
+    for col in ("votes_helpful", "votes_funny"):
+        if col in out.columns:
+            before = len(out)
+            out = out[out[col] < VOTE_SENTINEL]
+            dropped = before - len(out)
+            if dropped:
+                logger.debug(
+                    "  drop vote sentinel (%s): %d -> %d (-%d)",
+                    col,
+                    before,
+                    len(out),
+                    dropped,
+                )
+    return out
+
+
+def _filter_by_language(df: pd.DataFrame, language: str) -> pd.DataFrame:
+    """Keep only rows with the specified language."""
+    if "language" not in df.columns:
+        return df
+    before = len(df)
+    out = df[df["language"] == language]
+    logger.debug(
+        "  filter by language (%s): %d -> %d (-%d)",
+        language,
+        before,
+        len(out),
+        before - len(out),
+    )
+    return out
+
+
+def _drop_empty_or_short_reviews(df: pd.DataFrame, *, min_length: int = 4) -> pd.DataFrame:
+    """Remove rows with missing, empty, or very short review text."""
+    if "review" not in df.columns:
+        return df
+    before = len(df)
+    drop_mask = _is_empty_or_short_review_series(df["review"], min_length=min_length)
+    out = df[~drop_mask]
+    logger.debug(
+        "  drop empty/short review: %d -> %d (-%d)",
+        before,
+        len(out),
+        before - len(out),
+    )
+    return out
+
+
+def _drop_negative_playtime_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove rows with negative playtime values in any playtime column."""
+    out = df
+    playtime_cols: Iterable[str] = (
+        "author.playtime_forever",
+        "author.playtime_last_two_weeks",
+        "author.playtime_at_review",
+    )
+    for col in playtime_cols:
+        if col in out.columns:
+            before = len(out)
+            out = out[~(out[col] < 0)]
+            dropped = before - len(out)
+            if dropped:
+                logger.debug(
+                    "  drop negative playtime (%s): %d -> %d (-%d)",
+                    col,
+                    before,
+                    len(out),
+                    dropped,
+                )
+    return out
+
+
+def _drop_missing_last_played_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove rows where author.last_played is missing."""
+    col = "author.last_played"
+    if col not in df.columns:
+        return df
+    before = len(df)
+    out = df[df[col].notna()]
+    dropped = before - len(out)
+    if dropped:
+        logger.debug(
+            "  drop missing %s: %d -> %d (-%d)",
+            col,
+            before,
+            len(out),
+            dropped,
+        )
+    return out
 
 
 def _is_empty_or_short_review_series(
@@ -36,70 +131,6 @@ def filter_reviews(df: pd.DataFrame, language: str = "english") -> pd.DataFrame:
     n_start = len(df)
     logger.debug("filter_reviews: starting with %d rows (language=%s)", n_start, language)
     filtered = df.copy()
-
-    def _drop_vote_sentinel_rows(filtered: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows where votes_helpful or votes_funny are sentinel value (4294967295)."""
-        VOTE_SENTINEL = 4294967295  # 2^32 - 1
-        for col in ("votes_helpful", "votes_funny"):
-            if col in filtered.columns:
-                before = len(filtered)
-                filtered = filtered[filtered[col] < VOTE_SENTINEL]
-                dropped = before - len(filtered)
-                if dropped:
-                    logger.debug("  drop vote sentinel (%s): %d -> %d (-%d)", col, before, len(filtered), dropped)
-        return filtered
-
-    def _filter_by_language(filtered: pd.DataFrame, language: str) -> pd.DataFrame:
-        """Keep only rows with the specified language."""
-        if "language" in filtered.columns:
-            before = len(filtered)
-            filtered = filtered[filtered["language"] == language]
-            logger.debug("  filter by language (%s): %d -> %d (-%d)", language, before, len(filtered), before - len(filtered))
-        return filtered
-
-    def _drop_empty_or_short_reviews(filtered: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows with missing, empty, or very short review text."""
-        if "review" in filtered.columns:
-            before = len(filtered)
-            drop_mask = _is_empty_or_short_review_series(
-                filtered["review"], min_length=4
-            )
-            filtered = filtered[~drop_mask]
-            logger.debug("  drop empty/short review: %d -> %d (-%d)", before, len(filtered), before - len(filtered))
-        return filtered
-
-    def _drop_negative_playtime_rows(filtered: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows with negative playtime values in any playtime column."""
-        playtime_cols: Iterable[str] = (
-            "author.playtime_forever",
-            "author.playtime_last_two_weeks",
-            "author.playtime_at_review",
-        )
-        for col in playtime_cols:
-            if col in filtered.columns:
-                before = len(filtered)
-                filtered = filtered[~(filtered[col] < 0)]
-                dropped = before - len(filtered)
-                if dropped:
-                    logger.debug("  drop negative playtime (%s): %d -> %d (-%d)", col, before, len(filtered), dropped)
-        return filtered
-
-    def _drop_missing_last_played_rows(filtered: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows where author.last_played is missing."""
-        col = "author.last_played"
-        if col in filtered.columns:
-            before = len(filtered)
-            filtered = filtered[filtered[col].notna()]
-            dropped = before - len(filtered)
-            if dropped:
-                logger.debug(
-                    "  drop missing %s: %d -> %d (-%d)",
-                    col,
-                    before,
-                    len(filtered),
-                    dropped,
-                )
-        return filtered
 
     # Now apply the pipeline of internal steps
     filtered = _drop_vote_sentinel_rows(filtered)

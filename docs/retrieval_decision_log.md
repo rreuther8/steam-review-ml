@@ -1,5 +1,27 @@
 # Retrieval Decision Log
 
+## 2026-04-26: recs_004 evaluation task lock
+
+Decision:
+- Use **Task A** (`task_a_other_val_apps`) as the primary offline evaluation task for recommender decisions.
+- Keep Task B/C as diagnostic only (non-gating).
+
+Why:
+- Task A is the strictest recommendation proxy: it evaluates retrieval of *other* liked games and excludes anchor-only wins.
+- Task B/C are useful diagnostics but are easier tasks and not directly comparable as release criteria.
+
+Evidence:
+- Notebooks:
+  - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a.ipynb`
+  - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_b.ipynb`
+  - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_c.ipynb`
+- Review summary:
+  - `docs/recs_004_three_task_review.md`
+
+Evaluation implications:
+- Report two-panel metrics with coverage counts (`n_multi_pos`, `n_single_pos`, `n_zero_pos`).
+- Treat Task A as the release-gating benchmark; include Task B/C only as appendix diagnostics.
+
 ## 2026-04-14: Default retrieval path
 
 Decision:

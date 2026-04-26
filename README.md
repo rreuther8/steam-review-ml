@@ -89,6 +89,7 @@ Dataset URL: [https://www.kaggle.com/datasets/najzeko/steam-reviews-2021](https:
 ## Reproducibility and usage
 
 - **Random seed:** the project-wide default is [`PROJECT_RANDOM_SEED`](src/steam_review_ml/constants.py) in `steam_review_ml.constants` (used for recommender eval subsampling, tabular `random_state`, and synthetic baseline RNG streams). Train/val/test splitting reads the same value from that module unless you override with **`STEAM_REVIEWS_RANDOM_STATE`** (see [`docs/usage_pipeline.md`](docs/usage_pipeline.md)).
+- **Split policy:** current pipeline config uses a hybrid mode in [`configs/split_reviews.json`](configs/split_reviews.json): sparse users (`<3` interactions) use deterministic random 70/15/15, while denser users (`>=3`) use per-user temporal last-N assignment. Report key retrieval metrics by cohort (`<3`, `>=3`, overall weighted) to avoid hiding cold-start behavior.
 - Pipeline run order and command references: [`docs/usage_pipeline.md`](docs/usage_pipeline.md)
 - Retrieval decision log (current default + rationale): [`docs/retrieval_decision_log.md`](docs/retrieval_decision_log.md)
 - Transition plan for recommender v1 -> v2: [`docs/recommender_transition_plan.md`](docs/recommender_transition_plan.md)

@@ -37,7 +37,15 @@ The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (tho
 
 ## 3) Split cleaned Parquet -> train/val/test (interim)
 
-Uses `configs/split_reviews.json`. The stratified split **`random_state`** is **not** in the JSON; it always comes from **`steam_review_ml.constants.PROJECT_RANDOM_SEED`** (currently `2026`). To override for an experiment only, set **`STEAM_REVIEWS_RANDOM_STATE`** in the environment before running the script.
+Uses `configs/split_reviews.json`. The split seed **`random_state`** is not in JSON; it comes from **`steam_review_ml.constants.PROJECT_RANDOM_SEED`** (currently `2026`) unless overridden via **`STEAM_REVIEWS_RANDOM_STATE`**.
+
+Current config defaults to hybrid splitting:
+
+- **`split_mode = hybrid_user_temporal`**
+- users with fewer than **`sparse_user_threshold`** interactions are assigned with deterministic random using the same global **`val_size` / `test_size`** ratios
+- users with enough history are assigned by per-user recency (`per_user_test_n` most-recent rows -> test, next `per_user_val_n` -> val, remaining -> train)
+
+Set `split_mode = random_stratified` to use legacy hash-stratified random split for all rows.
 
 ```bash
 python scripts/split_reviews.py configs/split_reviews.json
@@ -49,7 +57,8 @@ Current config targets:
 - `data/interim/steam_reviews_cleaned_english_val.parquet`
 - `data/interim/steam_reviews_cleaned_english_test.parquet`
 
-After each row is assigned to train/val/test, the split step runs **`feature_engineering`** (`review_word_count`, `review_length_chars`) and then **`review_age_seconds`**: seconds from `timestamp_created` to the **maximum `timestamp_created` in the training split only** (two-pass stream for the reference; then a second pass writes outputs).
+After each row is assigned to train/val/test, the split step runs **`feature_engineering`** (`review_word_count`, `review_length_chars`) and then **`review_age_seconds`**: seconds from `timestamp_created` to the **maximum `timestamp_created` in the training split only** (two-pass stream for the reference; then a second pass writes outputs).  
+With temporal/hybrid split policies, newer val/test rows can clip to `review_age_seconds = 0`; script logs include clipped percentages for visibility.
 
 ## 4) Normalize splits -> modeling Parquets (processed)
 
