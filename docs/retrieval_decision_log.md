@@ -16,7 +16,7 @@ Evidence:
   - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_b.ipynb`
   - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_c.ipynb`
 - Review summary:
-  - `docs/recs_004_three_task_review.md`
+  - `docs/archive/recs_004_three_task_review.md`
 
 Evaluation implications:
 - Report two-panel metrics with coverage counts (`n_multi_pos`, `n_single_pos`, `n_zero_pos`).
