@@ -143,13 +143,22 @@ Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extr
 
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
-- Notebook: `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+- Pipeline job: `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
 - Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
+- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
 
-**Dense game vectors** (TensorFlow + TensorFlow Hub; see TF install notes above and `recs_002` notebook):
+**Dense game vectors** (TensorFlow + TensorFlow Hub):
 
-- Notebook: `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
+- Pipeline job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
 - Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
+- QA notebook (optional): `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
+
+### Recommender Jobs (separate)
+
+Run these jobs independently so profile rebuilds and embedding rebuilds can be scheduled/retried separately:
+
+1. `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
+2. `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
 
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 
@@ -189,9 +198,9 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 4. (Optional) run tabular modeling notebooks
-5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
-6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
-7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after `recs_002` artifacts exist
+5. (Recommender v1) run `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
+6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
+7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after embedding artifacts exist
 8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for proxy metrics (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
 9. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
 
