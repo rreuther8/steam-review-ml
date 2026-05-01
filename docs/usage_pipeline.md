@@ -39,11 +39,12 @@ The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (tho
 
 Uses `configs/split_reviews.json`. The split seed **`random_state`** is not in JSON; it comes from **`steam_review_ml.constants.PROJECT_RANDOM_SEED`** (currently `2026`) unless overridden via **`STEAM_REVIEWS_RANDOM_STATE`**.
 
-Current config defaults to hybrid splitting:
+Current config defaults to support-aware temporal splitting:
 
-- **`split_mode = hybrid_user_temporal`**
-- users with fewer than **`sparse_user_threshold`** interactions are assigned with deterministic random using the same global **`val_size` / `test_size`** ratios
-- users with enough history are assigned by per-user recency (`per_user_test_n` most-recent rows -> test, next `per_user_val_n` -> val, remaining -> train)
+- **`split_mode = support_aware_user_temporal`**
+- users with 1 interaction are assigned to train/val/test by global `val_size`/`test_size` ratios
+- users with 2 interactions get 1 train row and 1 eval row (val/test chosen per-user)
+- users with 3+ interactions keep at least 1 train row and assign most-recent eval rows to exactly one eval split (val or test), with at least 2 eval rows per user
 
 Set `split_mode = random_stratified` to use legacy hash-stratified random split for all rows.
 
