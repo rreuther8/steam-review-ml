@@ -19,6 +19,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tqdm.auto import tqdm
 
+from steam_review_ml.recommender.preferences import build_embedding_input, extract_preferences
 from steam_review_ml.utils import load_config
 
 
@@ -38,6 +39,8 @@ def _build_and_write_game_embeddings(
     tfhub_url: str,
     batch_size: int,
     max_chars_per_review: int | None,
+    text_mode: str,
+    structured_max_context_chars: int,
 ) -> tuple[int, int, int]:
     gpus = tf.config.list_physical_devices("GPU")
     for gpu in gpus:
@@ -58,10 +61,27 @@ def _build_and_write_game_embeddings(
 
     df = df.copy()
     df["review"] = df["review"].fillna("").astype(str)
-    if max_chars_per_review is not None:
-        df["_text"] = df["review"].str[:max_chars_per_review]
+    if text_mode not in {"raw", "structured"}:
+        raise ValueError(f"text_mode must be 'raw' or 'structured', got: {text_mode!r}")
+
+    if text_mode == "raw":
+        if max_chars_per_review is not None:
+            df["_text"] = df["review"].str[:max_chars_per_review]
+        else:
+            df["_text"] = df["review"]
     else:
-        df["_text"] = df["review"]
+        structured_texts: list[str] = []
+        for raw in tqdm(df["review"].tolist(), desc="build structured text"):
+            prefs = extract_preferences(raw)
+            structured = build_embedding_input(
+                prefs,
+                raw,
+                max_context_chars=structured_max_context_chars,
+            )
+            if max_chars_per_review is not None:
+                structured = structured[:max_chars_per_review]
+            structured_texts.append(structured)
+        df["_text"] = structured_texts
     df = df.reset_index(drop=True)
 
     texts = df["_text"].tolist()
@@ -94,8 +114,10 @@ def _build_and_write_game_embeddings(
     meta = {
         "model_name": tfhub_url,
         "backend": "tensorflow",
-        "method": "encode_each_review_mean_pool_per_app_id_l2_normalize",
+        "method": f"encode_each_{text_mode}_review_mean_pool_per_app_id_l2_normalize",
+        "text_mode": text_mode,
         "max_chars_per_review": max_chars_per_review,
+        "structured_max_context_chars": structured_max_context_chars if text_mode == "structured" else None,
         "n_games": int(X.shape[0]),
         "dim": int(X.shape[1]),
         "n_review_rows_encoded": int(len(df)),
@@ -126,6 +148,8 @@ def main() -> None:
     max_chars_per_review = cfg.get("max_chars_per_review", 8000)
     if max_chars_per_review is not None:
         max_chars_per_review = int(max_chars_per_review)
+    text_mode = str(cfg.get("text_mode", "raw")).strip().lower()
+    structured_max_context_chars = int(cfg.get("structured_max_context_chars", 220))
 
     if not input_path.is_file():
         raise FileNotFoundError(
@@ -140,7 +164,8 @@ def main() -> None:
     print(f"Input profile rows: {input_path}")
     print(
         f"Outputs: npz={out_npz} index={out_index} meta={out_meta} "
-        f"batch_size={batch_size} max_chars_per_review={max_chars_per_review}"
+        f"batch_size={batch_size} max_chars_per_review={max_chars_per_review} "
+        f"text_mode={text_mode}"
     )
 
     n_games, dim, n_rows = _build_and_write_game_embeddings(
@@ -151,6 +176,8 @@ def main() -> None:
         tfhub_url=tfhub_url,
         batch_size=batch_size,
         max_chars_per_review=max_chars_per_review,
+        text_mode=text_mode,
+        structured_max_context_chars=structured_max_context_chars,
     )
     print(f"Wrote {out_npz}")
     print(f"Wrote {out_index}")

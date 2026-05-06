@@ -5,5 +5,6 @@
   "output_meta_path": "artifacts/recs/game_profile_embedding_meta.json",
   "tfhub_url": "https://tfhub.dev/google/universal-sentence-encoder/4",
   "batch_size": 64,
-  "max_chars_per_review": 8000
+  "max_chars_per_review": 8000,
+  "text_mode": "raw"
 }
