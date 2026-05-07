@@ -10,6 +10,11 @@ Supported split modes:
 - ``hybrid_user_temporal``: users with fewer than ``sparse_user_threshold`` interactions
   use deterministic random assignment, while users with enough history use per-user
   last-N temporal assignment (most-recent rows to test/val).
+- ``support_aware_user_temporal``:
+  - users with 1 interaction are assigned to train/val/test by global ratios
+  - users with 2 interactions get 1 train + 1 eval row (eval split chosen per-user)
+  - users with >=3 interactions keep >=1 train row and place most-recent eval rows in a
+    single eval split (val or test) with at least 2 eval rows.
 """
 
 import argparse

@@ -1,5 +1,8 @@
 # Retrieval Decision Log
 
+> This log is intentionally selective: record only high-impact, hard-to-reverse, or likely-to-be-revisited decisions.
+> Do not log routine implementation details or temporary debugging steps.
+
 ## 2026-04-26: recs_004 evaluation task lock
 
 Decision:
@@ -13,10 +16,10 @@ Why:
 Evidence:
 - Notebooks:
   - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a.ipynb`
-  - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_b.ipynb`
-  - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_c.ipynb`
+  - `notebooks/models/query_embeddings/archive/recs_004_eval_proxy_same_user_task_b.ipynb`
+  - `notebooks/models/query_embeddings/archive/recs_004_eval_proxy_same_user_task_c.ipynb`
 - Review summary:
-  - `docs/recs_004_three_task_review.md`
+  - `docs/archive/recs_004_three_task_review.md`
 
 Evaluation implications:
 - Report two-panel metrics with coverage counts (`n_multi_pos`, `n_single_pos`, `n_zero_pos`).
@@ -25,6 +28,7 @@ Evaluation implications:
 ## 2026-04-14: Default retrieval path
 
 Decision:
+- Default serving path is raw because it currently wins the offline proxy benchmark; revisit if structured improves on the same eval contract.
 - Use `raw_query + raw_index` as the default serving path.
 - Keep structured query/index paths available as experimental ablations only.
 
@@ -36,6 +40,16 @@ Evidence:
 - Notebook: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
 - Metrics artifact: `artifacts/recs/eval_review_style_4way_proxy_metrics.csv`
 - Active baseline snapshot: `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
+Retrieval flow in this project (current):
+- Candidate set: currently close to the full indexed catalog (small enough to score broadly).
+- Scoring: cosine similarity (or popularity baseline score).
+- Sorting: explicit ranking by score.
+- Output: top-K recommendations.
+
+Modeling distinction:
+- Current system is best described as **bi-encoder / dual-embedding retrieval** (query embedding vs precomputed item embeddings, matched by similarity).
+- It is **not** a classic jointly-trained **two-tower** retrieval model yet.
 
 Serving implications:
 - API default remains `structured=false`.

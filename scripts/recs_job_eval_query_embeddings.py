@@ -1,0 +1,186 @@
+"""Run centralized Phase-1 query-embedding evaluation from JSON config.
+
+Phase-1 methods:
+- raw
+- popularity_train
+- multi_mean_train
+
+Optional non-gating sanity baseline:
+- random
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
+from steam_review_ml.constants import PROJECT_RANDOM_SEED
+from steam_review_ml.recommender.evaluation import (
+    REQUIRED_PHASE1_METHODS,
+    run_phase1_eval,
+)
+from steam_review_ml.utils import load_config
+
+
+def _parse_cohort_sizing(raw: dict[str, float] | None) -> dict[tuple[str, str], float]:
+    if not raw:
+        return {}
+    out: dict[tuple[str, str], float] = {}
+    for key, pct in raw.items():
+        if "|" not in key:
+            raise ValueError(
+                "cohort_sizing keys must be 'eval_pos_cohort|cohort' (e.g. "
+                "'val_multi_pos_eval|val_multi_pos_train')."
+            )
+        left, right = key.split("|", 1)
+        out[(left.strip(), right.strip())] = float(pct)
+    return out
+
+
+def _write_phase1_baseline(overall: pd.DataFrame, *, baseline_path: Path) -> None:
+    required_metrics = ("Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
+    missing_cols = [c for c in ("method",) + required_metrics if c not in overall.columns]
+    if missing_cols:
+        raise ValueError(f"Cannot write baseline; overall table missing columns: {missing_cols}")
+
+    overall_by_method: dict[str, dict[str, float]] = {}
+    for _, row in overall.iterrows():
+        method = str(row["method"])
+        overall_by_method[method] = {metric: float(row[metric]) for metric in required_metrics}
+
+    payload = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "required_methods": sorted(REQUIRED_PHASE1_METHODS),
+        "required_core_metrics": list(required_metrics),
+        "overall_by_method": overall_by_method,
+    }
+    baseline_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def main() -> None:
+    t_start = time.perf_counter()
+    parser = argparse.ArgumentParser(
+        description="Run centralized query-embedding evaluation and write artifact tables."
+    )
+    parser.add_argument("config", type=str, help="Path to JSON config.")
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="Freeze baseline JSON from latest eval_phase1_overall.csv output.",
+    )
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    repo_root = Path(__file__).resolve().parents[1]
+
+    split = str(cfg.get("split", "val"))
+    methods = [str(m) for m in cfg.get("methods", [])]
+    if not methods:
+        raise ValueError("Config must include non-empty 'methods' list.")
+
+    if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
+        raise ValueError(
+            f"'methods' must include required baselines {sorted(REQUIRED_PHASE1_METHODS)}; "
+            f"got {sorted(set(methods))}"
+        )
+
+    active_cohort = str(cfg.get("active_cohort", "all"))
+    max_examples = int(cfg.get("max_examples", 12_500))
+    support_app_filter_mode = str(cfg.get("support_app_filter_mode", "strict"))
+    min_review_chars = int(cfg.get("min_review_chars", 30))
+    max_train_rows_per_user = int(cfg.get("max_train_rows_per_user", 5))
+    multi_max_reviews = int(cfg.get("multi_max_reviews", 5))
+    k_final = int(cfg.get("k_final", 10))
+    k_personalization = int(cfg.get("k_personalization", 10))
+    include_random_sanity = bool(cfg.get("include_random_sanity", False))
+    verbose = bool(cfg.get("verbose", True))
+    enable_popularity_decile_diagnostics = bool(
+        cfg.get("enable_popularity_decile_diagnostics", True)
+    )
+    random_seed = int(cfg.get("random_seed", PROJECT_RANDOM_SEED))
+
+    artifact_dir_rel = cfg.get("artifact_dir", "artifacts/recs")
+    artifact_dir = repo_root / str(artifact_dir_rel)
+    output_dir_rel = cfg.get("output_dir", "artifacts/recs/eval")
+    output_dir = repo_root / str(output_dir_rel)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cohort_sizing = _parse_cohort_sizing(cfg.get("cohort_sizing"))
+
+    print("Running Phase-1 eval job")
+    print(
+        f"split={split} methods={methods} max_examples={max_examples} "
+        f"k_final={k_final} k_personalization={k_personalization}"
+    )
+    print(
+        f"active_cohort={active_cohort} support_mode={support_app_filter_mode} "
+        f"artifact_dir={artifact_dir} output_dir={output_dir}"
+    )
+
+    tables = run_phase1_eval(
+        repo_root=repo_root,
+        split=split,
+        methods=methods,
+        active_cohort=active_cohort,
+        max_examples=max_examples,
+        support_app_filter_mode=support_app_filter_mode,
+        cohort_sizing=cohort_sizing,
+        min_review_chars=min_review_chars,
+        max_train_rows_per_user=max_train_rows_per_user,
+        multi_max_reviews=multi_max_reviews,
+        k_final=k_final,
+        k_personalization=k_personalization,
+        enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
+        include_random_sanity=include_random_sanity,
+        random_seed=random_seed,
+        artifact_dir=artifact_dir,
+        verbose=verbose,
+    )
+
+    overall_path = output_dir / "eval_phase1_overall.csv"
+    by_slice_path = output_dir / "eval_phase1_by_slice.csv"
+    by_support_path = output_dir / "eval_phase1_by_support_bucket.csv"
+    by_pop_decile_path = output_dir / "eval_phase1_by_pop_decile.csv"
+    pop_delta_path = output_dir / "eval_phase1_pop_delta_vs_popularity.csv"
+    personalization_path = output_dir / "eval_phase1_personalization.csv"
+    meta_path = output_dir / "eval_phase1_run_meta.json"
+    baseline_path = output_dir / "eval_phase1_baseline_overall.json"
+
+    tables.overall.to_csv(overall_path, index=False)
+    tables.by_slice.to_csv(by_slice_path, index=False)
+    tables.by_support_bucket.to_csv(by_support_path, index=False)
+    tables.by_pop_decile.to_csv(by_pop_decile_path, index=False)
+    tables.pop_delta_vs_popularity.to_csv(pop_delta_path, index=False)
+    tables.personalization.to_csv(personalization_path, index=False)
+
+    run_meta = dict(tables.run_meta)
+    run_meta.update(
+        {
+            "run_utc": datetime.now(timezone.utc).isoformat(),
+            "config_path": str(Path(args.config)),
+            "output_dir": str(output_dir),
+        }
+    )
+    meta_path.write_text(json.dumps(run_meta, indent=2), encoding="utf-8")
+
+    print(f"Wrote {overall_path}")
+    print(f"Wrote {by_slice_path}")
+    print(f"Wrote {by_support_path}")
+    print(f"Wrote {by_pop_decile_path}")
+    print(f"Wrote {pop_delta_path}")
+    print(f"Wrote {personalization_path}")
+    print(f"Wrote {meta_path}")
+    if args.write_baseline:
+        _write_phase1_baseline(tables.overall, baseline_path=baseline_path)
+        print(f"Wrote {baseline_path}")
+    elapsed = time.perf_counter() - t_start
+    print(f"Total script runtime: {elapsed:.2f}s")
+
+
+if __name__ == "__main__":
+    main()
+

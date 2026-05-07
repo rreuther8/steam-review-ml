@@ -1,0 +1,7 @@
+{
+  "input_path": "data/processed/steam_reviews_cleaned_english_train_norm.parquet",
+  "output_path": "artifacts/recs/game_profile_reviews.parquet",
+  "max_reviews_per_game": 200,
+  "min_review_chars": 30,
+  "chunksize": 500000
+}

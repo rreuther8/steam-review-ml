@@ -61,7 +61,7 @@ All values **K = 10** from [`artifacts/recs/eval_review_style_4way_proxy_metrics
 
 The frozen regression baseline for the **raw_raw** arm is also stored in [`artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`](artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json) (`as_of_date`: 2026-04-14).
 
-Artifacts for these flows land under [`artifacts/recs/`](artifacts/recs/) where notebooks write CSV/JSONL outputs. After regenerating metrics from recs_006, you can run [`scripts/check_recs_006_regression.py`](scripts/check_recs_006_regression.py) against saved baselines.
+Artifacts for these flows land under [`artifacts/recs/`](artifacts/recs/) where notebooks write CSV/JSONL outputs. After regenerating metrics from recs_006, you can run [`tests/test_recs_006_regression.py`](tests/test_recs_006_regression.py) against saved baselines.
 
 Metric definitions and aggregation semantics live in [`docs/retrieval_metrics_guide.md`](docs/retrieval_metrics_guide.md).
 
@@ -97,7 +97,19 @@ Dataset URL: [https://www.kaggle.com/datasets/najzeko/steam-reviews-2021](https:
 Quick regression check after running `recs_006`:
 
 ```bash
-python scripts/check_recs_006_regression.py
+python -m pytest -q tests/test_recs_006_regression.py
+```
+
+To compare latest metrics against baseline:
+
+```bash
+pytest tests/check_phase1_eval_regression.py
+```
+
+Freeze/update baseline from latest eval outputs:
+
+```bash
+python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json --write-baseline
 ```
 
 ## Product scope notes

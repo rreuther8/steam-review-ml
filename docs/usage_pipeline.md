@@ -39,11 +39,12 @@ The cleaned Parquet has **no** `review_word_count` or `review_length_chars` (tho
 
 Uses `configs/split_reviews.json`. The split seed **`random_state`** is not in JSON; it comes from **`steam_review_ml.constants.PROJECT_RANDOM_SEED`** (currently `2026`) unless overridden via **`STEAM_REVIEWS_RANDOM_STATE`**.
 
-Current config defaults to hybrid splitting:
+Current config defaults to support-aware temporal splitting:
 
-- **`split_mode = hybrid_user_temporal`**
-- users with fewer than **`sparse_user_threshold`** interactions are assigned with deterministic random using the same global **`val_size` / `test_size`** ratios
-- users with enough history are assigned by per-user recency (`per_user_test_n` most-recent rows -> test, next `per_user_val_n` -> val, remaining -> train)
+- **`split_mode = support_aware_user_temporal`**
+- users with 1 interaction are assigned to train/val/test by global `val_size`/`test_size` ratios
+- users with 2 interactions get 1 train row and 1 eval row (val/test chosen per-user)
+- users with 3+ interactions keep at least 1 train row and assign most-recent eval rows to exactly one eval split (val or test), with at least 2 eval rows per user
 
 Set `split_mode = random_stratified` to use legacy hash-stratified random split for all rows.
 
@@ -142,13 +143,25 @@ Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extr
 
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
-- Notebook: `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+- Pipeline job: `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
 - Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
+- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
 
-**Dense game vectors** (TensorFlow + TensorFlow Hub; see TF install notes above and `recs_002` notebook):
+**Dense game vectors** (TensorFlow + TensorFlow Hub):
 
-- Notebook: `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
+- Pipeline job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
+- Structured variant job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
 - Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
+- Structured outputs: `artifacts/recs/game_profile_embeddings_structured_eval.npz`, `game_profile_embedding_index_structured_eval.parquet`, `game_profile_embedding_meta_structured_eval.json`
+- QA notebooks (optional): `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
+
+### Recommender Jobs (separate)
+
+Run these jobs independently so profile rebuilds and embedding rebuilds can be scheduled/retried separately:
+
+1. `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
+2. `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
+3. (Optional structured index) `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
 
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 
@@ -158,14 +171,41 @@ After processed train Parquet exists, build **game profiles** (train split, posi
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
+**Centralized eval pipeline job (Phase 1 baselines)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with standardized artifacts (overall/slices/support/pop-decile/pop-delta/personalization):
+
+- Job: `python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json`
+- Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
+- Outputs (default): `artifacts/recs/eval/`
+  - `eval_phase1_overall.csv`
+  - `eval_phase1_by_slice.csv`
+  - `eval_phase1_by_support_bucket.csv`
+  - `eval_phase1_by_pop_decile.csv`
+  - `eval_phase1_pop_delta_vs_popularity.csv`
+  - `eval_phase1_personalization.csv`
+  - `eval_phase1_run_meta.json`
+    - includes per-stage timing under `timing_seconds`
+
 **4-way raw/structured comparison + regression baseline (recs_006):**
 
-- Build structured index artifact first: `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
+- Build structured index artifact first: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
+- Validate structured artifact (optional QA): `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 - Run comparison/eval: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
 - Save/compare `raw_raw` regression guard:
 
 ```bash
-python scripts/check_recs_006_regression.py
+python -m pytest -q tests/test_recs_006_regression.py
+```
+
+Baseline regression compare (uses existing files at expected locations):
+
+```bash
+pytest tests/check_phase1_eval_regression.py
+```
+
+Freeze/update the baseline snapshot:
+
+```bash
+python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json --write-baseline
 ```
 
 Decision/log artifacts:
@@ -188,11 +228,15 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 2. `python scripts/split_reviews.py configs/split_reviews.json`
 3. `python scripts/normalize_split_parquets.py configs/normalize_splits.json`
 4. (Optional) run tabular modeling notebooks
-5. (Recommender v1) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
-6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`
-7. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after `recs_002` artifacts exist
-8. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for proxy metrics (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
-9. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
+5. (Recommender v1) run `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
+6. (Optional) install TF + Hub (conda-forge or `.[recs-pip]`) and run `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
+7. (Optional structured) run `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
+8. (Optional QA) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`, `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, and `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
+9. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after embedding artifacts exist
+10. (Optional) run `python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json` for centralized baseline eval artifacts
+11. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for exploratory/QA analysis (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
+12. (Optional) run `python -m pytest -q tests/test_recs_006_regression.py` after `recs_006` updates
+13. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
 
 
 

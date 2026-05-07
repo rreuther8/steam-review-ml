@@ -1,0 +1,28 @@
+{
+  "split": "val",
+  "methods": [
+    "raw",
+    "popularity_train",
+    "multi_mean_train"
+  ],
+  "active_cohort": "all",
+  "max_examples": 12500,
+  "support_app_filter_mode": "strict",
+  "min_review_chars": 30,
+  "max_train_rows_per_user": 5,
+  "multi_max_reviews": 5,
+  "k_final": 10,
+  "k_personalization": 10,
+  "random_seed": 2026,
+  "verbose": true,
+  "include_random_sanity": false,
+  "enable_popularity_decile_diagnostics": true,
+  "cohort_sizing": {
+    "val_multi_pos_eval|val_multi_pos_train": 0.5,
+    "val_multi_pos_eval|val_pos_train": 0.25,
+    "val_multi_pos_eval|val_train": 0.15,
+    "val_multi_pos_eval|val_no_train": 0.1
+  },
+  "artifact_dir": "artifacts/recs",
+  "output_dir": "artifacts/recs/eval"
+}
