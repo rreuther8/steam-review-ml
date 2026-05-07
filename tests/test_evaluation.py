@@ -62,6 +62,16 @@ def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
         app_to_row={1: 0, 2: 1, 3: 2},
         pop_row=np.array([10.0, 5.0, 1.0], dtype=np.float32),
         eval_split_name="val",
+        prep_diagnostics={
+            "eval_records_count": 3,
+            "sampled_rows_count": 3,
+            "full_eval_user_count": 3,
+            "full_eval_multi_pos_user_count": 1,
+            "sampled_rows": 3,
+            "evaluable_examples": 3,
+            "dropped_rows": 0,
+            "drop_reasons": {"no_other_positive_app": 0},
+        },
     )
 
 

@@ -43,6 +43,7 @@ class EvalInputs:
     app_to_row: dict[int, int]
     pop_row: np.ndarray
     eval_split_name: str
+    prep_diagnostics: dict
 
 
 @dataclass(frozen=True)
@@ -249,20 +250,23 @@ def _sample_eval_base(
 
 def _build_examples(
     eval_base: pd.DataFrame,
+    user_to_eval_apps: dict[str, list[int]],
     *,
     df_train_all: pd.DataFrame,
     max_train_rows_per_user: int,
     support_app_filter_mode: str,
     rng: np.random.Generator,
     verbose: bool = False,
-) -> list[dict]:
-    user_to_val_apps = eval_base.groupby(USER_COL)["app_id"].apply(lambda s: sorted({int(x) for x in s})).to_dict()
+) -> tuple[list[dict], dict]:
     train_pos = df_train_all[df_train_all["recommended"] == 1].copy()
     train_rows_by_user = {
         str(uid): [{"app_id": int(r.app_id), "text": str(r.review), "ts": float(r.ts)} for r in g.itertuples(index=False)]
         for uid, g in train_pos.groupby(USER_COL)
     }
     examples: list[dict] = []
+    drop_reasons: dict[str, int] = {
+        "no_other_positive_app": 0,
+    }
     row_iter = eval_base.iterrows()
     if verbose:
         row_iter = tqdm(
@@ -274,9 +278,10 @@ def _build_examples(
     for _, r in row_iter:
         uid = str(r[USER_COL])
         q_app = int(r["app_id"])
-        apps = user_to_val_apps.get(uid, [])
+        apps = user_to_eval_apps.get(uid, [])
         positives = {int(a) for a in apps if int(a) != q_app}
         if not positives:
+            drop_reasons["no_other_positive_app"] += 1
             continue
         rows = train_rows_by_user.get(uid, [])
         if support_app_filter_mode == "strict":
@@ -303,7 +308,13 @@ def _build_examples(
                 "eval_pos_cohort": str(r["eval_pos_cohort"]),
             }
         )
-    return examples
+    diagnostics = {
+        "sampled_rows": int(len(eval_base)),
+        "evaluable_examples": int(len(examples)),
+        "dropped_rows": int(len(eval_base) - len(examples)),
+        "drop_reasons": drop_reasons,
+    }
+    return examples, diagnostics
 
 
 def _query_vector_raw(retriever: ContentRetriever, ex: dict) -> np.ndarray:
@@ -428,6 +439,11 @@ def prepare_eval_inputs(
             f"split_used={eval_split_name}"
         )
     df_eval_records = _build_eval_records(df_val_all, df_train_all)
+    user_to_eval_apps = (
+        df_eval_records.groupby(USER_COL)["app_id"]
+        .apply(lambda s: sorted({int(x) for x in s}))
+        .to_dict()
+    )
 
     rng = np.random.default_rng(int(random_seed))
     eval_base = _sample_eval_base(
@@ -437,8 +453,9 @@ def prepare_eval_inputs(
         cohort_sizing=cohort_sizing,
         rng=rng,
     )
-    examples = _build_examples(
+    examples, build_diagnostics = _build_examples(
         eval_base,
+        user_to_eval_apps={str(k): v for k, v in user_to_eval_apps.items()},
         df_train_all=df_train_all,
         max_train_rows_per_user=max_train_rows_per_user,
         support_app_filter_mode=support_app_filter_mode,
@@ -453,6 +470,7 @@ def prepare_eval_inputs(
             f"records={len(df_eval_records):,} sampled={len(eval_base):,} "
             f"evaluable_examples={len(examples):,}"
         )
+        print("Drop reasons:", build_diagnostics.get("drop_reasons", {}))
 
     train_pos = df_train_all[df_train_all["recommended"] == 1]
     vc = train_pos.groupby("app_id").size()
@@ -467,6 +485,15 @@ def prepare_eval_inputs(
         app_to_row=app_to_row,
         pop_row=pop_row,
         eval_split_name=eval_split_name,
+        prep_diagnostics={
+            "eval_records_count": int(len(df_eval_records)),
+            "sampled_rows_count": int(len(eval_base)),
+            "full_eval_user_count": int(df_eval_records[USER_COL].nunique()),
+            "full_eval_multi_pos_user_count": int(
+                sum(1 for apps in user_to_eval_apps.values() if len(apps) >= 2)
+            ),
+            **build_diagnostics,
+        },
     )
 
 
@@ -939,6 +966,25 @@ def run_phase1_eval(
     pop_delta = _append_personalization_metrics(pop_delta, pop_personalization, on_keys=["method", "pos_pop_decile"])
     t_tables = time.perf_counter()
     coverage = _coverage_from_examples(inputs.examples).iloc[0].to_dict()
+    ex_diag = pd.DataFrame(
+        {
+            "n_eval_targets": [int(ex.get("n_eval_targets", 0)) for ex in inputs.examples],
+            "n_support_train": [int(len(ex.get("support_texts_train", []))) for ex in inputs.examples],
+        }
+    )
+    ex_diag["slice_name"] = np.select(
+        [ex_diag["n_eval_targets"] >= 2, ex_diag["n_eval_targets"] == 1, ex_diag["n_eval_targets"] == 0],
+        ["slice_a_multi_target", "slice_b_single_target", "slice_c_zero_target"],
+        default="slice_other",
+    )
+    ex_diag["train_support_bucket"] = ex_diag["n_support_train"].map(_support_bucket)
+    slice_counts = ex_diag["slice_name"].value_counts().sort_index().to_dict()
+    support_counts = (
+        ex_diag["train_support_bucket"]
+        .value_counts()
+        .reindex(SUPPORT_BUCKET_ORDER, fill_value=0)
+        .to_dict()
+    )
     run_meta = {
         "split_requested": split,
         "split_used": inputs.eval_split_name,
@@ -951,6 +997,9 @@ def run_phase1_eval(
         "k_personalization": int(k_personalization),
         "random_seed": int(random_seed),
         "coverage": coverage,
+        "prep_diagnostics": inputs.prep_diagnostics,
+        "counts_by_slice": {k: int(v) for k, v in slice_counts.items()},
+        "counts_by_support_bucket": {k: int(v) for k, v in support_counts.items()},
         "timing_seconds": {
             "prepare_inputs": round(t_inputs - t0, 3),
             "score_methods": round(t_metrics - t_inputs, 3),
