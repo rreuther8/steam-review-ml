@@ -25,6 +25,48 @@ logger = logging.getLogger(__name__)
 SPLIT_TRAIN = "train"
 SPLIT_VAL = "val"
 SPLIT_TEST = "test"
+NORMALIZED_SPLIT_FILENAMES = {
+    SPLIT_TRAIN: "steam_reviews_cleaned_english_train_norm.parquet",
+    SPLIT_VAL: "steam_reviews_cleaned_english_val_norm.parquet",
+    SPLIT_TEST: "steam_reviews_cleaned_english_test_norm.parquet",
+}
+
+
+def resolve_normalized_split_parquet(processed_dir: Path, split_name: str) -> tuple[Path, str]:
+    """Resolve normalized split parquet path with val->train fallback when val is missing."""
+    split = split_name.strip().lower()
+    if split not in {SPLIT_TRAIN, SPLIT_VAL, SPLIT_TEST}:
+        raise ValueError(f"split must be one of val/train/test, got: {split_name!r}")
+
+    if split == SPLIT_VAL:
+        val_path = processed_dir / NORMALIZED_SPLIT_FILENAMES[SPLIT_VAL]
+        if val_path.is_file():
+            return val_path, SPLIT_VAL
+        train_path = processed_dir / NORMALIZED_SPLIT_FILENAMES[SPLIT_TRAIN]
+        return train_path, SPLIT_TRAIN
+
+    return processed_dir / NORMALIZED_SPLIT_FILENAMES[split], split
+
+
+def load_normalized_split_df(
+    path: Path,
+    *,
+    indexed_apps: set[int],
+    min_review_chars: int,
+    user_col: str = "author.steamid",
+    time_col: str = "timestamp_created",
+) -> pd.DataFrame:
+    """Load and lightly filter a normalized split parquet for recommender eval."""
+    usecols = [user_col, "app_id", "review", "recommended", "review_id", time_col]
+    d = pd.read_parquet(path, columns=usecols).copy()
+    d[user_col] = d[user_col].astype(str)
+    d["review"] = d["review"].fillna("").astype(str)
+    d["ts"] = pd.to_numeric(d[time_col], errors="coerce")
+    d = d.dropna(subset=["ts"])
+    d["ts"] = d["ts"].astype(np.float64)
+    d = d[d["review"].str.len() >= int(min_review_chars)]
+    d = d[d["app_id"].isin(indexed_apps)]
+    return d
 
 
 @dataclass(frozen=True)

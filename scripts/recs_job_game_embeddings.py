@@ -19,15 +19,9 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tqdm.auto import tqdm
 
+from steam_review_ml.recommender.math_utils import l2_normalize
 from steam_review_ml.recommender.preferences import build_embedding_input, extract_preferences
 from steam_review_ml.utils import load_config
-
-
-def _l2_normalize(vec: np.ndarray) -> np.ndarray:
-    nrm = float(np.linalg.norm(vec))
-    if nrm > 1e-12:
-        return (vec / nrm).astype(np.float32)
-    return vec.astype(np.float32)
 
 
 def _build_and_write_game_embeddings(
@@ -101,7 +95,7 @@ def _build_and_write_game_embeddings(
     for app_id, g in df.groupby("app_id", sort=True):
         idx = g.index.to_numpy()
         v = emb[idx].mean(axis=0)
-        mean_vecs.append(_l2_normalize(v))
+        mean_vecs.append(l2_normalize(v))
         meta_app.append(int(app_id))
         meta_name.append(str(g["app_name"].iloc[0]))
 

@@ -8,8 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Vectors this small are treated as zero to avoid divide-by-zero in L2 normalize.
-_L2_EPS = 1e-12
+from .math_utils import l2_normalize
 
 
 def default_repo_root() -> Path:
@@ -113,14 +112,6 @@ class ContentRetriever:
                 pass
         self._embed_fn = hub.load(self._tfhub_url)
 
-    @staticmethod
-    def _l2_normalize(vector: np.ndarray) -> np.ndarray:
-        v = np.asarray(vector, dtype=np.float32).ravel()
-        norm = np.linalg.norm(v)
-        if norm <= _L2_EPS:
-            return v
-        return (v / norm).astype(np.float32)
-
     def embed_text(self, text: str) -> np.ndarray:
         """Run the same Hub model as ``recs_002`` / ``recs_003``; return L2-normalized query vector."""
         self._ensure_embedder()
@@ -128,7 +119,7 @@ class ContentRetriever:
         if self._max_chars is not None:
             cleaned = cleaned[: int(self._max_chars)]
         raw_embedding = self._embed_fn([cleaned])
-        return self._l2_normalize(raw_embedding)
+        return l2_normalize(raw_embedding)
 
     # --- retrieval ---
 
