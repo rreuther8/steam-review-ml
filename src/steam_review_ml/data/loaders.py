@@ -55,9 +55,14 @@ def load_normalized_split_df(
     min_review_chars: int,
     user_col: str = "author.steamid",
     time_col: str = "timestamp_created",
+    extra_columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Load and lightly filter a normalized split parquet for recommender eval."""
     usecols = [user_col, "app_id", "review", "recommended", "review_id", time_col]
+    if extra_columns:
+        for c in extra_columns:
+            if c not in usecols:
+                usecols.append(c)
     d = pd.read_parquet(path, columns=usecols).copy()
     d[user_col] = d[user_col].astype(str)
     d["review"] = d["review"].fillna("").astype(str)

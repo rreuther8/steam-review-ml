@@ -1,7 +1,7 @@
 """Recommender helpers and preference utilities."""
 
 from .preferences import build_embedding_input, extract_preferences
-from .evaluation import EvalTables, run_phase1_eval
+from .evaluation import EvalTables, run_retrieval_eval
 from .retrieve import ContentRetriever, default_repo_root
 
 __all__ = [
@@ -10,5 +10,5 @@ __all__ = [
     "ContentRetriever",
     "default_repo_root",
     "extract_preferences",
-    "run_phase1_eval",
+    "run_retrieval_eval",
 ]

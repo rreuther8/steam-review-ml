@@ -1,6 +1,6 @@
 # Retrieval Metrics Guide
 
-This document defines the ranking metrics used in recommender notebooks (`recs_004`, `recs_006`, `recs_008`) and how we aggregate them.
+This document defines the ranking metrics used in recommender notebooks (`recs_004`, `recs_006`, and retrieval work including `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`) and how we aggregate them.
 
 ## Relevance setup
 

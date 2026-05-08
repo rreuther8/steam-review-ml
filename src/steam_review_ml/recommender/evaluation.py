@@ -1,4 +1,4 @@
-"""Centralized offline evaluation pipeline for query-embedding retrieval (Phase 1)."""
+"""Centralized offline evaluation pipeline for query-embedding retrieval (retrieval phase)."""
 
 from __future__ import annotations
 
@@ -31,6 +31,13 @@ PERSONALIZATION_METRIC_PREFIXES = (
     "CatalogCoverage@",
     "Novelty@",
     "PersonalizationGapVsPopularity@",
+)
+TRAIN_ROW_OPTIONAL_FIELDS = (
+    "_norm_author__playtime_at_review",
+    "_norm_author__playtime_last_two_weeks",
+    "_norm_author__num_games_owned",
+    "_norm_author__num_reviews",
+    "_norm_review_word_count",
 )
 
 
@@ -259,10 +266,21 @@ def _build_examples(
     verbose: bool = False,
 ) -> tuple[list[dict], dict]:
     train_pos = df_train_all[df_train_all["recommended"] == 1].copy()
-    train_rows_by_user = {
-        str(uid): [{"app_id": int(r.app_id), "text": str(r.review), "ts": float(r.ts)} for r in g.itertuples(index=False)]
-        for uid, g in train_pos.groupby(USER_COL)
-    }
+    optional_fields = [c for c in TRAIN_ROW_OPTIONAL_FIELDS if c in train_pos.columns]
+    train_rows_by_user: dict[str, list[dict]] = {}
+    for uid, g in train_pos.groupby(USER_COL):
+        rows_out: list[dict] = []
+        for rec in g.to_dict(orient="records"):
+            row = {
+                "app_id": int(rec["app_id"]),
+                "text": str(rec["review"]),
+                "ts": float(rec["ts"]),
+            }
+            for f in optional_fields:
+                v = rec.get(f)
+                row[f] = None if pd.isna(v) else v
+            rows_out.append(row)
+        train_rows_by_user[str(uid)] = rows_out
     examples: list[dict] = []
     drop_reasons: dict[str, int] = {
         "no_other_positive_app": 0,
@@ -302,7 +320,6 @@ def _build_examples(
                 "query_ts": float(r["ts"]),
                 "positives": positives,
                 "n_eval_targets": len(positives),
-                "support_texts_train": [x["text"] for x in rows],
                 "train_review_rows": rows,
                 "cohort": str(r["cohort"]),
                 "eval_pos_cohort": str(r["eval_pos_cohort"]),
@@ -323,7 +340,8 @@ def _query_vector_raw(retriever: ContentRetriever, ex: dict) -> np.ndarray:
 
 def _query_vector_multi_mean_train(retriever: ContentRetriever, ex: dict, *, multi_max_reviews: int) -> np.ndarray:
     texts = [str(ex["query_text"]).strip()]
-    for t in ex.get("support_texts_train", [])[: max(0, int(multi_max_reviews) - 1)]:
+    for row in ex.get("train_review_rows", [])[: max(0, int(multi_max_reviews) - 1)]:
+        t = row.get("text")
         if t and str(t).strip():
             texts.append(str(t).strip())
     if len(texts) == 1:
@@ -431,6 +449,7 @@ def prepare_eval_inputs(
         min_review_chars=min_review_chars,
         user_col=USER_COL,
         time_col=TIME_COL,
+        extra_columns=TRAIN_ROW_OPTIONAL_FIELDS,
     )
     if verbose:
         print(
@@ -527,7 +546,7 @@ def _per_example_metrics(
                 "user_id": ex["user_id"],
                 "query_app_id": int(ex["query_app_id"]),
                 "n_eval_targets": int(ex["n_eval_targets"]),
-                "n_support_train": int(len(ex.get("support_texts_train", []))),
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
                 "n_unique_train_apps": int(len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})),
                 "Hit@K": hit_rate_at_k(ranked_rows, positives, k_final, app_ids),
                 "Recall@K": recall_at_k(ranked_rows, positives, k_final, app_ids),
@@ -818,7 +837,7 @@ def _personalization_by_group(
     return pd.concat(out, ignore_index=True)
 
 
-def run_phase1_eval(
+def run_retrieval_eval(
     *,
     repo_root: Path,
     split: str,
@@ -969,7 +988,7 @@ def run_phase1_eval(
     ex_diag = pd.DataFrame(
         {
             "n_eval_targets": [int(ex.get("n_eval_targets", 0)) for ex in inputs.examples],
-            "n_support_train": [int(len(ex.get("support_texts_train", []))) for ex in inputs.examples],
+            "n_support_train": [int(len(ex.get("train_review_rows", []))) for ex in inputs.examples],
         }
     )
     ex_diag["slice_name"] = np.select(

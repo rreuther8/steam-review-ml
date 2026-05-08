@@ -9,13 +9,13 @@ import pandas as pd
 REQUIRED_METHODS = ("raw", "popularity_train", "multi_mean_train")
 REQUIRED_CORE_METRICS = ("Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
 EXPECTED_EVAL_FILES = (
-    "eval_phase1_overall.csv",
-    "eval_phase1_by_slice.csv",
-    "eval_phase1_by_support_bucket.csv",
-    "eval_phase1_by_pop_decile.csv",
-    "eval_phase1_pop_delta_vs_popularity.csv",
-    "eval_phase1_personalization.csv",
-    "eval_phase1_run_meta.json",
+    "eval_retrieval_overall.csv",
+    "eval_retrieval_by_slice.csv",
+    "eval_retrieval_by_support_bucket.csv",
+    "eval_retrieval_by_pop_decile.csv",
+    "eval_retrieval_pop_delta_vs_popularity.csv",
+    "eval_retrieval_personalization.csv",
+    "eval_retrieval_run_meta.json",
 )
 
 
@@ -29,7 +29,7 @@ def _repo_root() -> Path:
 
 def _artifact_paths(root: Path) -> tuple[Path, Path]:
     eval_dir = root / "artifacts" / "recs" / "eval"
-    baseline_json = eval_dir / "eval_phase1_baseline_overall.json"
+    baseline_json = eval_dir / "eval_retrieval_baseline_overall.json"
     return eval_dir, baseline_json
 
 
@@ -42,23 +42,23 @@ def _validate_contract(eval_dir: Path) -> Path:
     if missing_files:
         raise FileNotFoundError("Missing required eval output file(s): " + "; ".join(missing_files))
 
-    overall_csv = eval_dir / "eval_phase1_overall.csv"
+    overall_csv = eval_dir / "eval_retrieval_overall.csv"
     overall = pd.read_csv(overall_csv)
     if "method" not in overall.columns:
-        raise ValueError("eval_phase1_overall.csv missing required column: method")
+        raise ValueError("eval_retrieval_overall.csv missing required column: method")
 
     for c in REQUIRED_CORE_METRICS:
         if c not in overall.columns:
-            raise ValueError(f"eval_phase1_overall.csv missing required metric column: {c}")
+            raise ValueError(f"eval_retrieval_overall.csv missing required metric column: {c}")
         col = pd.to_numeric(overall[c], errors="coerce")
         if col.isna().any():
-            raise ValueError(f"eval_phase1_overall.csv has non-numeric values in {c}")
+            raise ValueError(f"eval_retrieval_overall.csv has non-numeric values in {c}")
         if ((col < 0) | (col > 1)).any():
-            raise ValueError(f"eval_phase1_overall.csv has out-of-range [0,1] values in {c}")
+            raise ValueError(f"eval_retrieval_overall.csv has out-of-range [0,1] values in {c}")
 
     missing_methods = [m for m in REQUIRED_METHODS if m not in set(overall["method"].astype(str))]
     if missing_methods:
-        raise ValueError("eval_phase1_overall.csv missing required methods: " + ", ".join(missing_methods))
+        raise ValueError("eval_retrieval_overall.csv missing required methods: " + ", ".join(missing_methods))
     return overall_csv
 
 
@@ -85,7 +85,7 @@ def _compare_overall_against_baseline(
             missing_required.append(f"{method}: missing from baseline JSON overall_by_method")
             continue
         if cur_row is None:
-            missing_required.append(f"{method}: missing from current eval_phase1_overall.csv")
+            missing_required.append(f"{method}: missing from current eval_retrieval_overall.csv")
             continue
         for metric in REQUIRED_CORE_METRICS:
             if metric not in base_row:
@@ -103,7 +103,7 @@ def _compare_overall_against_baseline(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate and regress-check Phase-1 eval pipeline outputs."
+        description="Validate and regress-check retrieval eval pipeline outputs."
     )
     parser.add_argument(
         "--tolerance",
@@ -126,7 +126,7 @@ def main() -> int:
             tolerance=float(args.tolerance),
         )
 
-    print("phase1 eval output check")
+    print("retrieval eval output check")
     print(f"eval dir : {eval_dir}")
     print(f"overall  : {overall_csv}")
     print(f"baseline : {baseline_json} ({'found' if baseline_json.is_file() else 'not found; contract-only mode'})")
@@ -150,8 +150,8 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-def test_phase1_eval_regression_outputs() -> None:
-    """Pytest entrypoint: validate phase1 output contract + optional baseline check."""
+def test_retrieval_eval_regression_outputs() -> None:
+    """Pytest entrypoint: validate retrieval output contract + optional baseline check."""
     root = _repo_root()
     eval_dir, baseline_json = _artifact_paths(root)
     overall_csv = _validate_contract(eval_dir)
@@ -163,11 +163,11 @@ def test_phase1_eval_regression_outputs() -> None:
             tolerance=1e-3,
         )
         assert not missing_required, "Required baseline metric(s) missing: " + "; ".join(missing_required)
-        assert not regressions, "Phase1 regression(s): " + "; ".join(regressions)
+        assert not regressions, "Retrieval regression(s): " + "; ".join(regressions)
     else:
         raise AssertionError(
             f"Baseline not found at {baseline_json}. "
             "Create one with: "
-            "python scripts/recs_job_eval_query_embeddings.py "
-            "configs/recs_job_eval_query_embeddings_phase1.json --write-baseline"
+            "python scripts/recs_job_eval_retrieval.py "
+            "configs/recs_job_eval_retrieval.json --write-baseline"
         )

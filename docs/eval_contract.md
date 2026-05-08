@@ -29,5 +29,6 @@ Always report Slice A/Slice B metrics by `n_support_train` buckets:
 - If Slice A support is too low, report instability and treat conclusions as provisional.
 
 ## Notebook/script alignment
-- Notebook reference: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a_002.ipynb`
-- Pipeline target: scripted eval job with same slices/metrics.
+- Notebook reference (analysis / cleaned sweep): `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a_002.ipynb`
+- Consumer of scripted retrieval artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Pipeline target: `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json` (same slices/metrics).

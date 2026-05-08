@@ -45,7 +45,7 @@ Example blended score (illustrative only; tune on validation):
 
 `rank_score = w1 * text_similarity + w2 * als_or_item_score + w3 * popularity_prior + ...`
 
-## Phase 1 — v1 MVP (content-based recommender)
+## Retrieval Phase — v1 MVP (content-based recommender)
 
 ### Inputs
 
@@ -160,7 +160,7 @@ flowchart TB
 
 This creates a true recommender quickly and matches the **write-a-review** moment; the extension above adds **portfolio- and history-aware** context without changing the north star of **embedding-based retrieval vs game profiles**.
 
-## Phase 2 — v2 (hybrid ranking)
+## Ranking Phase — v2 (hybrid ranking)
 
 Rerank **the same candidates** (or a slightly enlarged pool) using multiple signals. **ALS or matrix factorization on implicit feedback** is an optional component here — not the v1 thesis.
 
