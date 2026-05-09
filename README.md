@@ -16,7 +16,7 @@ and integration from modeling notebooks to API behavior.
 
 ## Current results snapshot
 
-Fill this table with your latest best run from `recs_008` (baseline vs history blend):
+Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
 
 | Variant | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -24,7 +24,9 @@ Fill this table with your latest best run from `recs_008` (baseline vs history b
 | History blend (selected) | TODO | TODO | TODO | TODO | TODO |
 | Delta | TODO | TODO | TODO | TODO | TODO |
 
-There is **no single headline offline number** that summarizes the whole project: retrieval quality is demonstrated through **two complementary notebooks** that answer different questions.
+There is **no single headline offline number** that summarizes the whole project: retrieval quality is demonstrated through complementary notebooks that answer different questions.
+
+**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration, pipeline consumers, and mechanism comparisons live under [`notebooks/retrieval/`](notebooks/retrieval/).
 
 ### Offline evaluation suites
 
@@ -50,7 +52,7 @@ Figures below are **K = 10** from the checked-in §3 aggregate table (**validati
 
 #### recs_006 — four-way query × index representation
 
-All values **K = 10** from [`artifacts/recs/eval_review_style_4way_proxy_metrics.csv`](artifacts/recs/eval_review_style_4way_proxy_metrics.csv) (same aggregation as the notebook proxy summary). Arms are **query encoding × game-index encoding** (`raw_*` = raw review text; `structured_*` = structured preference rewrite / structured game profile text).
+All values **K = 10** from [`artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv`](artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv) (same aggregation as the notebook proxy summary). Arms are **query encoding × game-index encoding** (`raw_*` = raw review text; `structured_*` = structured preference rewrite / structured game profile text).
 
 | Arm | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -59,7 +61,7 @@ All values **K = 10** from [`artifacts/recs/eval_review_style_4way_proxy_metrics
 | Raw query · structured index (`raw_structured`) | 0.0388 | 0.0318 | 0.0107 | 0.0162 | 0.0155 |
 | Structured query · structured index (`structured_structured`) | 0.0662 | 0.0541 | 0.0178 | 0.0274 | 0.0262 |
 
-The frozen regression baseline for the **raw_raw** arm is also stored in [`artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`](artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json) (`as_of_date`: 2026-04-14).
+The frozen regression baseline for the **raw_raw** arm is also stored in [`artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`](artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json) (`as_of_date`: 2026-04-14).
 
 Artifacts for these flows land under [`artifacts/recs/`](artifacts/recs/) where notebooks write CSV/JSONL outputs. After regenerating metrics from recs_006, you can run [`tests/test_recs_006_regression.py`](tests/test_recs_006_regression.py) against saved baselines.
 
@@ -103,13 +105,13 @@ python -m pytest -q tests/test_recs_006_regression.py
 To compare latest metrics against baseline:
 
 ```bash
-pytest tests/check_phase1_eval_regression.py
+pytest tests/retrieval_eval_regression.py
 ```
 
 Freeze/update baseline from latest eval outputs:
 
 ```bash
-python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json --write-baseline
+python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline
 ```
 
 ## Product scope notes

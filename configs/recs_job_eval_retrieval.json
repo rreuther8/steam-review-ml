@@ -17,6 +17,8 @@
   "verbose": true,
   "include_random_sanity": false,
   "enable_popularity_decile_diagnostics": true,
+  "archive_run": true,
+  "run_tag": "baseline_retrieval",
   "cohort_sizing": {
     "val_multi_pos_eval|val_multi_pos_train": 0.5,
     "val_multi_pos_eval|val_pos_train": 0.25,
@@ -24,5 +26,5 @@
     "val_multi_pos_eval|val_no_train": 0.1
   },
   "artifact_dir": "artifacts/recs",
-  "output_dir": "artifacts/recs/eval"
+  "output_dir": "artifacts/recs/retrieval/runs/latest"
 }

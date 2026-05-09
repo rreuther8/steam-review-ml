@@ -16,8 +16,9 @@ def _repo_root() -> Path:
 
 
 def _artifact_paths(root: Path) -> tuple[Path, Path]:
-    metrics_csv = root / "artifacts" / "recs" / "eval_review_style_4way_proxy_metrics.csv"
-    baseline_json = root / "artifacts" / "recs" / "eval_review_style_4way_proxy_baseline_raw_raw.json"
+    base = root / "artifacts" / "recs" / "experiments" / "review_style" / "4way_proxy"
+    metrics_csv = base / "eval_review_style_4way_proxy_metrics.csv"
+    baseline_json = base / "eval_review_style_4way_proxy_baseline_raw_raw.json"
     return metrics_csv, baseline_json
 
 

@@ -144,15 +144,16 @@ Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extr
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
 - Pipeline job: `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
-- Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
-- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+- Output (see `configs/recs_job_game_profiles.json`; canonical layout): `artifacts/recs/embeddings/game_profile/default/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
+- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb` — if it still points at `artifacts/recs/` root, set `ARTIFACT_DIR` to `artifacts/recs/embeddings/game_profile/default` or match the config path.
 
 **Dense game vectors** (TensorFlow + TensorFlow Hub):
 
 - Pipeline job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
 - Structured variant job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
-- Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
-- Structured outputs: `artifacts/recs/game_profile_embeddings_structured_eval.npz`, `game_profile_embedding_index_structured_eval.parquet`, `game_profile_embedding_meta_structured_eval.json`
+- Default index outputs: `artifacts/recs/embeddings/game_profile/default/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
+- Structured eval outputs: `artifacts/recs/embeddings/game_profile/structured_eval/game_profile_embeddings_structured_eval.npz`, `game_profile_embedding_index_structured_eval.parquet`, `game_profile_embedding_meta_structured_eval.json`
+- `ContentRetriever` loads from that default directory or legacy flat `artifacts/recs/` if those files exist there.
 - QA notebooks (optional): `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 
 ### Recommender Jobs (separate)
@@ -171,19 +172,40 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized eval pipeline job (Phase 1 baselines)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with standardized artifacts (overall/slices/support/pop-decile/pop-delta/personalization):
+**Centralized eval pipeline job (retrieval baselines)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with standardized artifacts (overall/slices/support/pop-decile/pop-delta/personalization):
 
-- Job: `python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json`
+- Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
-- Outputs (default): `artifacts/recs/eval/`
-  - `eval_phase1_overall.csv`
-  - `eval_phase1_by_slice.csv`
-  - `eval_phase1_by_support_bucket.csv`
-  - `eval_phase1_by_pop_decile.csv`
-  - `eval_phase1_pop_delta_vs_popularity.csv`
-  - `eval_phase1_personalization.csv`
-  - `eval_phase1_run_meta.json`
+- Outputs (default): `artifacts/recs/retrieval/runs/latest/`
+  - Set `archive_run: true` to also snapshot each run into:
+    `artifacts/recs/retrieval/runs/<timestamp>__<run_tag>/`
+  - `eval_retrieval_overall.csv`
+  - `eval_retrieval_by_slice.csv`
+  - `eval_retrieval_by_support_bucket.csv`
+  - `eval_retrieval_by_pop_decile.csv`
+  - `eval_retrieval_pop_delta_vs_popularity.csv`
+  - `eval_retrieval_personalization.csv`
+  - `eval_retrieval_run_meta.json`
     - includes per-stage timing under `timing_seconds`
+
+**Cached eval examples (optional, recommended for fast iteration)** — materialize a static eval examples artifact once and reuse it across notebook/model experiments:
+
+- Job: `python scripts/recs_job_build_eval_examples.py configs/recs_job_build_eval_examples.json`
+- Outputs (default): `artifacts/recs/eval_cache/<cache_name>/`
+  - `eval_examples.parquet`
+  - `eval_examples_summary.csv`
+  - `eval_examples_meta.json`
+
+**Retrieval mechanism comparison (e.g. baselines vs two-tower)** — scaffold notebook (orch + contract notes; fill in when training artifacts exist):
+
+- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
+
+Other **retrieval** notebooks (under `notebooks/retrieval/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
+
+- Task A consumer (reads `eval_retrieval_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Pipeline vs frozen baseline parity: `notebooks/retrieval/recs_009_phase1_pipeline_notebook_parity.ipynb`
+- History blend grid search: `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`
+- Deferred two-stage habit → session eval: `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`
 
 **4-way raw/structured comparison + regression baseline (recs_006):**
 
@@ -199,19 +221,22 @@ python -m pytest -q tests/test_recs_006_regression.py
 Baseline regression compare (uses existing files at expected locations):
 
 ```bash
-pytest tests/check_phase1_eval_regression.py
+pytest tests/retrieval_eval_regression.py
 ```
 
 Freeze/update the baseline snapshot:
 
 ```bash
-python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json --write-baseline
+python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline
 ```
 
 Decision/log artifacts:
 - `docs/retrieval_decision_log.md`
-- `artifacts/recs/active_retrieval_config.json`
-- `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+- `artifacts/recs/retrieval/configs/active_retrieval_config.json`
+- `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
+Artifact layout reference:
+- `docs/artifact_layout.md`
 
 **Programmatic retrieval (v1 wire)** — `steam_review_ml.recommender.ContentRetriever` loads `artifacts/recs/` and exposes `top_k(...)` (raw or structured). Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
@@ -233,7 +258,7 @@ See `docs/recommender_transition_plan.md` for the full v1 path.
 7. (Optional structured) run `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
 8. (Optional QA) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`, `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, and `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 9. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after embedding artifacts exist
-10. (Optional) run `python scripts/recs_job_eval_query_embeddings.py configs/recs_job_eval_query_embeddings_phase1.json` for centralized baseline eval artifacts
+10. (Optional) run `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json` for centralized baseline eval artifacts
 11. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for exploratory/QA analysis (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
 12. (Optional) run `python -m pytest -q tests/test_recs_006_regression.py` after `recs_006` updates
 13. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)

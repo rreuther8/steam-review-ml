@@ -22,9 +22,8 @@ def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
                 "query_app_id": 1,
                 "query_text": "a",
                 "query_ts": 1.0,
-                "positives": {2},
+                "validation_positive_app_ids": {2},
                 "n_eval_targets": 1,
-                "support_texts_train": [],
                 "train_review_rows": [],
                 "cohort": "val_no_train",
                 "eval_pos_cohort": "val_single_pos_eval",
@@ -34,9 +33,8 @@ def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
                 "query_app_id": 2,
                 "query_text": "b",
                 "query_ts": 2.0,
-                "positives": {1, 3},
+                "validation_positive_app_ids": {1, 3},
                 "n_eval_targets": 2,
-                "support_texts_train": ["x"],
                 "train_review_rows": [{"app_id": 1, "text": "x", "ts": 1.5}],
                 "cohort": "val_pos_train",
                 "eval_pos_cohort": "val_multi_pos_eval",
@@ -46,9 +44,8 @@ def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
                 "query_app_id": 3,
                 "query_text": "c",
                 "query_ts": 3.0,
-                "positives": {1},
+                "validation_positive_app_ids": {1},
                 "n_eval_targets": 1,
-                "support_texts_train": ["y", "z"],
                 "train_review_rows": [
                     {"app_id": 1, "text": "y", "ts": 1.1},
                     {"app_id": 2, "text": "z", "ts": 1.2},
@@ -62,6 +59,16 @@ def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
         app_to_row={1: 0, 2: 1, 3: 2},
         pop_row=np.array([10.0, 5.0, 1.0], dtype=np.float32),
         eval_split_name="val",
+        prep_diagnostics={
+            "eval_records_count": 3,
+            "sampled_rows_count": 3,
+            "full_eval_user_count": 3,
+            "full_eval_multi_pos_user_count": 1,
+            "sampled_rows": 3,
+            "evaluable_examples": 3,
+            "dropped_rows": 0,
+            "drop_reasons": {"no_other_positive_app": 0},
+        },
     )
 
 
@@ -96,7 +103,7 @@ def _fake_registry(_: object) -> dict[str, Callable[[dict], np.ndarray]]:
     }
 
 
-def test_run_phase1_eval_reuses_prepared_retriever(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_retrieval_eval_reuses_prepared_retriever(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_retriever = object()
     fake_inputs = _fake_eval_inputs(fake_retriever)
 
@@ -106,7 +113,7 @@ def test_run_phase1_eval_reuses_prepared_retriever(monkeypatch: pytest.MonkeyPat
 
     def fake_content_retriever(*args, **kwargs):  # noqa: ANN002, ANN003
         _ = (args, kwargs)
-        raise AssertionError("run_phase1_eval should not create a second ContentRetriever")
+        raise AssertionError("run_retrieval_eval should not create a second ContentRetriever")
 
     def fake_build_method_registry(**kwargs):  # noqa: ANN003
         assert kwargs["retriever"] is fake_retriever
@@ -116,7 +123,7 @@ def test_run_phase1_eval_reuses_prepared_retriever(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(evaluation, "ContentRetriever", fake_content_retriever)
     monkeypatch.setattr(evaluation, "_build_method_registry", fake_build_method_registry)
 
-    tables = evaluation.run_phase1_eval(
+    tables = evaluation.run_retrieval_eval(
         repo_root=Path("."),
         split="val",
         methods=["raw", "popularity_train", "multi_mean_train"],
@@ -145,7 +152,7 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     monkeypatch.setattr(evaluation, "prepare_eval_inputs", lambda **kwargs: fake_inputs)
     monkeypatch.setattr(evaluation, "_build_method_registry", lambda **kwargs: _fake_registry(fake_retriever))
 
-    tables = evaluation.run_phase1_eval(
+    tables = evaluation.run_retrieval_eval(
         repo_root=Path("."),
         split="val",
         methods=["raw", "popularity_train", "multi_mean_train"],
