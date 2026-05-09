@@ -16,6 +16,7 @@ Optional non-gating sanity baseline:
 from __future__ import annotations
 
 import argparse
+import shutil
 import json
 import time
 from datetime import datetime, timezone
@@ -46,7 +47,7 @@ def _parse_cohort_sizing(raw: dict[str, float] | None) -> dict[tuple[str, str], 
 
 
 def _write_retrieval_baseline(overall: pd.DataFrame, *, baseline_path: Path) -> None:
-    required_metrics = ("Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
+    required_metrics = ("Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
     missing_cols = [c for c in ("method",) + required_metrics if c not in overall.columns]
     if missing_cols:
         raise ValueError(f"Cannot write baseline; overall table missing columns: {missing_cols}")
@@ -63,6 +64,22 @@ def _write_retrieval_baseline(overall: pd.DataFrame, *, baseline_path: Path) -> 
         "overall_by_method": overall_by_method,
     }
     baseline_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _archive_run(
+    *,
+    latest_dir: Path,
+    run_utc: str,
+    run_tag: str,
+    output_root: Path,
+) -> Path:
+    ts = run_utc.replace("-", "").replace(":", "").replace("T", "_").split(".", 1)[0].replace("+0000", "Z")
+    safe_tag = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in run_tag.strip()) or "manual"
+    archive_dir = output_root / f"{ts}__{safe_tag}"
+    if archive_dir.exists():
+        raise FileExistsError(f"Archive directory already exists: {archive_dir}")
+    shutil.copytree(latest_dir, archive_dir)
+    return archive_dir
 
 
 def main() -> None:
@@ -109,9 +126,11 @@ def main() -> None:
 
     artifact_dir_rel = cfg.get("artifact_dir", "artifacts/recs")
     artifact_dir = repo_root / str(artifact_dir_rel)
-    output_dir_rel = cfg.get("output_dir", "artifacts/recs/eval")
+    output_dir_rel = cfg.get("output_dir", "artifacts/recs/retrieval/runs/latest")
     output_dir = repo_root / str(output_dir_rel)
     output_dir.mkdir(parents=True, exist_ok=True)
+    archive_run = bool(cfg.get("archive_run", False))
+    run_tag = str(cfg.get("run_tag", "eval"))
 
     cohort_sizing = _parse_cohort_sizing(cfg.get("cohort_sizing"))
 
@@ -161,12 +180,15 @@ def main() -> None:
     tables.pop_delta_vs_popularity.to_csv(pop_delta_path, index=False)
     tables.personalization.to_csv(personalization_path, index=False)
 
+    run_utc = datetime.now(timezone.utc).isoformat()
     run_meta = dict(tables.run_meta)
     run_meta.update(
         {
-            "run_utc": datetime.now(timezone.utc).isoformat(),
+            "run_utc": run_utc,
             "config_path": str(Path(args.config)),
             "output_dir": str(output_dir),
+            "archive_run": archive_run,
+            "run_tag": run_tag,
         }
     )
     meta_path.write_text(json.dumps(run_meta, indent=2), encoding="utf-8")
@@ -181,6 +203,15 @@ def main() -> None:
     if args.write_baseline:
         _write_retrieval_baseline(tables.overall, baseline_path=baseline_path)
         print(f"Wrote {baseline_path}")
+    if archive_run:
+        output_root = output_dir.parent
+        archive_dir = _archive_run(
+            latest_dir=output_dir,
+            run_utc=run_utc,
+            run_tag=run_tag,
+            output_root=output_root,
+        )
+        print(f"Archived run snapshot: {archive_dir}")
     elapsed = time.perf_counter() - t_start
     print(f"Total script runtime: {elapsed:.2f}s")
 

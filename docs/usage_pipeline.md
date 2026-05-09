@@ -144,15 +144,16 @@ Pip **cannot** install conda-forge CUDA TensorFlow, so there is no `[recs]` extr
 After processed train Parquet exists, build **game profiles** (train split, positive reviews only):
 
 - Pipeline job: `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
-- Output: `artifacts/recs/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
-- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`
+- Output (see `configs/recs_job_game_profiles.json`; canonical layout): `artifacts/recs/embeddings/game_profile/default/game_profile_reviews.parquet` — one row per thumbs-up review (capped per game); input for **per-review embed + mean** in `recs_002`.
+- QA notebook (optional): `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb` — if it still points at `artifacts/recs/` root, set `ARTIFACT_DIR` to `artifacts/recs/embeddings/game_profile/default` or match the config path.
 
 **Dense game vectors** (TensorFlow + TensorFlow Hub):
 
 - Pipeline job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
 - Structured variant job: `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
-- Outputs: `artifacts/recs/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
-- Structured outputs: `artifacts/recs/game_profile_embeddings_structured_eval.npz`, `game_profile_embedding_index_structured_eval.parquet`, `game_profile_embedding_meta_structured_eval.json`
+- Default index outputs: `artifacts/recs/embeddings/game_profile/default/game_profile_embeddings.npz`, `game_profile_embedding_index.parquet`, `game_profile_embedding_meta.json`
+- Structured eval outputs: `artifacts/recs/embeddings/game_profile/structured_eval/game_profile_embeddings_structured_eval.npz`, `game_profile_embedding_index_structured_eval.parquet`, `game_profile_embedding_meta_structured_eval.json`
+- `ContentRetriever` loads from that default directory or legacy flat `artifacts/recs/` if those files exist there.
 - QA notebooks (optional): `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 
 ### Recommender Jobs (separate)
@@ -175,7 +176,9 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
-- Outputs (default): `artifacts/recs/eval/`
+- Outputs (default): `artifacts/recs/retrieval/runs/latest/`
+  - Set `archive_run: true` to also snapshot each run into:
+    `artifacts/recs/retrieval/runs/<timestamp>__<run_tag>/`
   - `eval_retrieval_overall.csv`
   - `eval_retrieval_by_slice.csv`
   - `eval_retrieval_by_support_bucket.csv`
@@ -229,8 +232,11 @@ python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json -
 
 Decision/log artifacts:
 - `docs/retrieval_decision_log.md`
-- `artifacts/recs/active_retrieval_config.json`
-- `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+- `artifacts/recs/retrieval/configs/active_retrieval_config.json`
+- `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
+
+Artifact layout reference:
+- `docs/artifact_layout.md`
 
 **Programmatic retrieval (v1 wire)** — `steam_review_ml.recommender.ContentRetriever` loads `artifacts/recs/` and exposes `top_k(...)` (raw or structured). Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).

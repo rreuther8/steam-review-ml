@@ -49,7 +49,7 @@ Under `artifacts/recs/eval_cache/<cache_name>/`:
 
 - `eval_examples.parquet`
   - one row per example
-  - required fields: `ex_idx`, `user_id`, `query_app_id`, `query_text`, `n_eval_targets`, `positives`, `support_texts_train`, `train_review_rows`
+  - required fields: `ex_idx`, `user_id`, `query_app_id`, `query_text`, `n_eval_targets`, `validation_positive_app_ids`, `support_texts_train`, `train_review_rows`
 - `eval_examples_meta.json`
   - config used
   - source split names
@@ -59,7 +59,7 @@ Under `artifacts/recs/eval_cache/<cache_name>/`:
   - quick diagnostics: counts by slice/support buckets
 
 Notes:
-- Keep serialization stable and explicit for list-like fields (`positives`, `support_texts_train`, `train_review_rows`).
+- Keep serialization stable and explicit for list-like fields (`validation_positive_app_ids`, `support_texts_train`, `train_review_rows`).
 - Include `slice_name` and `train_support_bucket` at cache-build time for easy QA.
 
 ## Script Plan

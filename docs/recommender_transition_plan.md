@@ -54,9 +54,9 @@ Example blended score (illustrative only; tune on validation):
 
 ### Artifacts to build
 
-- **Per-review profile table** (train, thumbs-up only): `artifacts/recs/game_profile_reviews.parquet` — one row per review; capped per game. **Game vector:** embed each row, **mean-pool per `app_id`**, L2-normalize (`recs_002`).
+- **Per-review profile table** (train, thumbs-up only): `artifacts/recs/embeddings/game_profile/default/game_profile_reviews.parquet` — one row per review; capped per game. **Game vector:** embed each row, **mean-pool per `app_id`**, L2-normalize (`recs_002`).
 
-**Notebooks:** `recs_001_game_profile_reviews.ipynb` → `game_profile_reviews.parquet`. `recs_002_game_embeddings_raw.ipynb` → `game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve_smoke.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_proxy_same_user.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_game_embeddings_structured.ipynb` → structured index artifacts (experimental). `recs_006_eval_ablation_4way.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV.
+**Notebooks:** `recs_001_game_profile_reviews.ipynb` → `embeddings/game_profile/default/game_profile_reviews.parquet`. `recs_002_game_embeddings_raw.ipynb` → `embeddings/game_profile/default/game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve_smoke.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_proxy_same_user.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_game_embeddings_structured.ipynb` → structured index artifacts in `embeddings/game_profile/structured_eval/` (experimental). `recs_006_eval_ablation_4way.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV under `experiments/review_style/4way_proxy/`.
 
 - `vectorizer.pkl` (or embedding model reference)
 
@@ -223,7 +223,7 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 
 ## Concrete next tasks (execution order)
 
-**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **content retrieval + validation metrics** (raw embed default today; structured as ablation). **Game index:** `recs_001` → `game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K; **`recs_004`** → val proxy vs baselines.
+**Tabular baselines and simple linear models** already exist under `notebooks/models/tabular/` (`model_000_*`, `model_001_*`, `model_002_*`). They **do not** satisfy the items below; the **north star** remains **content retrieval + validation metrics** (raw embed default today; structured as ablation). **Game index:** `recs_001` → `embeddings/game_profile/default/game_profile_reviews.parquet`; `recs_002` → embedding matrix; `recs_003` → query + top‑K; **`recs_004`** → val proxy vs baselines.
 
 **v1**
 

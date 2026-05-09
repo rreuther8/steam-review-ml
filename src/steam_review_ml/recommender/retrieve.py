@@ -40,7 +40,26 @@ class ContentRetriever:
     # --- artifact I/O ---
 
     def _artifact_paths(self) -> tuple[Path, Path, Path]:
+        """
+        Resolve artifact paths across supported layouts.
+
+        Supported:
+        - Legacy: artifacts/recs/game_profile_*
+        - Current: artifacts/recs/embeddings/game_profile/default/game_profile_*
+        """
         base = self._artifact_dir
+        candidate_bases = [
+            base,
+            base / "embeddings" / "game_profile" / "default",
+        ]
+        for candidate in candidate_bases:
+            npz = candidate / "game_profile_embeddings.npz"
+            idx = candidate / "game_profile_embedding_index.parquet"
+            meta = candidate / "game_profile_embedding_meta.json"
+            if npz.is_file() and idx.is_file() and meta.is_file():
+                return npz, idx, meta
+
+        # Fall back to legacy path tuple so error message stays explicit.
         return (
             base / "game_profile_embeddings.npz",
             base / "game_profile_embedding_index.parquet",

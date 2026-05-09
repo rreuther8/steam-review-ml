@@ -52,7 +52,7 @@ Figures below are **K = 10** from the checked-in §3 aggregate table (**validati
 
 #### recs_006 — four-way query × index representation
 
-All values **K = 10** from [`artifacts/recs/eval_review_style_4way_proxy_metrics.csv`](artifacts/recs/eval_review_style_4way_proxy_metrics.csv) (same aggregation as the notebook proxy summary). Arms are **query encoding × game-index encoding** (`raw_*` = raw review text; `structured_*` = structured preference rewrite / structured game profile text).
+All values **K = 10** from [`artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv`](artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv) (same aggregation as the notebook proxy summary). Arms are **query encoding × game-index encoding** (`raw_*` = raw review text; `structured_*` = structured preference rewrite / structured game profile text).
 
 | Arm | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -61,7 +61,7 @@ All values **K = 10** from [`artifacts/recs/eval_review_style_4way_proxy_metrics
 | Raw query · structured index (`raw_structured`) | 0.0388 | 0.0318 | 0.0107 | 0.0162 | 0.0155 |
 | Structured query · structured index (`structured_structured`) | 0.0662 | 0.0541 | 0.0178 | 0.0274 | 0.0262 |
 
-The frozen regression baseline for the **raw_raw** arm is also stored in [`artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`](artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json) (`as_of_date`: 2026-04-14).
+The frozen regression baseline for the **raw_raw** arm is also stored in [`artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`](artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json) (`as_of_date`: 2026-04-14).
 
 Artifacts for these flows land under [`artifacts/recs/`](artifacts/recs/) where notebooks write CSV/JSONL outputs. After regenerating metrics from recs_006, you can run [`tests/test_recs_006_regression.py`](tests/test_recs_006_regression.py) against saved baselines.
 

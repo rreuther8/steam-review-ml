@@ -5,7 +5,8 @@ This script moves the core recs_001 data-building logic into a pipeline job:
   - keep recommended == 1 rows
   - enforce minimum review length
   - cap reviews per game deterministically by review_id
-  - write artifacts/recs/game_profile_reviews.parquet
+  - write game_profile_reviews.parquet (path from config; canonical:
+    artifacts/recs/embeddings/game_profile/default/)
 """
 
 from __future__ import annotations

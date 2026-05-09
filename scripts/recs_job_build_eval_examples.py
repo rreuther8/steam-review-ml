@@ -78,7 +78,9 @@ def _examples_to_frame(examples: list[dict]) -> pd.DataFrame:
             "n_support_train": n_support_train,
             "n_unique_train_apps": n_unique_train_apps,
             "train_support_bucket": _support_bucket(n_support_train),
-            "positives_json": json.dumps(sorted(int(a) for a in ex.get("positives", []))),
+            "validation_positive_app_ids_json": json.dumps(
+                sorted(int(a) for a in ex.get("validation_positive_app_ids", []))
+            ),
             "train_review_rows_json": json.dumps(train_rows),
         }
         rows.append(row)

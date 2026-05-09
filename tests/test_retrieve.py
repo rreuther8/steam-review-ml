@@ -9,6 +9,13 @@ import pytest
 from steam_review_ml.recommender.retrieve import ContentRetriever, default_repo_root
 
 
+def _has_recs002_artifacts() -> bool:
+    root = default_repo_root() / "artifacts" / "recs"
+    current = root / "embeddings" / "game_profile" / "default" / "game_profile_embeddings.npz"
+    legacy = root / "game_profile_embeddings.npz"
+    return current.is_file() or legacy.is_file()
+
+
 def test_default_repo_root_points_at_pyproject() -> None:
     root = default_repo_root()
     assert (root / "pyproject.toml").is_file()
@@ -20,7 +27,7 @@ def test_content_retriever_raises_on_missing_artifacts(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    not (default_repo_root() / "artifacts" / "recs" / "game_profile_embeddings.npz").is_file(),
+    not _has_recs002_artifacts(),
     reason="recs_002 artifacts not present",
 )
 def test_content_retriever_loads_matrix_without_embedding() -> None:
@@ -31,7 +38,7 @@ def test_content_retriever_loads_matrix_without_embedding() -> None:
 
 
 @pytest.mark.skipif(
-    not (default_repo_root() / "artifacts" / "recs" / "game_profile_embeddings.npz").is_file(),
+    not _has_recs002_artifacts(),
     reason="recs_002 artifacts not present",
 )
 def test_top_k_raw_smoke() -> None:

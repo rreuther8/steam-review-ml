@@ -1,8 +1,8 @@
 {
-  "input_path": "artifacts/recs/game_profile_reviews.parquet",
-  "output_npz_path": "artifacts/recs/game_profile_embeddings_structured_eval.npz",
-  "output_index_path": "artifacts/recs/game_profile_embedding_index_structured_eval.parquet",
-  "output_meta_path": "artifacts/recs/game_profile_embedding_meta_structured_eval.json",
+  "input_path": "artifacts/recs/embeddings/game_profile/default/game_profile_reviews.parquet",
+  "output_npz_path": "artifacts/recs/embeddings/game_profile/structured_eval/game_profile_embeddings_structured_eval.npz",
+  "output_index_path": "artifacts/recs/embeddings/game_profile/structured_eval/game_profile_embedding_index_structured_eval.parquet",
+  "output_meta_path": "artifacts/recs/embeddings/game_profile/structured_eval/game_profile_embedding_meta_structured_eval.json",
   "tfhub_url": "https://tfhub.dev/google/universal-sentence-encoder/4",
   "batch_size": 64,
   "max_chars_per_review": 8000,

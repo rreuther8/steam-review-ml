@@ -23,7 +23,7 @@ from steam_review_ml.recommender.retrieve import ContentRetriever
 
 USER_COL = "author.steamid"
 TIME_COL = "timestamp_created"
-METRIC_COLS = ["Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
+METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
 SUPPORT_BUCKET_ORDER = ["0", "1", "2-3", "4-7", "8+"]
 REQUIRED_PHASE1_METHODS = frozenset({"raw", "popularity_train", "multi_mean_train"})
 PERSONALIZATION_METRIC_PREFIXES = (
@@ -91,6 +91,13 @@ def recall_at_k(ranked_rows: np.ndarray, positives: set[int], k: int, app_ids: n
 def hit_rate_at_k(ranked_rows: np.ndarray, positives: set[int], k: int, app_ids: np.ndarray) -> float:
     top = set(int(app_ids[i]) for i in ranked_rows[:k])
     return 1.0 if (top & positives) else 0.0
+
+
+def precision_at_k(ranked_rows: np.ndarray, positives: set[int], k: int, app_ids: np.ndarray) -> float:
+    if k <= 0:
+        return float("nan")
+    top = set(int(app_ids[i]) for i in ranked_rows[:k])
+    return len(top & positives) / float(k)
 
 
 def mrr(ranked_rows: np.ndarray, positives: set[int], app_ids: np.ndarray) -> float:
@@ -297,13 +304,13 @@ def _build_examples(
         uid = str(r[USER_COL])
         q_app = int(r["app_id"])
         apps = user_to_eval_apps.get(uid, [])
-        positives = {int(a) for a in apps if int(a) != q_app}
-        if not positives:
+        validation_positive_app_ids = {int(a) for a in apps if int(a) != q_app}
+        if not validation_positive_app_ids:
             drop_reasons["no_other_positive_app"] += 1
             continue
         rows = train_rows_by_user.get(uid, [])
         if support_app_filter_mode == "strict":
-            exclude_apps = set(positives) | {q_app}
+            exclude_apps = set(validation_positive_app_ids) | {q_app}
             rows = [x for x in rows if int(x["app_id"]) not in exclude_apps]
         elif support_app_filter_mode == "query_only":
             rows = [x for x in rows if int(x["app_id"]) != q_app]
@@ -318,8 +325,8 @@ def _build_examples(
                 "query_app_id": q_app,
                 "query_text": str(r["review"]),
                 "query_ts": float(r["ts"]),
-                "positives": positives,
-                "n_eval_targets": len(positives),
+                "validation_positive_app_ids": validation_positive_app_ids,
+                "n_eval_targets": len(validation_positive_app_ids),
                 "train_review_rows": rows,
                 "cohort": str(r["cohort"]),
                 "eval_pos_cohort": str(r["eval_pos_cohort"]),
@@ -535,8 +542,8 @@ def _per_example_metrics(
             unit="example",
         )
     for ex_idx, ex in ex_iter:
-        positives = ex["positives"]
-        if not positives:
+        validation_positive_app_ids = ex["validation_positive_app_ids"]
+        if not validation_positive_app_ids:
             continue
         ranked_rows = _rank_rows(score_fn(ex))
         rows.append(
@@ -548,11 +555,12 @@ def _per_example_metrics(
                 "n_eval_targets": int(ex["n_eval_targets"]),
                 "n_support_train": int(len(ex.get("train_review_rows", []))),
                 "n_unique_train_apps": int(len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})),
-                "Hit@K": hit_rate_at_k(ranked_rows, positives, k_final, app_ids),
-                "Recall@K": recall_at_k(ranked_rows, positives, k_final, app_ids),
-                "MAP@K": average_precision_at_k(ranked_rows, positives, k_final, app_ids),
-                "NDCG@K": ndcg_at_k(ranked_rows, positives, k_final, app_ids),
-                "MRR": mrr(ranked_rows, positives, app_ids),
+                "Hit@K": hit_rate_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
+                "Precision@K": precision_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
+                "Recall@K": recall_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
+                "MAP@K": average_precision_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
+                "NDCG@K": ndcg_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
+                "MRR": mrr(ranked_rows, validation_positive_app_ids, app_ids),
             }
         )
     return pd.DataFrame(rows)
@@ -636,7 +644,7 @@ def _example_popularity_segments(
     app_pop = {int(a): float(c) for a, c in zip(app_ids, pop_row)}
     pos_pop_rows = []
     for ex_idx, ex in enumerate(examples):
-        vals = [app_pop.get(int(a), 0.0) for a in ex["positives"]]
+        vals = [app_pop.get(int(a), 0.0) for a in ex["validation_positive_app_ids"]]
         pos_pop_rows.append(
             {
                 "ex_idx": ex_idx,

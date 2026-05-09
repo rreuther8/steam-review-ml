@@ -91,8 +91,8 @@ Decision view:
 
 ## Where artifacts live
 
-- `artifacts/recs/eval_review_style_4way_proxy_metrics.csv`
-- `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+- `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv`
+- `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
 
 ## Related docs
 

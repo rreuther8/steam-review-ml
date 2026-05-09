@@ -38,8 +38,8 @@ Why:
 
 Evidence:
 - Notebook: `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb`
-- Metrics artifact: `artifacts/recs/eval_review_style_4way_proxy_metrics.csv`
-- Active baseline snapshot: `artifacts/recs/eval_review_style_4way_proxy_baseline_raw_raw.json`
+- Metrics artifact: `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv`
+- Active baseline snapshot: `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
 
 Retrieval flow in this project (current):
 - Candidate set: currently close to the full indexed catalog (small enough to score broadly).
