@@ -172,21 +172,17 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized eval pipeline job (retrieval baselines)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with standardized artifacts (overall/slices/support/pop-decile/pop-delta/personalization):
+**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with paired retrieval- and ranking-contract tables:
 
 - Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
-- Outputs (default): `artifacts/recs/retrieval/runs/latest/`
+- Outputs (default): `artifacts/recs/offline_eval/runs/latest/`
   - Set `archive_run: true` to also snapshot each run into:
-    `artifacts/recs/retrieval/runs/<timestamp>__<run_tag>/`
-  - `eval_retrieval_overall.csv`
-  - `eval_retrieval_by_slice.csv`
-  - `eval_retrieval_by_support_bucket.csv`
-  - `eval_retrieval_by_pop_decile.csv`
-  - `eval_retrieval_pop_delta_vs_popularity.csv`
-  - `eval_retrieval_personalization.csv`
-  - `eval_retrieval_run_meta.json`
-    - includes per-stage timing under `timing_seconds`
+    `artifacts/recs/offline_eval/runs/<timestamp>__<run_tag>/`
+  - **Retrieval summaries:** `eval_retrieval_overall.csv`, `eval_retrieval_by_slice.csv`, `eval_retrieval_by_support_bucket.csv`, `eval_retrieval_by_pop_decile.csv`, `eval_retrieval_pop_delta_vs_popularity.csv`
+  - **Ranking summaries:** `eval_ranking_overall.csv`, `eval_ranking_by_slice.csv`, `eval_ranking_by_support_bucket.csv`, `eval_ranking_by_pop_decile.csv`, `eval_ranking_pop_delta_vs_popularity.csv`, `eval_ranking_personalization.csv`
+  - **Per-example audit trail:** `eval_offline_examples.jsonl` (candidate ids + scores per method/example)
+  - **Run metadata:** `eval_offline_run_meta.json` (includes `timing_seconds`, `k_retrieval`, `k_final`, masking/model provenance)
 
 **Cached eval examples (optional, recommended for fast iteration)** — materialize a static eval examples artifact once and reuse it across notebook/model experiments:
 
@@ -202,7 +198,7 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 Other **retrieval** notebooks (under `notebooks/retrieval/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
 
-- Task A consumer (reads `eval_retrieval_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Task A consumer (reads `eval_retrieval_*` + `eval_ranking_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
 - Pipeline vs frozen baseline parity: `notebooks/retrieval/recs_009_phase1_pipeline_notebook_parity.ipynb`
 - History blend grid search: `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`
 - Deferred two-stage habit → session eval: `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`

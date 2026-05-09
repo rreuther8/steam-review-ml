@@ -6,16 +6,14 @@ This defines the standard filesystem layout under `artifacts/recs/`.
 
 ```text
 artifacts/recs/
-  retrieval/
+  offline_eval/
     runs/
-      latest/                       # default retrieval eval output directory
+      latest/                       # default offline eval output (retrieval + ranking summaries)
       <run_id>/                     # optional named snapshots
       legacy_snapshot/              # migrated legacy eval/ folder
+  retrieval/
     configs/
       active_retrieval_config.json
-  ranking/
-    runs/
-      latest/
   eval_cache/
     <cache_name>/
       eval_examples.parquet
@@ -41,11 +39,11 @@ artifacts/recs/
 
 ## Rules
 
-- New retrieval evaluation jobs write to:
-  - `artifacts/recs/retrieval/runs/latest` (or explicit run-specific directory)
+- New offline evaluation jobs write to:
+  - `artifacts/recs/offline_eval/runs/latest` (or explicit run-specific directory)
 - Optional archival snapshots:
-  - set `archive_run: true` in retrieval config to copy `latest` into
-    `artifacts/recs/retrieval/runs/<timestamp>__<run_tag>/`
+  - set `archive_run: true` in eval config to copy `latest` into
+    `artifacts/recs/offline_eval/runs/<timestamp>__<run_tag>/`
 - Cached examples stay under:
   - `artifacts/recs/eval_cache/<cache_name>/`
 - One-off exploratory outputs go under:

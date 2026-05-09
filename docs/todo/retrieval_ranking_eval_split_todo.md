@@ -107,6 +107,26 @@ Split evaluation into explicit `retrieval` and `ranking` contracts while preserv
 - Ranking metrics improve or hold.
 - Ceiling metric isolates retriever bottleneck vs ranker weakness.
 
+## Note (this line of work): Offline eval path rename ripple
+
+**Cons — rename ripple:** Updating the eval output root touches defaults and docs in several places; anyone who still has **`artifacts/recs/retrieval/`** (or legacy **`artifacts/recs/eval`**) locally should **migrate once** (see `scripts/recs_migrate_artifacts_layout.py`) **or rerun** `recs_job_eval_retrieval.py` so outputs land under **`artifacts/recs/offline_eval/runs/latest/`**.
+
+### Plan — verify ripple is complete
+
+Use this checklist when touching the offline eval layout or onboarding others.
+
+| Area | Action |
+|------|--------|
+| **Config default** | `configs/recs_job_eval_retrieval.json` → `output_dir` is `artifacts/recs/offline_eval/runs/latest` (or intentional override). |
+| **Job script fallbacks** | `scripts/recs_job_eval_retrieval.py` → any `cfg.get("output_dir", …)` fallback matches the same path. |
+| **Docs** | `docs/usage_pipeline.md`, `docs/artifact_layout.md` describe `offline_eval/runs/latest` (and archived `runs/<timestamp>__<run_tag>/` if applicable). |
+| **Migration / helpers** | `scripts/recs_migrate_artifacts_layout.py` documents or performs `retrieval/runs` → `offline_eval/runs` and legacy `eval` → `offline_eval/runs/legacy_snapshot` where needed. |
+| **Notebooks** | `notebooks/retrieval/recs_009_*.ipynb`, `recs_011_*.ipynb`, `recs_004_*_003.ipynb` — **source cells** use `offline_eval/runs/latest` and current filenames (`eval_ranking_*`, `eval_retrieval_*`, `eval_offline_run_meta.json`); **re-run** cells to clear stale outputs that still print `artifacts/recs/eval` or `retrieval/runs`. |
+| **Tests / CI** | Grep for `retrieval/runs/latest`, `artifacts/recs/eval` (as eval root), and old meta names (`eval_retrieval_run_meta.json`); `tests/retrieval_eval_regression.py` should expect `offline_eval/runs/latest`. |
+| **Local checkouts** | If `artifacts/recs/retrieval/` exists, run migrate with `--apply` or delete and regenerate; rebaseline if paths changed. |
+
+**Quick grep (repo root):** `rg 'retrieval/runs|artifacts/recs/eval' --glob '!**/node_modules/**'`
+
 ## Leakage checklist (mandatory before comparing models)
 
 - Support/history features built from train-era interactions only.

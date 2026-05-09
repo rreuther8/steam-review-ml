@@ -26,5 +26,5 @@
     "val_multi_pos_eval|val_no_train": 0.1
   },
   "artifact_dir": "artifacts/recs",
-  "output_dir": "artifacts/recs/retrieval/runs/latest"
+  "output_dir": "artifacts/recs/offline_eval/runs/latest"
 }

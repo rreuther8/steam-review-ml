@@ -142,7 +142,8 @@ def test_run_retrieval_eval_reuses_prepared_retriever(monkeypatch: pytest.Monkey
         artifact_dir=None,
         verbose=False,
     )
-    assert not tables.overall.empty
+    assert not tables.retrieval_overall.empty
+    assert not tables.ranking_overall.empty
 
 
 def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -182,8 +183,8 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     def has_all_prefixes(df: pd.DataFrame) -> bool:
         return all(any(c.startswith(p) for c in df.columns) for p in expected_prefixes)
 
-    assert has_all_prefixes(tables.overall)
-    assert has_all_prefixes(tables.by_slice)
-    assert has_all_prefixes(tables.by_support_bucket)
-    assert has_all_prefixes(tables.by_pop_decile)
-    assert has_all_prefixes(tables.pop_delta_vs_popularity)
+    assert has_all_prefixes(tables.ranking_overall)
+    assert has_all_prefixes(tables.ranking_by_slice)
+    assert has_all_prefixes(tables.ranking_by_support_bucket)
+    assert has_all_prefixes(tables.ranking_by_pop_decile)
+    assert has_all_prefixes(tables.ranking_pop_delta_vs_popularity)
