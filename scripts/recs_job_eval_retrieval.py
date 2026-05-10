@@ -113,6 +113,16 @@ def main() -> None:
         action="store_true",
         help="Freeze baseline JSON (ranking + retrieval overall snapshots) alongside summary CSVs.",
     )
+    parser.add_argument(
+        "--examples-parquet",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "If set, load eval cohort from this parquet (from recs_job_build_eval_examples) "
+            "instead of resampling prepare_eval_inputs. Overrides config key examples_parquet."
+        ),
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -136,6 +146,8 @@ def main() -> None:
     max_train_rows_per_user = int(cfg.get("max_train_rows_per_user", 5))
     multi_max_reviews = int(cfg.get("multi_max_reviews", 5))
     k_final = int(cfg.get("k_final", 10))
+    k_retrieval = cfg.get("k_retrieval")
+    k_retrieval_arg = None if k_retrieval is None else int(k_retrieval)
     k_personalization = int(cfg.get("k_personalization", 10))
     include_random_sanity = bool(cfg.get("include_random_sanity", False))
     verbose = bool(cfg.get("verbose", True))
@@ -154,15 +166,26 @@ def main() -> None:
 
     cohort_sizing = _parse_cohort_sizing(cfg.get("cohort_sizing"))
 
+    examples_parquet: Path | None = None
+    if args.examples_parquet:
+        p = Path(args.examples_parquet)
+        examples_parquet = p if p.is_absolute() else repo_root / p
+    elif cfg.get("examples_parquet"):
+        p = Path(str(cfg["examples_parquet"]).strip())
+        examples_parquet = p if p.is_absolute() else repo_root / p
+
     print("Running offline eval job")
+    kr_display = k_retrieval_arg if k_retrieval_arg is not None else k_final
     print(
         f"split={split} methods={methods} max_examples={max_examples} "
-        f"k_final={k_final} k_personalization={k_personalization}"
+        f"k_retrieval={kr_display} k_final={k_final} k_personalization={k_personalization}"
     )
     print(
         f"active_cohort={active_cohort} support_mode={support_app_filter_mode} "
         f"artifact_dir={artifact_dir} output_dir={output_dir}"
     )
+    if examples_parquet is not None:
+        print(f"examples_parquet={examples_parquet} (cached cohort; max_examples/cohort_sizing unused for sampling)")
 
     tables = run_retrieval_eval(
         repo_root=repo_root,
@@ -176,12 +199,14 @@ def main() -> None:
         max_train_rows_per_user=max_train_rows_per_user,
         multi_max_reviews=multi_max_reviews,
         k_final=k_final,
+        k_retrieval=k_retrieval_arg,
         k_personalization=k_personalization,
         enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
         include_random_sanity=include_random_sanity,
         random_seed=random_seed,
         artifact_dir=artifact_dir,
         verbose=verbose,
+        examples_parquet=examples_parquet,
     )
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"

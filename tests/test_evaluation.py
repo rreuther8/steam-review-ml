@@ -183,6 +183,12 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     def has_all_prefixes(df: pd.DataFrame) -> bool:
         return all(any(c.startswith(p) for c in df.columns) for p in expected_prefixes)
 
+    assert has_all_prefixes(tables.retrieval_overall)
+    assert has_all_prefixes(tables.retrieval_by_slice)
+    assert has_all_prefixes(tables.retrieval_by_support_bucket)
+    assert has_all_prefixes(tables.retrieval_by_pop_decile)
+    assert has_all_prefixes(tables.retrieval_pop_delta_vs_popularity)
+
     assert has_all_prefixes(tables.ranking_overall)
     assert has_all_prefixes(tables.ranking_by_slice)
     assert has_all_prefixes(tables.ranking_by_support_bucket)

@@ -12,6 +12,7 @@
   "max_train_rows_per_user": 5,
   "multi_max_reviews": 5,
   "k_final": 10,
+  "k_retrieval": 100,
   "k_personalization": 10,
   "random_seed": 2026,
   "verbose": true,

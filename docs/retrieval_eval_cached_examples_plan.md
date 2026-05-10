@@ -79,19 +79,19 @@ Behavior:
 
 ## Evaluation Job Integration
 
-Minimal integration options:
+**Implemented (Option A, path to parquet):** `scripts/recs_job_eval_retrieval.py` accepts:
 
-- **Option A (preferred):** add `--examples-cache-dir` to `scripts/recs_job_eval_retrieval.py`
-  - if provided, load cached examples instead of calling `prepare_eval_inputs`
-- **Option B:** create a new script variant for cached eval runs
+- CLI **`--examples-parquet PATH`** (repo-relative or absolute), or
+- Config key **`examples_parquet`** with a path relative to repo root,
 
-Recommendation: Option A, because it preserves one main eval entrypoint.
+and calls `prepare_eval_inputs_from_cache(...)` instead of resampling **`prepare_eval_inputs`**. **`max_examples`** / cohort knobs are ignored for cohort construction when this is set — the parquet fixes who is evaluated; keep config aligned with how the parquet was built for interpretation.
+
+Historical note: draft below referred to **`--examples-cache-dir`**; the shipped knob points at **`eval_examples.parquet`** explicitly.
 
 ## Notebook Integration (`recs_011`)
 
-- Replace repeated `prepare_eval_inputs(...)` calls with cache load.
-- Keep fallback path for ad hoc runs (no cache provided).
-- Emit warning when running uncached mode.
+- May load the same **`eval_examples.parquet`** for local scoring; the **batch job** uses **`--examples-parquet`** for one-command cached eval.
+- Keep fallback path for ad hoc runs without a cache.
 
 ## Split Strategy / Interview-Friendly Framing
 

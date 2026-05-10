@@ -534,6 +534,110 @@ def prepare_eval_inputs(
     )
 
 
+def load_eval_examples_from_parquet(parquet_path: Path) -> list[dict]:
+    """Load eval examples produced by ``recs_job_build_eval_examples.py`` (stable parquet schema).
+
+    Returns the same ``list[dict]`` shape ``prepare_eval_inputs`` uses so ``run_retrieval_eval`` stays unchanged.
+    """
+    df = pd.read_parquet(parquet_path)
+    required_cols = {
+        "user_id",
+        "query_app_id",
+        "query_text",
+        "query_ts",
+        "n_eval_targets",
+        "cohort",
+        "eval_pos_cohort",
+        "validation_positive_app_ids_json",
+        "train_review_rows_json",
+    }
+    missing = sorted(c for c in required_cols if c not in df.columns)
+    if missing:
+        raise ValueError(f"Cached eval examples parquet missing columns: {missing}")
+
+    examples: list[dict] = []
+    for rec in df.to_dict(orient="records"):
+        examples.append(
+            {
+                "user_id": str(rec["user_id"]),
+                "query_app_id": int(rec["query_app_id"]),
+                "query_text": str(rec["query_text"]),
+                "query_ts": float(rec["query_ts"]),
+                "validation_positive_app_ids": set(
+                    int(a) for a in json.loads(rec["validation_positive_app_ids_json"])
+                ),
+                "n_eval_targets": int(rec["n_eval_targets"]),
+                "train_review_rows": json.loads(rec["train_review_rows_json"]),
+                "cohort": str(rec["cohort"]),
+                "eval_pos_cohort": str(rec["eval_pos_cohort"]),
+            }
+        )
+    return examples
+
+
+def prepare_eval_inputs_from_cache(
+    *,
+    repo_root: Path,
+    split: str,
+    min_review_chars: int,
+    examples_parquet: Path,
+    artifact_dir: Path | None = None,
+    verbose: bool = False,
+) -> EvalInputs:
+    """Retriever + popularity row from artifacts; examples from parquet (no cohort resampling).
+
+    Caller is responsible for using a parquet that matches offline eval semantics (typically built via
+    ``recs_job_build_eval_examples.py`` with the intended split/cohort/seed frozen in its meta).
+    ``split`` is still resolved for ``eval_split_name`` parity with scripted runs on the same config.
+    """
+    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
+    X = retriever.embedding_matrix
+    app_ids = retriever.app_ids
+    app_to_row = {int(a): i for i, a in enumerate(app_ids)}
+    indexed_apps = set(int(a) for a in app_ids.tolist())
+
+    processed = repo_root / "data" / "processed"
+    eval_parquet, eval_split_name = resolve_normalized_split_parquet(processed, split)
+    train_parquet = processed / NORMALIZED_SPLIT_FILENAMES["train"]
+    if not train_parquet.is_file():
+        raise FileNotFoundError(f"Missing train parquet: {train_parquet}")
+
+    df_train_all = load_normalized_split_df(
+        train_parquet,
+        indexed_apps=indexed_apps,
+        min_review_chars=min_review_chars,
+        user_col=USER_COL,
+        time_col=TIME_COL,
+        extra_columns=TRAIN_ROW_OPTIONAL_FIELDS,
+    )
+    train_pos = df_train_all[df_train_all["recommended"] == 1]
+    vc = train_pos.groupby("app_id").size()
+    pop_row = np.asarray([float(vc.get(int(a), 0.0)) for a in app_ids], dtype=np.float32)
+    pop_row = np.maximum(pop_row, 1e-6).astype(np.float32)
+
+    examples = load_eval_examples_from_parquet(examples_parquet)
+    if not examples:
+        raise RuntimeError(f"No examples loaded from {examples_parquet}")
+    if verbose:
+        print(f"Loaded {len(examples):,} cached eval examples from {examples_parquet}")
+
+    return EvalInputs(
+        retriever=retriever,
+        examples=examples,
+        embedding_matrix=X,
+        app_ids=app_ids,
+        app_to_row=app_to_row,
+        pop_row=pop_row,
+        eval_split_name=eval_split_name,
+        prep_diagnostics={
+            "examples_source": "parquet_cache",
+            "examples_parquet": str(examples_parquet.resolve()),
+            "n_examples_loaded": int(len(examples)),
+            "eval_split_parquet": str(eval_parquet),
+        },
+    )
+
+
 def _embedding_model_snapshot(retriever: ContentRetriever | None) -> str:
     if retriever is None:
         return "unknown"
@@ -588,7 +692,6 @@ def _per_example_retrieval_ranking(
         full_order = _rank_rows(scores)
         retrieved_indices = np.asarray(full_order[:k_retrieval], dtype=np.int64)
         ranked_indices = np.asarray(full_order[:k_final], dtype=np.int64)
-        ret_topk_for_metrics = np.asarray(retrieved_indices[:k_final], dtype=np.int64)
 
         retr_ids_list = [int(app_ids[int(i)]) for i in retrieved_indices]
         retr_scores_list = [float(scores[int(i)]) for i in retrieved_indices]
@@ -596,11 +699,14 @@ def _per_example_retrieval_ranking(
         ranked_scores_list = [float(scores[int(i)]) for i in ranked_indices]
 
         slice_name, bucket = _slice_and_bucket_for_example(ex)
+        retrieved_app_ids_set = set(retr_ids_list)
+        n_positive_in_retrieved = int(len(positives & retrieved_app_ids_set))
 
         retrieval_rows.append(
             {
                 "method": method_name,
                 "ex_idx": ex_idx,
+                "slice_name": slice_name,
                 "user_id": ex["user_id"],
                 "query_app_id": int(ex["query_app_id"]),
                 "n_eval_targets": int(ex["n_eval_targets"]),
@@ -608,15 +714,17 @@ def _per_example_retrieval_ranking(
                 "n_unique_train_apps": int(
                     len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})
                 ),
-                "Hit@K": hit_rate_at_k(ret_topk_for_metrics, positives, k_final, app_ids),
-                "Precision@K": precision_at_k(ret_topk_for_metrics, positives, k_final, app_ids),
-                "Recall@K": recall_at_k(ret_topk_for_metrics, positives, k_final, app_ids),
+                "n_positive_in_retrieved": n_positive_in_retrieved,
+                "Hit@K": hit_rate_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Precision@K": precision_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Recall@K": recall_at_k(retrieved_indices, positives, k_retrieval, app_ids),
             }
         )
         ranking_rows.append(
             {
                 "method": method_name,
                 "ex_idx": ex_idx,
+                "slice_name": slice_name,
                 "user_id": ex["user_id"],
                 "query_app_id": int(ex["query_app_id"]),
                 "n_eval_targets": int(ex["n_eval_targets"]),
@@ -977,6 +1085,77 @@ def _personalization_by_group(
     return pd.concat(out, ignore_index=True)
 
 
+def _retrieval_bottleneck_summary(
+    df_ex: pd.DataFrame,
+    *,
+    k_retrieval: int,
+    candidate_pool_size: int,
+) -> dict[str, Any]:
+    """Phase-3 bottleneck stats: positives in retrieved top-``k_retrieval`` (not ranking top-``k_final``)."""
+    need = {"method", "slice_name", "n_positive_in_retrieved"}
+    if df_ex.empty or not need.issubset(df_ex.columns):
+        return {
+            "candidate_pool_size": int(candidate_pool_size),
+            "k_retrieval": int(k_retrieval),
+            "by_method": {},
+            "by_method_slice": [],
+            "note": "no per-example bottleneck columns",
+        }
+    by_method: dict[str, Any] = {}
+    for method, g in df_ex.groupby("method", observed=True):
+        n = int(len(g))
+        z = float((g["n_positive_in_retrieved"].astype(int) == 0).mean()) if n else float("nan")
+        avg_p = float(g["n_positive_in_retrieved"].astype(float).mean()) if n else float("nan")
+        by_method[str(method)] = {
+            "n_examples": n,
+            "frac_queries_zero_positive_in_topk_retrieval": z,
+            "avg_positive_items_in_topk_retrieval": avg_p,
+        }
+    by_method_slice: list[dict[str, Any]] = []
+    for (method, slice_name), g in df_ex.groupby(["method", "slice_name"], observed=True):
+        n = int(len(g))
+        z = float((g["n_positive_in_retrieved"].astype(int) == 0).mean()) if n else float("nan")
+        avg_p = float(g["n_positive_in_retrieved"].astype(float).mean()) if n else float("nan")
+        by_method_slice.append(
+            {
+                "method": str(method),
+                "slice_name": str(slice_name),
+                "n_examples": n,
+                "frac_queries_zero_positive_in_topk_retrieval": z,
+                "avg_positive_items_in_topk_retrieval": avg_p,
+            }
+        )
+    return {
+        "candidate_pool_size": int(candidate_pool_size),
+        "k_retrieval": int(k_retrieval),
+        "definition": "positive_items = |validation_positive ∩ retrieved_app_ids[0:k_retrieval]|",
+        "by_method": by_method,
+        "by_method_slice": by_method_slice,
+    }
+
+
+def _slice_b_empirical_std(
+    df_ex: pd.DataFrame,
+    *,
+    metric_cols: tuple[str, ...],
+) -> dict[str, dict[str, float]]:
+    """Per-method std-dev of per-example metrics in slice_b (spread across users, not a CI)."""
+    if df_ex.empty or "slice_name" not in df_ex.columns:
+        return {}
+    sb = df_ex[df_ex["slice_name"] == "slice_b_single_target"]
+    out: dict[str, dict[str, float]] = {}
+    for method, g in sb.groupby("method", observed=True):
+        method = str(method)
+        row: dict[str, float] = {}
+        for col in metric_cols:
+            if col in g.columns and len(g):
+                row[f"{col}_std_across_examples"] = float(pd.to_numeric(g[col], errors="coerce").std(ddof=0))
+            else:
+                row[f"{col}_std_across_examples"] = float("nan")
+        out[method] = row
+    return out
+
+
 def run_retrieval_eval(
     *,
     repo_root: Path,
@@ -990,12 +1169,14 @@ def run_retrieval_eval(
     max_train_rows_per_user: int,
     multi_max_reviews: int,
     k_final: int,
+    k_retrieval: int | None = None,
     k_personalization: int,
     enable_popularity_decile_diagnostics: bool,
     include_random_sanity: bool,
     random_seed: int = PROJECT_RANDOM_SEED,
     artifact_dir: Path | None = None,
     verbose: bool = False,
+    examples_parquet: Path | None = None,
 ) -> EvalTables:
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
@@ -1003,20 +1184,37 @@ def run_retrieval_eval(
             f"{sorted(REQUIRED_PHASE1_METHODS)}; got {sorted(set(methods))}"
         )
 
+    k_r = int(k_final) if k_retrieval is None else int(k_retrieval)
+    if k_r < int(k_final):
+        raise ValueError(f"k_retrieval ({k_r}) must be >= k_final ({k_final})")
+
     t0 = time.perf_counter()
-    inputs = prepare_eval_inputs(
-        repo_root=repo_root,
-        split=split,
-        active_cohort=active_cohort,
-        max_examples=max_examples,
-        support_app_filter_mode=support_app_filter_mode,
-        cohort_sizing=cohort_sizing,
-        min_review_chars=min_review_chars,
-        max_train_rows_per_user=max_train_rows_per_user,
-        random_seed=random_seed,
-        artifact_dir=artifact_dir,
-        verbose=verbose,
-    )
+    if examples_parquet is not None:
+        p = examples_parquet
+        if not p.is_file():
+            raise FileNotFoundError(f"examples_parquet not found: {p}")
+        inputs = prepare_eval_inputs_from_cache(
+            repo_root=repo_root,
+            split=split,
+            min_review_chars=min_review_chars,
+            examples_parquet=p,
+            artifact_dir=artifact_dir,
+            verbose=verbose,
+        )
+    else:
+        inputs = prepare_eval_inputs(
+            repo_root=repo_root,
+            split=split,
+            active_cohort=active_cohort,
+            max_examples=max_examples,
+            support_app_filter_mode=support_app_filter_mode,
+            cohort_sizing=cohort_sizing,
+            min_review_chars=min_review_chars,
+            max_train_rows_per_user=max_train_rows_per_user,
+            random_seed=random_seed,
+            artifact_dir=artifact_dir,
+            verbose=verbose,
+        )
     t_inputs = time.perf_counter()
     rng = np.random.default_rng(int(random_seed))
     registry = _build_method_registry(
@@ -1043,7 +1241,6 @@ def run_retrieval_eval(
     retrieval_frames: list[pd.DataFrame] = []
     ranking_frames: list[pd.DataFrame] = []
     artifact_rows_acc: list[dict[str, Any]] = []
-    k_retrieval = int(k_final)  # Phase 4: separate k_retrieval > k_final
     model_snap = _embedding_model_snapshot(inputs.retriever)
     for name, fn in method_iter:
         df_r, df_k, arts = _per_example_retrieval_ranking(
@@ -1051,7 +1248,7 @@ def run_retrieval_eval(
             score_fn=fn,
             examples=inputs.examples,
             app_ids=inputs.app_ids,
-            k_retrieval=k_retrieval,
+            k_retrieval=k_r,
             k_final=k_final,
             masking_policy_version=MASKING_POLICY_VERSION,
             model_version=model_snap,
@@ -1142,6 +1339,22 @@ def run_retrieval_eval(
         group_col="pos_pop_decile",
         verbose=verbose,
     )
+    # Guardrails (ILD, catalog coverage, novelty, personalization gap) align with method top-k@k_personalization;
+    # attach to both ranking and retrieval summaries for comparable reporting.
+    overall_retrieval = _append_personalization_metrics(overall_retrieval, personalization, on_keys=["method"])
+    by_slice_retrieval = _append_personalization_metrics(
+        by_slice_retrieval, slice_personalization, on_keys=["method", "slice_name"]
+    )
+    by_support_retrieval = _append_personalization_metrics(
+        by_support_retrieval, support_personalization, on_keys=["method", "train_support_bucket"]
+    )
+    pop_ret = _append_personalization_metrics(
+        pop_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
+    pop_delta_ret = _append_personalization_metrics(
+        pop_delta_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
+
     overall_ranking = _append_personalization_metrics(overall_ranking, personalization, on_keys=["method"])
     by_slice_ranking = _append_personalization_metrics(
         by_slice_ranking, slice_personalization, on_keys=["method", "slice_name"]
@@ -1176,6 +1389,15 @@ def run_retrieval_eval(
         .reindex(SUPPORT_BUCKET_ORDER, fill_value=0)
         .to_dict()
     )
+    pool_n = int(len(inputs.app_ids))
+    retr_bottleneck = _retrieval_bottleneck_summary(
+        df_ex_retrieval, k_retrieval=k_r, candidate_pool_size=pool_n
+    )
+    slice_b_std_retrieval = _slice_b_empirical_std(
+        df_ex_retrieval, metric_cols=tuple(RETRIEVAL_METRIC_COLS)
+    )
+    slice_b_std_ranking = _slice_b_empirical_std(df_ex_ranking, metric_cols=tuple(METRIC_COLS))
+
     run_meta = {
         "split_requested": split,
         "split_used": inputs.eval_split_name,
@@ -1185,7 +1407,7 @@ def run_retrieval_eval(
         "methods_requested": methods,
         "methods_run": run_methods,
         "k_final": int(k_final),
-        "k_retrieval": int(k_retrieval),
+        "k_retrieval": int(k_r),
         "k_personalization": int(k_personalization),
         "random_seed": int(random_seed),
         "masking_policy_version": MASKING_POLICY_VERSION,
@@ -1194,6 +1416,12 @@ def run_retrieval_eval(
         "prep_diagnostics": inputs.prep_diagnostics,
         "counts_by_slice": {k: int(v) for k, v in slice_counts.items()},
         "counts_by_support_bucket": {k: int(v) for k, v in support_counts.items()},
+        "retrieval_bottleneck": retr_bottleneck,
+        "slice_b_empirical_std": {
+            "retrieval": slice_b_std_retrieval,
+            "ranking": slice_b_std_ranking,
+            "note": "std across eval examples in slice_b_single_target (not bootstrap CI)",
+        },
         "timing_seconds": {
             "prepare_inputs": round(t_inputs - t0, 3),
             "score_methods": round(t_metrics - t_inputs, 3),
