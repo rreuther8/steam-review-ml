@@ -1,12 +1,13 @@
-"""Centralized offline evaluation pipeline for query-embedding retrieval (retrieval phase)."""
+"""Centralized offline evaluation pipeline (offline eval: retrieval + ranking contracts)."""
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -24,6 +25,8 @@ from steam_review_ml.recommender.retrieve import ContentRetriever
 USER_COL = "author.steamid"
 TIME_COL = "timestamp_created"
 METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
+RETRIEVAL_METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K"]
+MASKING_POLICY_VERSION = "mask_query_app_v1"
 SUPPORT_BUCKET_ORDER = ["0", "1", "2-3", "4-7", "8+"]
 REQUIRED_PHASE1_METHODS = frozenset({"raw", "popularity_train", "multi_mean_train"})
 PERSONALIZATION_METRIC_PREFIXES = (
@@ -40,6 +43,12 @@ TRAIN_ROW_OPTIONAL_FIELDS = (
     "_norm_review_word_count",
 )
 
+# Train-row keys used only for Candidate C behavior pooling (aligned with notebooks/retrieval_ranking/recs_011).
+BEHAVIOR_WEIGHT_PLAYTIME_KEYS: tuple[str, ...] = ("_norm_author__playtime_at_review",)
+
+# Registry id for Candidate C (`l2_normalize(q_session + u_behavior)`); must match notebook experiment id string.
+METHOD_TWO_TOWER_C_RAW_PLUS_BEHAVIOR = "two_tower_c_raw_plus_behavior"
+
 
 @dataclass(frozen=True)
 class EvalInputs:
@@ -55,12 +64,20 @@ class EvalInputs:
 
 @dataclass(frozen=True)
 class EvalTables:
-    overall: pd.DataFrame
-    by_slice: pd.DataFrame
-    by_support_bucket: pd.DataFrame
-    by_pop_decile: pd.DataFrame
-    pop_delta_vs_popularity: pd.DataFrame
+    """Ranking tables mirror legacy full-metric aggregates; retrieval tables subset metrics."""
+
+    retrieval_overall: pd.DataFrame
+    retrieval_by_slice: pd.DataFrame
+    retrieval_by_support_bucket: pd.DataFrame
+    retrieval_by_pop_decile: pd.DataFrame
+    retrieval_pop_delta_vs_popularity: pd.DataFrame
+    ranking_overall: pd.DataFrame
+    ranking_by_slice: pd.DataFrame
+    ranking_by_support_bucket: pd.DataFrame
+    ranking_by_pop_decile: pd.DataFrame
+    ranking_pop_delta_vs_popularity: pd.DataFrame
     personalization: pd.DataFrame
+    artifact_rows: list[dict[str, Any]]
     run_meta: dict
 
 
@@ -357,6 +374,91 @@ def _query_vector_multi_mean_train(retriever: ContentRetriever, ex: dict, *, mul
     return l2_normalize(vecs.mean(axis=0))
 
 
+def _extract_behavior_playtime_weight(row: dict) -> float:
+    """Prefer pre-normalized playtime-at-review; zero if missing."""
+    vals: list[float] = []
+    for key in BEHAVIOR_WEIGHT_PLAYTIME_KEYS:
+        v = row.get(key)
+        if v is None:
+            continue
+        vals.append(max(0.0, float(v)))
+    return float(max(vals)) if vals else 0.0
+
+
+def _mean_train_review_text_embedding(retriever: ContentRetriever, ex: dict) -> np.ndarray:
+    """Mean embedding of train review texts; mirrors recs_011 when no texts fall back to query."""
+    texts = [
+        str(r.get("text", "")).strip()
+        for r in ex.get("train_review_rows", [])
+        if str(r.get("text", "")).strip()
+    ]
+    if texts:
+        vecs = np.stack([retriever.embed_text(t) for t in texts], axis=0).astype(np.float32)
+        return l2_normalize(vecs.mean(axis=0)).astype(np.float32, copy=False)
+    return np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+
+
+def _weighted_mean_behavior_embedding(
+    ex: dict,
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+    fallback: np.ndarray,
+) -> tuple[np.ndarray, bool]:
+    """Weighted mean catalog vectors for train apps using playtime weights; parity with recs_011."""
+    rows = ex.get("train_review_rows", [])
+    weighted_vecs: list[np.ndarray] = []
+    weights: list[float] = []
+    for r in rows:
+        aid = int(r.get("app_id", -1))
+        row_idx = app_to_row.get(aid)
+        if row_idx is None:
+            continue
+        w = _extract_behavior_playtime_weight(r)
+        if w <= 0.0:
+            continue
+        weighted_vecs.append(embedding_matrix[row_idx].astype(np.float32, copy=False))
+        weights.append(w)
+    if weighted_vecs:
+        mat = np.stack(weighted_vecs, axis=0)
+        w_arr = np.asarray(weights, dtype=np.float32)
+        vec = (mat * w_arr[:, None]).sum(axis=0) / float(np.maximum(w_arr.sum(), 1e-12))
+        return l2_normalize(vec).astype(np.float32, copy=False), True
+    support_ids = sorted(
+        {int(r.get("app_id")) for r in rows if int(r.get("app_id", -1)) in app_to_row}
+    )
+    if support_ids:
+        mat = np.stack([embedding_matrix[app_to_row[a]] for a in support_ids], axis=0).astype(np.float32)
+        return l2_normalize(mat.mean(axis=0)).astype(np.float32, copy=False), False
+    return np.asarray(fallback, dtype=np.float32), False
+
+
+def two_tower_c_raw_plus_behavior_query_vector(
+    retriever: ContentRetriever,
+    ex: dict[str, Any],
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+) -> np.ndarray:
+    """
+    Offline-eval Candidate C — same recipe as notebooks/retrieval_ranking/recs_011:
+
+    ``l2_normalize(embed(query_text) + weighted_mean_behavior_embed)``
+
+    Uses ``BEHAVIOR_WEIGHT_PLAYTIME_KEYS`` on train-history rows for behavior weights,
+    then fuses intent and pooled history by summing vectors before final ``l2_normalize``.
+    """
+    q_session = np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+    u_rev = _mean_train_review_text_embedding(retriever, ex)
+    u_behavior, _used_w = _weighted_mean_behavior_embedding(
+        ex,
+        embedding_matrix=embedding_matrix,
+        app_to_row=app_to_row,
+        fallback=u_rev,
+    )
+    return l2_normalize(q_session + u_behavior).astype(np.float32, copy=False)
+
+
 def _scores_from_query(
     q: np.ndarray,
     *,
@@ -407,10 +509,26 @@ def _build_method_registry(
                 s[row] = -np.inf
         return s
 
+    def score_two_tower_c_raw_plus_behavior(ex: dict) -> np.ndarray:
+        q = two_tower_c_raw_plus_behavior_query_vector(
+            retriever,
+            ex,
+            embedding_matrix=X,
+            app_to_row=app_to_row,
+        )
+        return _scores_from_query(
+            q,
+            X=X,
+            app_to_row=app_to_row,
+            query_app_id=int(ex["query_app_id"]),
+            mask_query_app=mask_query_app,
+        )
+
     return {
         "raw": score_raw,
         "popularity_train": score_popularity_train,
         "multi_mean_train": score_multi_mean_train,
+        METHOD_TWO_TOWER_C_RAW_PLUS_BEHAVIOR: score_two_tower_c_raw_plus_behavior,
         "random": score_random,
     }
 
@@ -523,16 +641,147 @@ def prepare_eval_inputs(
     )
 
 
-def _per_example_metrics(
+def load_eval_examples_from_parquet(parquet_path: Path) -> list[dict]:
+    """Load eval examples produced by ``recs_job_build_eval_examples.py`` (stable parquet schema).
+
+    Returns the same ``list[dict]`` shape ``prepare_eval_inputs`` uses so ``run_retrieval_eval`` stays unchanged.
+    """
+    df = pd.read_parquet(parquet_path)
+    required_cols = {
+        "user_id",
+        "query_app_id",
+        "query_text",
+        "query_ts",
+        "n_eval_targets",
+        "cohort",
+        "eval_pos_cohort",
+        "validation_positive_app_ids_json",
+        "train_review_rows_json",
+    }
+    missing = sorted(c for c in required_cols if c not in df.columns)
+    if missing:
+        raise ValueError(f"Cached eval examples parquet missing columns: {missing}")
+
+    examples: list[dict] = []
+    for rec in df.to_dict(orient="records"):
+        examples.append(
+            {
+                "user_id": str(rec["user_id"]),
+                "query_app_id": int(rec["query_app_id"]),
+                "query_text": str(rec["query_text"]),
+                "query_ts": float(rec["query_ts"]),
+                "validation_positive_app_ids": set(
+                    int(a) for a in json.loads(rec["validation_positive_app_ids_json"])
+                ),
+                "n_eval_targets": int(rec["n_eval_targets"]),
+                "train_review_rows": json.loads(rec["train_review_rows_json"]),
+                "cohort": str(rec["cohort"]),
+                "eval_pos_cohort": str(rec["eval_pos_cohort"]),
+            }
+        )
+    return examples
+
+
+def prepare_eval_inputs_from_cache(
+    *,
+    repo_root: Path,
+    split: str,
+    min_review_chars: int,
+    examples_parquet: Path,
+    artifact_dir: Path | None = None,
+    verbose: bool = False,
+) -> EvalInputs:
+    """Retriever + popularity row from artifacts; examples from parquet (no cohort resampling).
+
+    Caller is responsible for using a parquet that matches offline eval semantics (typically built via
+    ``recs_job_build_eval_examples.py`` with the intended split/cohort/seed frozen in its meta).
+    ``split`` is still resolved for ``eval_split_name`` parity with scripted runs on the same config.
+    """
+    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
+    X = retriever.embedding_matrix
+    app_ids = retriever.app_ids
+    app_to_row = {int(a): i for i, a in enumerate(app_ids)}
+    indexed_apps = set(int(a) for a in app_ids.tolist())
+
+    processed = repo_root / "data" / "processed"
+    eval_parquet, eval_split_name = resolve_normalized_split_parquet(processed, split)
+    train_parquet = processed / NORMALIZED_SPLIT_FILENAMES["train"]
+    if not train_parquet.is_file():
+        raise FileNotFoundError(f"Missing train parquet: {train_parquet}")
+
+    df_train_all = load_normalized_split_df(
+        train_parquet,
+        indexed_apps=indexed_apps,
+        min_review_chars=min_review_chars,
+        user_col=USER_COL,
+        time_col=TIME_COL,
+        extra_columns=TRAIN_ROW_OPTIONAL_FIELDS,
+    )
+    train_pos = df_train_all[df_train_all["recommended"] == 1]
+    vc = train_pos.groupby("app_id").size()
+    pop_row = np.asarray([float(vc.get(int(a), 0.0)) for a in app_ids], dtype=np.float32)
+    pop_row = np.maximum(pop_row, 1e-6).astype(np.float32)
+
+    examples = load_eval_examples_from_parquet(examples_parquet)
+    if not examples:
+        raise RuntimeError(f"No examples loaded from {examples_parquet}")
+    if verbose:
+        print(f"Loaded {len(examples):,} cached eval examples from {examples_parquet}")
+
+    return EvalInputs(
+        retriever=retriever,
+        examples=examples,
+        embedding_matrix=X,
+        app_ids=app_ids,
+        app_to_row=app_to_row,
+        pop_row=pop_row,
+        eval_split_name=eval_split_name,
+        prep_diagnostics={
+            "examples_source": "parquet_cache",
+            "examples_parquet": str(examples_parquet.resolve()),
+            "n_examples_loaded": int(len(examples)),
+            "eval_split_parquet": str(eval_parquet),
+        },
+    )
+
+
+def _embedding_model_snapshot(retriever: ContentRetriever | None) -> str:
+    if retriever is None:
+        return "unknown"
+    url = getattr(retriever, "_tfhub_url", None)
+    return str(url) if url else "unknown"
+
+
+def _slice_and_bucket_for_example(ex: dict) -> tuple[str, str]:
+    n_eval = int(ex.get("n_eval_targets", 0))
+    if n_eval >= 2:
+        slice_name = "slice_a_multi_target"
+    elif n_eval == 1:
+        slice_name = "slice_b_single_target"
+    elif n_eval == 0:
+        slice_name = "slice_c_zero_target"
+    else:
+        slice_name = "slice_other"
+    n_sup = len(ex.get("train_review_rows", []))
+    return slice_name, _support_bucket(int(n_sup))
+
+
+def _per_example_retrieval_ranking(
     *,
     method_name: str,
     score_fn: Callable[[dict], np.ndarray],
     examples: list[dict],
     app_ids: np.ndarray,
+    k_retrieval: int,
     k_final: int,
+    masking_policy_version: str,
+    model_version: str,
     verbose: bool = False,
-) -> pd.DataFrame:
-    rows: list[dict] = []
+) -> tuple[pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
+    """Score each example once; derive retrieval vs ranking metric rows and JSONL-ready artifact dicts."""
+    retrieval_rows: list[dict[str, Any]] = []
+    ranking_rows: list[dict[str, Any]] = []
+    artifact_rows: list[dict[str, Any]] = []
     ex_iter = enumerate(examples)
     if verbose:
         ex_iter = tqdm(
@@ -542,28 +791,92 @@ def _per_example_metrics(
             unit="example",
         )
     for ex_idx, ex in ex_iter:
-        validation_positive_app_ids = ex["validation_positive_app_ids"]
-        if not validation_positive_app_ids:
+        validation_positive_app_ids_set = set(int(x) for x in ex["validation_positive_app_ids"])
+        positives = validation_positive_app_ids_set
+        if not positives:
             continue
-        ranked_rows = _rank_rows(score_fn(ex))
-        rows.append(
+        scores = score_fn(ex)
+        full_order = _rank_rows(scores)
+        retrieved_indices = np.asarray(full_order[:k_retrieval], dtype=np.int64)
+        ranked_indices = np.asarray(full_order[:k_final], dtype=np.int64)
+
+        retr_ids_list = [int(app_ids[int(i)]) for i in retrieved_indices]
+        retr_scores_list = [float(scores[int(i)]) for i in retrieved_indices]
+        ranked_ids_list = [int(app_ids[int(i)]) for i in ranked_indices]
+        ranked_scores_list = [float(scores[int(i)]) for i in ranked_indices]
+
+        slice_name, bucket = _slice_and_bucket_for_example(ex)
+        retrieved_app_ids_set = set(retr_ids_list)
+        n_positive_in_retrieved = int(len(positives & retrieved_app_ids_set))
+
+        retrieval_rows.append(
             {
                 "method": method_name,
                 "ex_idx": ex_idx,
+                "slice_name": slice_name,
                 "user_id": ex["user_id"],
                 "query_app_id": int(ex["query_app_id"]),
                 "n_eval_targets": int(ex["n_eval_targets"]),
                 "n_support_train": int(len(ex.get("train_review_rows", []))),
-                "n_unique_train_apps": int(len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})),
-                "Hit@K": hit_rate_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
-                "Precision@K": precision_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
-                "Recall@K": recall_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
-                "MAP@K": average_precision_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
-                "NDCG@K": ndcg_at_k(ranked_rows, validation_positive_app_ids, k_final, app_ids),
-                "MRR": mrr(ranked_rows, validation_positive_app_ids, app_ids),
+                "n_unique_train_apps": int(
+                    len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})
+                ),
+                "n_positive_in_retrieved": n_positive_in_retrieved,
+                "Hit@K": hit_rate_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Precision@K": precision_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Recall@K": recall_at_k(retrieved_indices, positives, k_retrieval, app_ids),
             }
         )
-    return pd.DataFrame(rows)
+        ranking_rows.append(
+            {
+                "method": method_name,
+                "ex_idx": ex_idx,
+                "slice_name": slice_name,
+                "user_id": ex["user_id"],
+                "query_app_id": int(ex["query_app_id"]),
+                "n_eval_targets": int(ex["n_eval_targets"]),
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
+                "n_unique_train_apps": int(
+                    len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})
+                ),
+                "Hit@K": hit_rate_at_k(ranked_indices, positives, k_final, app_ids),
+                "Precision@K": precision_at_k(ranked_indices, positives, k_final, app_ids),
+                "Recall@K": recall_at_k(ranked_indices, positives, k_final, app_ids),
+                "MAP@K": average_precision_at_k(ranked_indices, positives, k_final, app_ids),
+                "NDCG@K": ndcg_at_k(ranked_indices, positives, k_final, app_ids),
+                "MRR": mrr(ranked_indices, positives, app_ids),
+            }
+        )
+
+        ranked_set = set(ranked_ids_list)
+        retr_set = set(retr_ids_list)
+        assert ranked_set <= retr_set, "ranked ids must stay within retrieved candidates"
+
+        artifact_rows.append(
+            {
+                "ex_idx": int(ex_idx),
+                "method": method_name,
+                "query_app_id": int(ex["query_app_id"]),
+                "user_id": ex["user_id"],
+                "validation_positive_app_ids_json": json.dumps(sorted(positives)),
+                "retrieved_app_ids_json": json.dumps(retr_ids_list),
+                "retrieved_scores_json": json.dumps(retr_scores_list),
+                "ranked_app_ids_json": json.dumps(ranked_ids_list),
+                "ranked_scores_json": json.dumps(ranked_scores_list),
+                "n_eval_targets": int(ex["n_eval_targets"]),
+                "slice_name": slice_name,
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
+                "train_support_bucket": bucket,
+                "retrieval_k": int(k_retrieval),
+                "final_k": int(k_final),
+                "masking_policy_version": masking_policy_version,
+                "model_version": model_version,
+            }
+        )
+
+    df_retrieval = pd.DataFrame(retrieval_rows)
+    df_ranking = pd.DataFrame(ranking_rows)
+    return df_retrieval, df_ranking, artifact_rows
 
 
 def _coverage_from_examples(examples: list[dict]) -> pd.DataFrame:
@@ -591,47 +904,80 @@ def _coverage_from_examples(examples: list[dict]) -> pd.DataFrame:
     )
 
 
-def _table_overall(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
+def _table_overall_generic(
+    df_ex_metrics: pd.DataFrame,
+    *,
+    metric_cols: list[str],
+    sort_cols: list[str],
+    ascending: list[bool],
+) -> pd.DataFrame:
     return (
-        df_ex_metrics.groupby("method", observed=True)[METRIC_COLS]
+        df_ex_metrics.groupby("method", observed=True)[metric_cols]
         .mean()
         .reset_index()
-        .sort_values(["NDCG@K", "MAP@K", "MRR"], ascending=False)
+        .sort_values(sort_cols, ascending=ascending)
         .reset_index(drop=True)
     )
 
 
-def _table_by_slice(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
+def _table_by_slice_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: list[str], ranking: bool) -> pd.DataFrame:
     df = df_ex_metrics.copy()
     df["slice_name"] = np.select(
         [df["n_eval_targets"] >= 2, df["n_eval_targets"] == 1, df["n_eval_targets"] == 0],
         ["slice_a_multi_target", "slice_b_single_target", "slice_c_zero_target"],
         default="slice_other",
     )
+    if ranking:
+        sort_spec = ["slice_name", "NDCG@K", "Hit@K"]
+        ascend = [True, False, False]
+    else:
+        sort_spec = ["slice_name", "Recall@K", "Hit@K"]
+        ascend = [True, False, False]
     return (
-        df.groupby(["slice_name", "method"], observed=True)[METRIC_COLS]
+        df.groupby(["slice_name", "method"], observed=True)[metric_cols]
         .mean()
         .reset_index()
-        .sort_values(["slice_name", "NDCG@K", "Hit@K"], ascending=[True, False, False])
+        .sort_values(sort_spec, ascending=ascend)
         .reset_index(drop=True)
     )
 
 
-def _table_by_support_bucket(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
+def _table_by_support_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: list[str], ranking: bool) -> pd.DataFrame:
     df = df_ex_metrics.copy()
     df["train_support_bucket"] = df["n_support_train"].fillna(0).astype(int).map(_support_bucket)
     df["train_support_bucket"] = pd.Categorical(
         df["train_support_bucket"], categories=SUPPORT_BUCKET_ORDER, ordered=True
     )
+    if ranking:
+        sort_spec = ["train_support_bucket", "NDCG@K", "MAP@K", "MRR"]
+        ascend = [True, False, False, False]
+    else:
+        sort_spec = ["train_support_bucket", "Recall@K", "Hit@K", "Precision@K"]
+        ascend = [True, False, False, False]
     return (
-        df.groupby(["train_support_bucket", "method"], observed=True)[METRIC_COLS]
+        df.groupby(["train_support_bucket", "method"], observed=True)[metric_cols]
         .mean()
         .reset_index()
-        .sort_values(
-            ["train_support_bucket", "NDCG@K", "MAP@K", "MRR"],
-            ascending=[True, False, False, False],
-        )
+        .sort_values(sort_spec, ascending=ascend)
         .reset_index(drop=True)
+    )
+
+
+def _table_overall_ranking(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
+    return _table_overall_generic(
+        df_ex_metrics,
+        metric_cols=METRIC_COLS,
+        sort_cols=["NDCG@K", "MAP@K", "MRR"],
+        ascending=[False, False, False],
+    )
+
+
+def _table_overall_retrieval(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
+    return _table_overall_generic(
+        df_ex_metrics,
+        metric_cols=RETRIEVAL_METRIC_COLS,
+        sort_cols=["Recall@K", "Hit@K", "Precision@K"],
+        ascending=[False, False, False],
     )
 
 
@@ -674,6 +1020,7 @@ def _table_popularity(
     app_ids: np.ndarray,
     pop_row: np.ndarray,
     enable_popularity_decile_diagnostics: bool,
+    metric_cols: list[str],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if not enable_popularity_decile_diagnostics:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -683,7 +1030,7 @@ def _table_popularity(
     df_seg_pop = df_ex_metrics.merge(df_ex_pop, on="ex_idx", how="left")
     pop_table = (
         df_seg_pop.dropna(subset=["pos_pop_decile"])
-        .groupby(["pos_pop_decile", "method"], observed=True)[METRIC_COLS]
+        .groupby(["pos_pop_decile", "method"], observed=True)[metric_cols]
         .mean()
         .reset_index()
         .sort_values(["pos_pop_decile", "method"])
@@ -691,11 +1038,11 @@ def _table_popularity(
     )
     if pop_table.empty:
         return pop_table, pd.DataFrame(), df_ex_pop
-    pop_ref = pop_table[pop_table["method"] == "popularity_train"][["pos_pop_decile"] + METRIC_COLS].rename(
-        columns={m: f"{m}_pop_ref" for m in METRIC_COLS}
+    pop_ref = pop_table[pop_table["method"] == "popularity_train"][["pos_pop_decile"] + metric_cols].rename(
+        columns={m: f"{m}_pop_ref" for m in metric_cols}
     )
     pop_delta = pop_table.merge(pop_ref, on="pos_pop_decile", how="left")
-    for m in METRIC_COLS:
+    for m in metric_cols:
         pop_delta[f"{m}_delta_vs_pop"] = pop_delta[m] - pop_delta[f"{m}_pop_ref"]
     pop_delta = pop_delta.sort_values(["pos_pop_decile", "method"]).reset_index(drop=True)
     return pop_table, pop_delta, df_ex_pop
@@ -845,6 +1192,77 @@ def _personalization_by_group(
     return pd.concat(out, ignore_index=True)
 
 
+def _retrieval_bottleneck_summary(
+    df_ex: pd.DataFrame,
+    *,
+    k_retrieval: int,
+    candidate_pool_size: int,
+) -> dict[str, Any]:
+    """Phase-3 bottleneck stats: positives in retrieved top-``k_retrieval`` (not ranking top-``k_final``)."""
+    need = {"method", "slice_name", "n_positive_in_retrieved"}
+    if df_ex.empty or not need.issubset(df_ex.columns):
+        return {
+            "candidate_pool_size": int(candidate_pool_size),
+            "k_retrieval": int(k_retrieval),
+            "by_method": {},
+            "by_method_slice": [],
+            "note": "no per-example bottleneck columns",
+        }
+    by_method: dict[str, Any] = {}
+    for method, g in df_ex.groupby("method", observed=True):
+        n = int(len(g))
+        z = float((g["n_positive_in_retrieved"].astype(int) == 0).mean()) if n else float("nan")
+        avg_p = float(g["n_positive_in_retrieved"].astype(float).mean()) if n else float("nan")
+        by_method[str(method)] = {
+            "n_examples": n,
+            "frac_queries_zero_positive_in_topk_retrieval": z,
+            "avg_positive_items_in_topk_retrieval": avg_p,
+        }
+    by_method_slice: list[dict[str, Any]] = []
+    for (method, slice_name), g in df_ex.groupby(["method", "slice_name"], observed=True):
+        n = int(len(g))
+        z = float((g["n_positive_in_retrieved"].astype(int) == 0).mean()) if n else float("nan")
+        avg_p = float(g["n_positive_in_retrieved"].astype(float).mean()) if n else float("nan")
+        by_method_slice.append(
+            {
+                "method": str(method),
+                "slice_name": str(slice_name),
+                "n_examples": n,
+                "frac_queries_zero_positive_in_topk_retrieval": z,
+                "avg_positive_items_in_topk_retrieval": avg_p,
+            }
+        )
+    return {
+        "candidate_pool_size": int(candidate_pool_size),
+        "k_retrieval": int(k_retrieval),
+        "definition": "positive_items = |validation_positive ∩ retrieved_app_ids[0:k_retrieval]|",
+        "by_method": by_method,
+        "by_method_slice": by_method_slice,
+    }
+
+
+def _slice_b_empirical_std(
+    df_ex: pd.DataFrame,
+    *,
+    metric_cols: tuple[str, ...],
+) -> dict[str, dict[str, float]]:
+    """Per-method std-dev of per-example metrics in slice_b (spread across users, not a CI)."""
+    if df_ex.empty or "slice_name" not in df_ex.columns:
+        return {}
+    sb = df_ex[df_ex["slice_name"] == "slice_b_single_target"]
+    out: dict[str, dict[str, float]] = {}
+    for method, g in sb.groupby("method", observed=True):
+        method = str(method)
+        row: dict[str, float] = {}
+        for col in metric_cols:
+            if col in g.columns and len(g):
+                row[f"{col}_std_across_examples"] = float(pd.to_numeric(g[col], errors="coerce").std(ddof=0))
+            else:
+                row[f"{col}_std_across_examples"] = float("nan")
+        out[method] = row
+    return out
+
+
 def run_retrieval_eval(
     *,
     repo_root: Path,
@@ -858,12 +1276,14 @@ def run_retrieval_eval(
     max_train_rows_per_user: int,
     multi_max_reviews: int,
     k_final: int,
+    k_retrieval: int | None = None,
     k_personalization: int,
     enable_popularity_decile_diagnostics: bool,
     include_random_sanity: bool,
     random_seed: int = PROJECT_RANDOM_SEED,
     artifact_dir: Path | None = None,
     verbose: bool = False,
+    examples_parquet: Path | None = None,
 ) -> EvalTables:
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
@@ -871,20 +1291,37 @@ def run_retrieval_eval(
             f"{sorted(REQUIRED_PHASE1_METHODS)}; got {sorted(set(methods))}"
         )
 
+    k_r = int(k_final) if k_retrieval is None else int(k_retrieval)
+    if k_r < int(k_final):
+        raise ValueError(f"k_retrieval ({k_r}) must be >= k_final ({k_final})")
+
     t0 = time.perf_counter()
-    inputs = prepare_eval_inputs(
-        repo_root=repo_root,
-        split=split,
-        active_cohort=active_cohort,
-        max_examples=max_examples,
-        support_app_filter_mode=support_app_filter_mode,
-        cohort_sizing=cohort_sizing,
-        min_review_chars=min_review_chars,
-        max_train_rows_per_user=max_train_rows_per_user,
-        random_seed=random_seed,
-        artifact_dir=artifact_dir,
-        verbose=verbose,
-    )
+    if examples_parquet is not None:
+        p = examples_parquet
+        if not p.is_file():
+            raise FileNotFoundError(f"examples_parquet not found: {p}")
+        inputs = prepare_eval_inputs_from_cache(
+            repo_root=repo_root,
+            split=split,
+            min_review_chars=min_review_chars,
+            examples_parquet=p,
+            artifact_dir=artifact_dir,
+            verbose=verbose,
+        )
+    else:
+        inputs = prepare_eval_inputs(
+            repo_root=repo_root,
+            split=split,
+            active_cohort=active_cohort,
+            max_examples=max_examples,
+            support_app_filter_mode=support_app_filter_mode,
+            cohort_sizing=cohort_sizing,
+            min_review_chars=min_review_chars,
+            max_train_rows_per_user=max_train_rows_per_user,
+            random_seed=random_seed,
+            artifact_dir=artifact_dir,
+            verbose=verbose,
+        )
     t_inputs = time.perf_counter()
     rng = np.random.default_rng(int(random_seed))
     registry = _build_method_registry(
@@ -908,32 +1345,57 @@ def run_retrieval_eval(
     method_iter = selected_registry.items()
     if verbose:
         method_iter = tqdm(method_iter, total=len(selected_registry), desc="methods", unit="method")
-    metric_frames: list[pd.DataFrame] = []
+    retrieval_frames: list[pd.DataFrame] = []
+    ranking_frames: list[pd.DataFrame] = []
+    artifact_rows_acc: list[dict[str, Any]] = []
+    model_snap = _embedding_model_snapshot(inputs.retriever)
     for name, fn in method_iter:
-        metric_frames.append(
-            _per_example_metrics(
-                method_name=name,
-                score_fn=fn,
-                examples=inputs.examples,
-                app_ids=inputs.app_ids,
-                k_final=k_final,
-                verbose=verbose,
-            )
+        df_r, df_k, arts = _per_example_retrieval_ranking(
+            method_name=name,
+            score_fn=fn,
+            examples=inputs.examples,
+            app_ids=inputs.app_ids,
+            k_retrieval=k_r,
+            k_final=k_final,
+            masking_policy_version=MASKING_POLICY_VERSION,
+            model_version=model_snap,
+            verbose=verbose,
         )
-    df_ex_metrics = pd.concat(metric_frames, ignore_index=True)
-    if len(df_ex_metrics) == 0:
+        retrieval_frames.append(df_r)
+        ranking_frames.append(df_k)
+        artifact_rows_acc.extend(arts)
+
+    df_ex_retrieval = pd.concat(retrieval_frames, ignore_index=True)
+    df_ex_ranking = pd.concat(ranking_frames, ignore_index=True)
+    if len(df_ex_ranking) == 0:
         raise RuntimeError("No per-example metrics produced; check split/cohort/method settings.")
     t_metrics = time.perf_counter()
 
-    overall = _table_overall(df_ex_metrics)
-    by_slice = _table_by_slice(df_ex_metrics)
-    by_support = _table_by_support_bucket(df_ex_metrics)
-    pop_table, pop_delta, ex_pop_map = _table_popularity(
-        df_ex_metrics=df_ex_metrics,
+    overall_retrieval = _table_overall_retrieval(df_ex_retrieval)
+    overall_ranking = _table_overall_ranking(df_ex_ranking)
+    by_slice_retrieval = _table_by_slice_for_metrics(
+        df_ex_retrieval, metric_cols=RETRIEVAL_METRIC_COLS, ranking=False
+    )
+    by_slice_ranking = _table_by_slice_for_metrics(df_ex_ranking, metric_cols=METRIC_COLS, ranking=True)
+    by_support_retrieval = _table_by_support_for_metrics(
+        df_ex_retrieval, metric_cols=RETRIEVAL_METRIC_COLS, ranking=False
+    )
+    by_support_ranking = _table_by_support_for_metrics(df_ex_ranking, metric_cols=METRIC_COLS, ranking=True)
+    pop_ret, pop_delta_ret, ex_pop_map = _table_popularity(
+        df_ex_metrics=df_ex_retrieval,
         examples=inputs.examples,
         app_ids=inputs.app_ids,
         pop_row=inputs.pop_row,
         enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
+        metric_cols=RETRIEVAL_METRIC_COLS,
+    )
+    pop_rank, pop_delta_rank, _ = _table_popularity(
+        df_ex_metrics=df_ex_ranking,
+        examples=inputs.examples,
+        app_ids=inputs.app_ids,
+        pop_row=inputs.pop_row,
+        enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
+        metric_cols=METRIC_COLS,
     )
     personalization = _table_personalization(
         methods=selected_registry,
@@ -944,7 +1406,7 @@ def run_retrieval_eval(
         k_personalization=k_personalization,
         verbose=verbose,
     )
-    ex_meta = df_ex_metrics[["ex_idx", "n_eval_targets", "n_support_train"]].drop_duplicates("ex_idx").copy()
+    ex_meta = df_ex_ranking[["ex_idx", "n_eval_targets", "n_support_train"]].drop_duplicates("ex_idx").copy()
     ex_meta["slice_name"] = np.select(
         [ex_meta["n_eval_targets"] >= 2, ex_meta["n_eval_targets"] == 1, ex_meta["n_eval_targets"] == 0],
         ["slice_a_multi_target", "slice_b_single_target", "slice_c_zero_target"],
@@ -984,13 +1446,35 @@ def run_retrieval_eval(
         group_col="pos_pop_decile",
         verbose=verbose,
     )
-    overall = _append_personalization_metrics(overall, personalization, on_keys=["method"])
-    by_slice = _append_personalization_metrics(by_slice, slice_personalization, on_keys=["method", "slice_name"])
-    by_support = _append_personalization_metrics(
-        by_support, support_personalization, on_keys=["method", "train_support_bucket"]
+    # Guardrails (ILD, catalog coverage, novelty, personalization gap) align with method top-k@k_personalization;
+    # attach to both ranking and retrieval summaries for comparable reporting.
+    overall_retrieval = _append_personalization_metrics(overall_retrieval, personalization, on_keys=["method"])
+    by_slice_retrieval = _append_personalization_metrics(
+        by_slice_retrieval, slice_personalization, on_keys=["method", "slice_name"]
     )
-    pop_table = _append_personalization_metrics(pop_table, pop_personalization, on_keys=["method", "pos_pop_decile"])
-    pop_delta = _append_personalization_metrics(pop_delta, pop_personalization, on_keys=["method", "pos_pop_decile"])
+    by_support_retrieval = _append_personalization_metrics(
+        by_support_retrieval, support_personalization, on_keys=["method", "train_support_bucket"]
+    )
+    pop_ret = _append_personalization_metrics(
+        pop_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
+    pop_delta_ret = _append_personalization_metrics(
+        pop_delta_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
+
+    overall_ranking = _append_personalization_metrics(overall_ranking, personalization, on_keys=["method"])
+    by_slice_ranking = _append_personalization_metrics(
+        by_slice_ranking, slice_personalization, on_keys=["method", "slice_name"]
+    )
+    by_support_ranking = _append_personalization_metrics(
+        by_support_ranking, support_personalization, on_keys=["method", "train_support_bucket"]
+    )
+    pop_rank = _append_personalization_metrics(
+        pop_rank, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
+    pop_delta_rank = _append_personalization_metrics(
+        pop_delta_rank, pop_personalization, on_keys=["method", "pos_pop_decile"]
+    )
     t_tables = time.perf_counter()
     coverage = _coverage_from_examples(inputs.examples).iloc[0].to_dict()
     ex_diag = pd.DataFrame(
@@ -1012,6 +1496,15 @@ def run_retrieval_eval(
         .reindex(SUPPORT_BUCKET_ORDER, fill_value=0)
         .to_dict()
     )
+    pool_n = int(len(inputs.app_ids))
+    retr_bottleneck = _retrieval_bottleneck_summary(
+        df_ex_retrieval, k_retrieval=k_r, candidate_pool_size=pool_n
+    )
+    slice_b_std_retrieval = _slice_b_empirical_std(
+        df_ex_retrieval, metric_cols=tuple(RETRIEVAL_METRIC_COLS)
+    )
+    slice_b_std_ranking = _slice_b_empirical_std(df_ex_ranking, metric_cols=tuple(METRIC_COLS))
+
     run_meta = {
         "split_requested": split,
         "split_used": inputs.eval_split_name,
@@ -1021,12 +1514,21 @@ def run_retrieval_eval(
         "methods_requested": methods,
         "methods_run": run_methods,
         "k_final": int(k_final),
+        "k_retrieval": int(k_r),
         "k_personalization": int(k_personalization),
         "random_seed": int(random_seed),
+        "masking_policy_version": MASKING_POLICY_VERSION,
+        "model_version": model_snap,
         "coverage": coverage,
         "prep_diagnostics": inputs.prep_diagnostics,
         "counts_by_slice": {k: int(v) for k, v in slice_counts.items()},
         "counts_by_support_bucket": {k: int(v) for k, v in support_counts.items()},
+        "retrieval_bottleneck": retr_bottleneck,
+        "slice_b_empirical_std": {
+            "retrieval": slice_b_std_retrieval,
+            "ranking": slice_b_std_ranking,
+            "note": "std across eval examples in slice_b_single_target (not bootstrap CI)",
+        },
         "timing_seconds": {
             "prepare_inputs": round(t_inputs - t0, 3),
             "score_methods": round(t_metrics - t_inputs, 3),
@@ -1035,11 +1537,17 @@ def run_retrieval_eval(
         },
     }
     return EvalTables(
-        overall=overall,
-        by_slice=by_slice,
-        by_support_bucket=by_support,
-        by_pop_decile=pop_table,
-        pop_delta_vs_popularity=pop_delta,
+        retrieval_overall=overall_retrieval,
+        retrieval_by_slice=by_slice_retrieval,
+        retrieval_by_support_bucket=by_support_retrieval,
+        retrieval_by_pop_decile=pop_ret,
+        retrieval_pop_delta_vs_popularity=pop_delta_ret,
+        ranking_overall=overall_ranking,
+        ranking_by_slice=by_slice_ranking,
+        ranking_by_support_bucket=by_support_ranking,
+        ranking_by_pop_decile=pop_rank,
+        ranking_pop_delta_vs_popularity=pop_delta_rank,
         personalization=personalization,
+        artifact_rows=artifact_rows_acc,
         run_meta=run_meta,
     )

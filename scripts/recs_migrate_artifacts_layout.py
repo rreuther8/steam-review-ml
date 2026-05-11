@@ -72,10 +72,16 @@ def _plan_moves(root: Path) -> list[tuple[Path, Path]]:
         if src.exists():
             moves.append((src, root / rel_dst))
 
-    # Legacy eval directory -> retrieval/runs/legacy_snapshot
+    # Legacy eval directory -> offline_eval/runs/legacy_snapshot
     legacy_eval_dir = root / "eval"
     if legacy_eval_dir.exists() and legacy_eval_dir.is_dir():
-        moves.append((legacy_eval_dir, root / "retrieval" / "runs" / "legacy_snapshot"))
+        moves.append((legacy_eval_dir, root / "offline_eval" / "runs" / "legacy_snapshot"))
+
+    # retrieval/runs -> offline_eval/runs (rename umbrella for offline retrieval+ranking eval)
+    old_runs_root = root / "retrieval" / "runs"
+    new_runs_root = root / "offline_eval" / "runs"
+    if old_runs_root.exists() and old_runs_root.is_dir() and not new_runs_root.exists():
+        moves.append((old_runs_root, new_runs_root))
 
     return moves
 

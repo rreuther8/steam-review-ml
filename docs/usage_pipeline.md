@@ -172,21 +172,18 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized eval pipeline job (retrieval baselines)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with standardized artifacts (overall/slices/support/pop-decile/pop-delta/personalization):
+**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train`, plus **`two_tower_c_raw_plus_behavior`** (recs_011 Candidate C — raw session + playtime‑weighted catalog history fused in embedding space via `evaluation.two_tower_c_raw_plus_behavior_query_vector`). Paired retrieval- and ranking-contract tables:
 
 - Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
-- Outputs (default): `artifacts/recs/retrieval/runs/latest/`
+- **Cutoffs:** `k_retrieval` (default: omit → same as `k_final`) caps the **retrieved candidate list** for the retrieval contract; `k_final` is the **ranking** / top‑shown list (`eval_ranking_*` Hit/NDCG/etc. use `k_final`; `eval_retrieval_*` Hit/Precision/Recall use `k_retrieval`). Changing these changes numbers — re-run **`--write-baseline`** when you intentionally move the regression contract.
+- Outputs (default): `artifacts/recs/offline_eval/runs/latest/`
   - Set `archive_run: true` to also snapshot each run into:
-    `artifacts/recs/retrieval/runs/<timestamp>__<run_tag>/`
-  - `eval_retrieval_overall.csv`
-  - `eval_retrieval_by_slice.csv`
-  - `eval_retrieval_by_support_bucket.csv`
-  - `eval_retrieval_by_pop_decile.csv`
-  - `eval_retrieval_pop_delta_vs_popularity.csv`
-  - `eval_retrieval_personalization.csv`
-  - `eval_retrieval_run_meta.json`
-    - includes per-stage timing under `timing_seconds`
+    `artifacts/recs/offline_eval/runs/<timestamp>__<run_tag>/`
+  - **Retrieval summaries:** `eval_retrieval_overall.csv`, `eval_retrieval_by_slice.csv`, `eval_retrieval_by_support_bucket.csv`, `eval_retrieval_by_pop_decile.csv`, `eval_retrieval_pop_delta_vs_popularity.csv`
+  - **Ranking summaries:** `eval_ranking_overall.csv`, `eval_ranking_by_slice.csv`, `eval_ranking_by_support_bucket.csv`, `eval_ranking_by_pop_decile.csv`, `eval_ranking_pop_delta_vs_popularity.csv`, `eval_ranking_personalization.csv`
+  - **Per-example audit trail:** `eval_offline_examples.jsonl` (candidate ids + scores per method/example)
+  - **Run metadata:** `eval_offline_run_meta.json` (includes `timing_seconds`, `k_retrieval`, `k_final`, masking/model provenance, **`retrieval_bottleneck`** zero‑positive / avg‑positives in top‑`k_retrieval`, and **`slice_b_empirical_std`** per‑metric spread across slice‑B examples)
 
 **Cached eval examples (optional, recommended for fast iteration)** — materialize a static eval examples artifact once and reuse it across notebook/model experiments:
 
@@ -195,17 +192,20 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
   - `eval_examples.parquet`
   - `eval_examples_summary.csv`
   - `eval_examples_meta.json`
+- **Run offline eval on that parquet (skip cohort resampling):** either  
+  `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`  
+  or set **`examples_parquet`** in the job config (path relative to repo root). **`run_meta["prep_diagnostics"]`** records `examples_source: parquet_cache` and the path.
 
-**Retrieval mechanism comparison (e.g. baselines vs two-tower)** — scaffold notebook (orch + contract notes; fill in when training artifacts exist):
+**Retrieval mechanism comparison (e.g. baselines vs candidates)** — candidate comparison notebook:
 
-- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
+- `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
-Other **retrieval** notebooks (under `notebooks/retrieval/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
+Other **retrieval** notebooks (under `notebooks/retrieval_ranking/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
 
-- Task A consumer (reads `eval_retrieval_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
-- Pipeline vs frozen baseline parity: `notebooks/retrieval/recs_009_phase1_pipeline_notebook_parity.ipynb`
-- History blend grid search: `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`
-- Deferred two-stage habit → session eval: `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`
+- Task A consumer (reads `eval_retrieval_*` + `eval_ranking_*`): `notebooks/retrieval_ranking/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Pipeline vs frozen baseline parity: `notebooks/retrieval_ranking/recs_009_phase1_pipeline_notebook_parity.ipynb`
+- History blend grid search: `notebooks/retrieval_ranking/recs_008_history_blend_gridsearch.ipynb`
+- Deferred two-stage habit → session eval: `notebooks/retrieval_ranking/recs_XXX_eval_two_stage_habit_session.ipynb`
 
 **4-way raw/structured comparison + regression baseline (recs_006):**
 

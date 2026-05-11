@@ -16,7 +16,7 @@ and integration from modeling notebooks to API behavior.
 
 ## Current results snapshot
 
-Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
+Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval_ranking/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
 
 | Variant | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -26,7 +26,7 @@ Fill this table with your latest best run from [`recs_008_history_blend_gridsear
 
 There is **no single headline offline number** that summarizes the whole project: retrieval quality is demonstrated through complementary notebooks that answer different questions.
 
-**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration, pipeline consumers, and mechanism comparisons live under [`notebooks/retrieval/`](notebooks/retrieval/).
+**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration, pipeline consumers, and mechanism comparisons live under [`notebooks/retrieval_ranking/`](notebooks/retrieval_ranking/).
 
 ### Offline evaluation suites
 
@@ -92,6 +92,7 @@ Dataset URL: [https://www.kaggle.com/datasets/najzeko/steam-reviews-2021](https:
 
 - **Random seed:** the project-wide default is [`PROJECT_RANDOM_SEED`](src/steam_review_ml/constants.py) in `steam_review_ml.constants` (used for recommender eval subsampling, tabular `random_state`, and synthetic baseline RNG streams). Train/val/test splitting reads the same value from that module unless you override with **`STEAM_REVIEWS_RANDOM_STATE`** (see [`docs/usage_pipeline.md`](docs/usage_pipeline.md)).
 - **Split policy:** current pipeline config uses a hybrid mode in [`configs/split_reviews.json`](configs/split_reviews.json): sparse users (`<3` interactions) use deterministic random 70/15/15, while denser users (`>=3`) use per-user temporal last-N assignment. Report key retrieval metrics by cohort (`<3`, `>=3`, overall weighted) to avoid hiding cold-start behavior.
+- **Docs map:** [`docs/README.md`](docs/README.md) — index of all `docs/` (reduces sprawl).
 - Pipeline run order and command references: [`docs/usage_pipeline.md`](docs/usage_pipeline.md)
 - Retrieval decision log (current default + rationale): [`docs/retrieval_decision_log.md`](docs/retrieval_decision_log.md)
 - Transition plan for recommender v1 -> v2: [`docs/recommender_transition_plan.md`](docs/recommender_transition_plan.md)

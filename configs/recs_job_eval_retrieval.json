@@ -3,7 +3,8 @@
   "methods": [
     "raw",
     "popularity_train",
-    "multi_mean_train"
+    "multi_mean_train",
+    "two_tower_c_raw_plus_behavior"
   ],
   "active_cohort": "all",
   "max_examples": 12500,
@@ -12,6 +13,7 @@
   "max_train_rows_per_user": 5,
   "multi_max_reviews": 5,
   "k_final": 10,
+  "k_retrieval": 100,
   "k_personalization": 10,
   "random_seed": 2026,
   "verbose": true,
@@ -26,5 +28,5 @@
     "val_multi_pos_eval|val_no_train": 0.1
   },
   "artifact_dir": "artifacts/recs",
-  "output_dir": "artifacts/recs/retrieval/runs/latest"
+  "output_dir": "artifacts/recs/offline_eval/runs/latest"
 }
