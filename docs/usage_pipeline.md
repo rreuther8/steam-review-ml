@@ -172,7 +172,7 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train` with paired retrieval- and ranking-contract tables:
+**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train`, plus **`two_tower_c_raw_plus_behavior`** (recs_011 Candidate C — raw session + playtime‑weighted catalog history fused in embedding space via `evaluation.two_tower_c_raw_plus_behavior_query_vector`). Paired retrieval- and ranking-contract tables:
 
 - Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status

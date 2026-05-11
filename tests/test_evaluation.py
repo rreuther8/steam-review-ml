@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from steam_review_ml.recommender import evaluation
+from steam_review_ml.recommender.math_utils import l2_normalize
 
 
 def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
@@ -144,6 +145,34 @@ def test_run_retrieval_eval_reuses_prepared_retriever(monkeypatch: pytest.Monkey
     )
     assert not tables.retrieval_overall.empty
     assert not tables.ranking_overall.empty
+
+
+def test_two_tower_c_query_vector_fuses_session_and_weighted_behavior() -> None:
+    class FakeRetriever:
+        def embed_text(self, text: str) -> np.ndarray:  # noqa: ANN001
+            t = str(text)
+            if t == "query":
+                return np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            if t == "x":
+                return np.array([0.25, 0.0, 0.0], dtype=np.float32)
+            raise AssertionError(f"unexpected embed text: {t!r}")
+
+    ex = {
+        "query_text": "query",
+        "train_review_rows": [
+            {"app_id": 2, "_norm_author__playtime_at_review": 1.0, "text": "x"},
+        ],
+    }
+    X = np.eye(3, dtype=np.float32)
+    app_to_row = {2: 1}
+    out = evaluation.two_tower_c_raw_plus_behavior_query_vector(
+        FakeRetriever(),  # type: ignore[arg-type]
+        ex,
+        embedding_matrix=X,
+        app_to_row=app_to_row,
+    )
+    expected = l2_normalize(np.array([1.0, 1.0, 0.0], dtype=np.float32))
+    np.testing.assert_allclose(out, expected, rtol=1e-5, atol=1e-6)
 
 
 def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.MonkeyPatch) -> None:

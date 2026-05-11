@@ -3,7 +3,8 @@
   "methods": [
     "raw",
     "popularity_train",
-    "multi_mean_train"
+    "multi_mean_train",
+    "two_tower_c_raw_plus_behavior"
   ],
   "active_cohort": "all",
   "max_examples": 12500,

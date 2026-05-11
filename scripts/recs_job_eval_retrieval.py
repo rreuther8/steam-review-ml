@@ -4,10 +4,12 @@ Writes paired `eval_retrieval_*` and `eval_ranking_*` tables, per-example
 `eval_offline_examples.jsonl`, and run metadata under the configured directory
 (default: ``artifacts/recs/offline_eval/runs/latest``).
 
-Default baseline methods:
+Default baseline methods (config `methods`; must include all three):
 - raw
 - popularity_train
 - multi_mean_train
+
+Default config also evaluates **Candidate C**: `two_tower_c_raw_plus_behavior` (`evaluation.two_tower_c_raw_plus_behavior_query_vector`).
 
 Optional non-gating sanity baseline:
 - random

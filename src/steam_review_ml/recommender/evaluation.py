@@ -43,6 +43,12 @@ TRAIN_ROW_OPTIONAL_FIELDS = (
     "_norm_review_word_count",
 )
 
+# Train-row keys used only for Candidate C behavior pooling (aligned with notebooks/retrieval_ranking/recs_011).
+BEHAVIOR_WEIGHT_PLAYTIME_KEYS: tuple[str, ...] = ("_norm_author__playtime_at_review",)
+
+# Registry id for Candidate C (`l2_normalize(q_session + u_behavior)`); must match notebook experiment id string.
+METHOD_TWO_TOWER_C_RAW_PLUS_BEHAVIOR = "two_tower_c_raw_plus_behavior"
+
 
 @dataclass(frozen=True)
 class EvalInputs:
@@ -368,6 +374,91 @@ def _query_vector_multi_mean_train(retriever: ContentRetriever, ex: dict, *, mul
     return l2_normalize(vecs.mean(axis=0))
 
 
+def _extract_behavior_playtime_weight(row: dict) -> float:
+    """Prefer pre-normalized playtime-at-review; zero if missing."""
+    vals: list[float] = []
+    for key in BEHAVIOR_WEIGHT_PLAYTIME_KEYS:
+        v = row.get(key)
+        if v is None:
+            continue
+        vals.append(max(0.0, float(v)))
+    return float(max(vals)) if vals else 0.0
+
+
+def _mean_train_review_text_embedding(retriever: ContentRetriever, ex: dict) -> np.ndarray:
+    """Mean embedding of train review texts; mirrors recs_011 when no texts fall back to query."""
+    texts = [
+        str(r.get("text", "")).strip()
+        for r in ex.get("train_review_rows", [])
+        if str(r.get("text", "")).strip()
+    ]
+    if texts:
+        vecs = np.stack([retriever.embed_text(t) for t in texts], axis=0).astype(np.float32)
+        return l2_normalize(vecs.mean(axis=0)).astype(np.float32, copy=False)
+    return np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+
+
+def _weighted_mean_behavior_embedding(
+    ex: dict,
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+    fallback: np.ndarray,
+) -> tuple[np.ndarray, bool]:
+    """Weighted mean catalog vectors for train apps using playtime weights; parity with recs_011."""
+    rows = ex.get("train_review_rows", [])
+    weighted_vecs: list[np.ndarray] = []
+    weights: list[float] = []
+    for r in rows:
+        aid = int(r.get("app_id", -1))
+        row_idx = app_to_row.get(aid)
+        if row_idx is None:
+            continue
+        w = _extract_behavior_playtime_weight(r)
+        if w <= 0.0:
+            continue
+        weighted_vecs.append(embedding_matrix[row_idx].astype(np.float32, copy=False))
+        weights.append(w)
+    if weighted_vecs:
+        mat = np.stack(weighted_vecs, axis=0)
+        w_arr = np.asarray(weights, dtype=np.float32)
+        vec = (mat * w_arr[:, None]).sum(axis=0) / float(np.maximum(w_arr.sum(), 1e-12))
+        return l2_normalize(vec).astype(np.float32, copy=False), True
+    support_ids = sorted(
+        {int(r.get("app_id")) for r in rows if int(r.get("app_id", -1)) in app_to_row}
+    )
+    if support_ids:
+        mat = np.stack([embedding_matrix[app_to_row[a]] for a in support_ids], axis=0).astype(np.float32)
+        return l2_normalize(mat.mean(axis=0)).astype(np.float32, copy=False), False
+    return np.asarray(fallback, dtype=np.float32), False
+
+
+def two_tower_c_raw_plus_behavior_query_vector(
+    retriever: ContentRetriever,
+    ex: dict[str, Any],
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+) -> np.ndarray:
+    """
+    Offline-eval Candidate C — same recipe as notebooks/retrieval_ranking/recs_011:
+
+    ``l2_normalize(embed(query_text) + weighted_mean_behavior_embed)``
+
+    Uses ``BEHAVIOR_WEIGHT_PLAYTIME_KEYS`` on train-history rows for behavior weights,
+    then fuses intent and pooled history by summing vectors before final ``l2_normalize``.
+    """
+    q_session = np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+    u_rev = _mean_train_review_text_embedding(retriever, ex)
+    u_behavior, _used_w = _weighted_mean_behavior_embedding(
+        ex,
+        embedding_matrix=embedding_matrix,
+        app_to_row=app_to_row,
+        fallback=u_rev,
+    )
+    return l2_normalize(q_session + u_behavior).astype(np.float32, copy=False)
+
+
 def _scores_from_query(
     q: np.ndarray,
     *,
@@ -418,10 +509,26 @@ def _build_method_registry(
                 s[row] = -np.inf
         return s
 
+    def score_two_tower_c_raw_plus_behavior(ex: dict) -> np.ndarray:
+        q = two_tower_c_raw_plus_behavior_query_vector(
+            retriever,
+            ex,
+            embedding_matrix=X,
+            app_to_row=app_to_row,
+        )
+        return _scores_from_query(
+            q,
+            X=X,
+            app_to_row=app_to_row,
+            query_app_id=int(ex["query_app_id"]),
+            mask_query_app=mask_query_app,
+        )
+
     return {
         "raw": score_raw,
         "popularity_train": score_popularity_train,
         "multi_mean_train": score_multi_mean_train,
+        METHOD_TWO_TOWER_C_RAW_PLUS_BEHAVIOR: score_two_tower_c_raw_plus_behavior,
         "random": score_random,
     }
 
