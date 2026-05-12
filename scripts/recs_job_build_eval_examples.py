@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from steam_review_ml.constants import PROJECT_RANDOM_SEED
-from steam_review_ml.recommender.evaluation import prepare_eval_inputs
+from steam_review_ml.evaluation.retrieval_offline_eval import prepare_eval_inputs
 from steam_review_ml.utils import load_config
 
 

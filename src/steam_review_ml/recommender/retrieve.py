@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .math_utils import l2_normalize
+from .math_utils import L2_EPS, l2_normalize
 
 
 def default_repo_root() -> Path:
@@ -21,7 +22,7 @@ def default_repo_root() -> Path:
 
 
 class ContentRetriever:
-    """Load ``recs_002`` artifacts and run top‑K cosine retrieval (same logic as ``recs_003``).
+    """Load ``recs_002`` artifacts and run top-K cosine retrieval (same logic as ``recs_003``).
 
     TensorFlow Hub is loaded lazily on first embed. Install TensorFlow + Hub (e.g. conda-forge), then
     ``pip install -e .``; pip-only envs may use ``pip install -e '.[recs-pip]'``.
@@ -224,11 +225,11 @@ class ContentRetriever:
         selected = vectors_with_sim[: max(1, int(history_top_k))]
         sims = np.asarray([max(0.0, sim) for sim, _ in selected], dtype=np.float32)
         vecs = np.stack([vec for _, vec in selected], axis=0).astype(np.float32)
-        if float(sims.sum()) > _L2_EPS:
-            history_vector = self._l2_normalize((vecs * sims[:, None]).sum(axis=0))
+        if float(sims.sum()) > L2_EPS:
+            history_vector = l2_normalize((vecs * sims[:, None]).sum(axis=0))
         else:
-            history_vector = self._l2_normalize(vecs.mean(axis=0))
-        return self._l2_normalize((1.0 - alpha) * query_vector + alpha * history_vector)
+            history_vector = l2_normalize(vecs.mean(axis=0))
+        return l2_normalize((1.0 - alpha) * query_vector + alpha * history_vector)
 
     def top_k(
         self,
@@ -307,3 +308,95 @@ class ContentRetriever:
     @property
     def index_frame(self) -> pd.DataFrame:
         return self._idx_df
+
+
+# --- Offline-eval query fusion (fixed USE + catalog vectors; not trained two-tower models) ---
+
+# Train-row keys for behavior pooling weights (aligned with recs_011 Candidate C).
+BEHAVIOR_WEIGHT_PLAYTIME_KEYS: tuple[str, ...] = ("_norm_author__playtime_at_review",)
+
+# Registry id for Candidate C; must match ``configs/recs_job_eval_retrieval.json`` methods entry.
+METHOD_FUSION_C_RAW_PLUS_BEHAVIOR = "fusion_c_raw_plus_behavior"
+
+
+def _extract_behavior_playtime_weight(row: dict[str, Any]) -> float:
+    """Prefer pre-normalized playtime-at-review; zero if missing."""
+    vals: list[float] = []
+    for key in BEHAVIOR_WEIGHT_PLAYTIME_KEYS:
+        v = row.get(key)
+        if v is None:
+            continue
+        vals.append(max(0.0, float(v)))
+    return float(max(vals)) if vals else 0.0
+
+
+def _mean_train_review_text_embedding(retriever: ContentRetriever, ex: dict[str, Any]) -> np.ndarray:
+    """Mean embedding of train review texts; mirrors recs_011 when no texts fall back to query."""
+    texts = [
+        str(r.get("text", "")).strip()
+        for r in ex.get("train_review_rows", [])
+        if str(r.get("text", "")).strip()
+    ]
+    if texts:
+        vecs = np.stack([retriever.embed_text(t) for t in texts], axis=0).astype(np.float32)
+        return l2_normalize(vecs.mean(axis=0)).astype(np.float32, copy=False)
+    return np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+
+
+def _weighted_mean_behavior_embedding(
+    ex: dict[str, Any],
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+    fallback: np.ndarray,
+) -> tuple[np.ndarray, bool]:
+    """Weighted mean catalog vectors for train apps using playtime weights; parity with recs_011."""
+    rows = ex.get("train_review_rows", [])
+    weighted_vecs: list[np.ndarray] = []
+    weights: list[float] = []
+    for r in rows:
+        aid = int(r.get("app_id", -1))
+        row_idx = app_to_row.get(aid)
+        if row_idx is None:
+            continue
+        w = _extract_behavior_playtime_weight(r)
+        if w <= 0.0:
+            continue
+        weighted_vecs.append(embedding_matrix[row_idx].astype(np.float32, copy=False))
+        weights.append(w)
+    if weighted_vecs:
+        mat = np.stack(weighted_vecs, axis=0)
+        w_arr = np.asarray(weights, dtype=np.float32)
+        vec = (mat * w_arr[:, None]).sum(axis=0) / float(np.maximum(w_arr.sum(), 1e-12))
+        return l2_normalize(vec).astype(np.float32, copy=False), True
+    support_ids = sorted(
+        {int(r.get("app_id")) for r in rows if int(r.get("app_id", -1)) in app_to_row}
+    )
+    if support_ids:
+        mat = np.stack([embedding_matrix[app_to_row[a]] for a in support_ids], axis=0).astype(np.float32)
+        return l2_normalize(mat.mean(axis=0)).astype(np.float32, copy=False), False
+    return np.asarray(fallback, dtype=np.float32), False
+
+
+def fusion_c_raw_plus_behavior_query_vector(
+    retriever: ContentRetriever,
+    ex: dict[str, Any],
+    *,
+    embedding_matrix: np.ndarray,
+    app_to_row: dict[int, int],
+) -> np.ndarray:
+    """Candidate C: ``l2_normalize(embed(query_text) + weighted_mean_behavior_embed)``.
+
+    Same recipe as ``notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb``.
+    Uses ``BEHAVIOR_WEIGHT_PLAYTIME_KEYS`` on train-history rows for weights, then fuses with the
+    session vector before a final ``l2_normalize``.
+    """
+    q_session = np.asarray(retriever.embed_text(ex["query_text"]), dtype=np.float32)
+    u_rev = _mean_train_review_text_embedding(retriever, ex)
+    u_behavior, _used_w = _weighted_mean_behavior_embedding(
+        ex,
+        embedding_matrix=embedding_matrix,
+        app_to_row=app_to_row,
+        fallback=u_rev,
+    )
+    return l2_normalize(q_session + u_behavior).astype(np.float32, copy=False)

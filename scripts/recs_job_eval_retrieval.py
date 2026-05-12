@@ -4,15 +4,21 @@ Writes paired `eval_retrieval_*` and `eval_ranking_*` tables, per-example
 `eval_offline_examples.jsonl`, and run metadata under the configured directory
 (default: ``artifacts/recs/offline_eval/runs/latest``).
 
-Default baseline methods (config `methods`; must include all three):
-- raw
-- popularity_train
-- multi_mean_train
+The config ``methods`` list must include **three** required baselines (contract + regression):
 
-Default config also evaluates **Candidate C**: `two_tower_c_raw_plus_behavior` (`evaluation.two_tower_c_raw_plus_behavior_query_vector`).
+- ``raw``
+- ``popularity_train``
+- ``multi_mean_train``
+
+You may append additional registered scorer names (wired in ``steam_review_ml.evaluation.retrieval_offline_eval``).
+The default JSON config also runs **Candidate C** as ``fusion_c_raw_plus_behavior``: a
+hand-fused query vector (session USE embed + playtime-weighted train catalog blend) implemented
+in ``steam_review_ml.recommender.retrieve.fusion_c_raw_plus_behavior_query_vector`` — same game
+matrix as ``raw``, not a separately trained two-tower model.
 
 Optional non-gating sanity baseline:
-- random
+
+- ``random``
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from pathlib import Path
 
 import pandas as pd
 from steam_review_ml.constants import PROJECT_RANDOM_SEED
-from steam_review_ml.recommender.evaluation import (
+from steam_review_ml.evaluation.retrieval_offline_eval import (
     REQUIRED_PHASE1_METHODS,
     RETRIEVAL_METRIC_COLS,
     run_retrieval_eval,

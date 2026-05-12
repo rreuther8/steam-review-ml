@@ -3,6 +3,45 @@
 > This log is intentionally selective: record only high-impact, hard-to-reverse, or likely-to-be-revisited decisions.
 > Do not log routine implementation details or temporary debugging steps.
 
+## 2026-05-11: Documentation map (eval + transition plan)
+
+Decision:
+
+- Treat [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) as the **single canonical doc** for offline eval scope, notebook roles, **eval contract (v2)**, and the cached-examples runbook (merged from former `eval_contract.md` and `retrieval_eval_cached_examples_plan.md`).
+- Move the long v1→v2 engineering narrative to [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md); **`project_todo_plan.md`** remains the living checklist.
+
+Why:
+
+- Reduces parallel sources of truth; notebooks and README now point at one eval entrypoint.
+
+## 2026-05-11: Candidate C offline eval — `fusion_c_raw_plus_behavior` (query fusion, not trained towers)
+
+Decision:
+
+- Register **`fusion_c_raw_plus_behavior`** as a **first-class offline-eval method** alongside `raw`, `popularity_train`, and `multi_mean_train` in the default **`recs_job_eval_retrieval.py`** run (`configs/recs_job_eval_retrieval.json` → `methods`). *(Earlier drafts used the misleading id `two_tower_c_raw_plus_behavior`; that string is retired.)*
+- Implement the **fused query vector** in **`retrieve.py`** (`fusion_c_raw_plus_behavior_query_vector`, constant `METHOD_FUSION_C_RAW_PLUS_BEHAVIOR`): **raw session text** embedded with the same Hub model as game profiles, **plus** a **playtime-weighted blend of train-app profile vectors** from the catalog matrix, then **L2-normalized** and dotted against the **same** precomputed game matrix as `raw`. **`evaluation.run_retrieval_eval`** only wires the method into the scorer registry; **retrieval-side vector construction** lives next to **`ContentRetriever`**.
+- **Default serving stays `raw`**; this method is for **contract-table** comparisons and R&D (e.g. `recs_011` Candidate C), not an automatic product default.
+
+Why:
+
+- The old **`two_tower_*`** label implied a **jointly trained** two-tower model; this path is a **hand recipe** (fixed USE + explicit fusion). Renaming removes that confusion and keeps **mechanism code** under **`recommender/retrieve.py`**.
+
+Evidence:
+
+- `src/steam_review_ml/recommender/retrieve.py` — `fusion_c_raw_plus_behavior_query_vector`, `METHOD_FUSION_C_RAW_PLUS_BEHAVIOR`, behavior-weight helpers.
+- `src/steam_review_ml/evaluation/retrieval_offline_eval.py` — scorer registry; calls into `retrieve` for fusion vectors.
+- `scripts/recs_job_eval_retrieval.py`, `configs/recs_job_eval_retrieval.json`.
+- `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate grid; align **`k_retrieval` / `k_final`** with the job config when diffing.
+- `tests/test_evaluation.py` — `test_fusion_c_query_vector_fuses_session_and_weighted_behavior`.
+
+Relation to earlier note:
+
+- **2026-04-14** still describes the **product** path: bi-encoder query vs frozen game profiles, not a learned two-tower **trainer**. This entry is the **offline-eval** extension for Candidate **C** only.
+
+Serving / product implications:
+
+- **`ContentRetriever` / API** remain **raw-default**; no requirement to expose `fusion_c_raw_plus_behavior` over HTTP until product asks for it.
+
 ## 2026-04-26: recs_004 evaluation task lock
 
 Decision:

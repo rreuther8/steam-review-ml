@@ -9,8 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from steam_review_ml.recommender import evaluation
+import steam_review_ml.evaluation.retrieval_offline_eval as evaluation
 from steam_review_ml.recommender.math_utils import l2_normalize
+from steam_review_ml.recommender.retrieve import fusion_c_raw_plus_behavior_query_vector
 
 
 def _fake_eval_inputs(fake_retriever: object) -> evaluation.EvalInputs:
@@ -147,7 +148,7 @@ def test_run_retrieval_eval_reuses_prepared_retriever(monkeypatch: pytest.Monkey
     assert not tables.ranking_overall.empty
 
 
-def test_two_tower_c_query_vector_fuses_session_and_weighted_behavior() -> None:
+def test_fusion_c_query_vector_fuses_session_and_weighted_behavior() -> None:
     class FakeRetriever:
         def embed_text(self, text: str) -> np.ndarray:  # noqa: ANN001
             t = str(text)
@@ -165,7 +166,7 @@ def test_two_tower_c_query_vector_fuses_session_and_weighted_behavior() -> None:
     }
     X = np.eye(3, dtype=np.float32)
     app_to_row = {2: 1}
-    out = evaluation.two_tower_c_raw_plus_behavior_query_vector(
+    out = fusion_c_raw_plus_behavior_query_vector(
         FakeRetriever(),  # type: ignore[arg-type]
         ex,
         embedding_matrix=X,

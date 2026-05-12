@@ -172,8 +172,9 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train`, plus **`two_tower_c_raw_plus_behavior`** (recs_011 Candidate C — raw session + playtime‑weighted catalog history fused in embedding space via `evaluation.two_tower_c_raw_plus_behavior_query_vector`). Paired retrieval- and ranking-contract tables:
+**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train`, plus **`fusion_c_raw_plus_behavior`** (recs_011 Candidate C — raw session + playtime‑weighted catalog history fused in embedding space via `retrieve.fusion_c_raw_plus_behavior_query_vector`). Paired retrieval- and ranking-contract tables:
 
+- **Slices, metric priorities, K semantics:** [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) (eval contract v2 + notebook map + cached-examples runbook).
 - Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
 - **Cutoffs:** `k_retrieval` (default: omit → same as `k_final`) caps the **retrieved candidate list** for the retrieval contract; `k_final` is the **ranking** / top‑shown list (`eval_ranking_*` Hit/NDCG/etc. use `k_final`; `eval_retrieval_*` Hit/Precision/Recall use `k_retrieval`). Changing these changes numbers — re-run **`--write-baseline`** when you intentionally move the regression contract.
@@ -243,7 +244,7 @@ Artifact layout reference:
 
 Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** set to the selected game so it never appears in results.
 
-See `docs/recommender_transition_plan.md` for the full v1 path.
+See [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md) for the archived v1→v2 narrative and [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) for the eval contract + notebook map.
 
 ---
 

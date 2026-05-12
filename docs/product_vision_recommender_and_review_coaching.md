@@ -2,11 +2,9 @@
 
 End-to-end direction for this repo: **Steam review data** powering a product where a person **writes a review** and gets **(1) other game recommendations** — the **core** experience — powered by **preference extraction** (draft → structured taste → retrieval). **(2) Actionable feedback on the draft** (coaching) is **optional**: same input, **different** purpose and **different** implementation than preference extraction.
 
-This review ultimately could be used as signal to understand what other content to recommend.
-
 This note splits one UX flow into **separate technical problems** so the roadmap stays shippable and easy to defend in interviews.
 
-**Technical recommender path:** **preference extraction** + content-led v1 → hybrid ranking v2 — see [`recommender_transition_plan.md`](recommender_transition_plan.md).
+**Technical recommender path:** **preference extraction** + content-led v1 → hybrid ranking v2 — historical engineering narrative: [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md); execution checklist: [`project_todo_plan.md`](project_todo_plan.md); offline eval contract: [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md).
 
 ---
 
@@ -76,19 +74,19 @@ Avoid promising opaque model "reasons." Prefer **layered, defensible** behavior:
 
 ## Suggested end-to-end project arc
 
-1. **Data pipeline** — clean splits, reproducible artifacts (see [`usage_pipeline.md`](usage_pipeline.md)).
-2. **Recommender v1** — **preference extraction** + embed structured query + content retrieval + @K metrics; raw-embed ablation for comparison (see transition plan).
-3. **Recommender v2** — hybrid reranking (ALS / priors / metadata / optional classifiers).
+1. **Data pipeline** — clean splits, reproducible artifacts ([`usage_pipeline.md`](usage_pipeline.md)).
+2. **Recommender v1** — preference extraction + content retrieval + @K metrics; raw default with structured ablation ([`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md)).
+3. **Recommender v2** — hybrid reranking (ALS / priors / metadata / optional classifiers) when v1 baseline exists.
 4. **Coach v0** (optional) — length + templates + simple heuristics.
 5. **Coach v1** (optional) — helpfulness-oriented model + topic/checklist vs. strong reviews.
 6. **Demo** — draft → **recommendations** (required); **coaching** if enabled.
-7. **Evaluation** — ranking metrics for **A+B**; raw vs structured query comparison; for **C**, proxy metrics and/or qualitative checks; tone and safety (no insults, no false certainty).
+7. **Evaluation** — contract-aligned metrics for recs; qualitative checks for coaching; tone and safety.
 
 ---
 
 ## Normalization (`_norm_*`) vs. retrieval
 
-Per-row numeric normalization (see [`etl/normalization_notes.md`](etl/normalization_notes.md)) supports **tabular / review-level** models and hybrid rerankers. Pure content retrieval on text vectors does not depend on those columns; hybrid stages that consume engineered features can reuse normalized numeric columns where it helps.
+Per-row numeric normalization (see [`archive/etl/normalization_notes.md`](archive/etl/normalization_notes.md)) supports **tabular / review-level** models and hybrid rerankers. Pure content retrieval on text vectors does not depend on those columns; hybrid stages that consume engineered features can reuse normalized numeric columns where it helps.
 
 ---
 

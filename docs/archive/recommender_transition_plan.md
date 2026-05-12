@@ -1,8 +1,10 @@
 # Recommender Transition Plan
 
-Product positioning — **preference extraction + recommendations are core**; **review coaching is optional** and a **separate** system (writer feedback, not the retrieval query). Details: `[product_vision_recommender_and_review_coaching.md](product_vision_recommender_and_review_coaching.md)`.
+> **Archived (2026-05-11).** Historical v1→v2 engineering narrative. For the living checklist use [`project_todo_plan.md`](../project_todo_plan.md); for product framing use [`product_vision_recommender_and_review_coaching.md`](../product_vision_recommender_and_review_coaching.md); for offline evaluation contract and notebook map use [`recommendation_evaluation_overview.md`](../recommendation_evaluation_overview.md).
 
-Phased work across the whole repo (data pipeline, tabular models, recommender, API) is tracked in `**[project_todo_plan.md](project_todo_plan.md)`**. That doc uses the **same priority**: **preference extraction + recommender v1 → @K eval** is the primary execution lane; tabular `recommended` / `votes_helpful` models are **supporting** signals for analysis and **v2 hybrid** reranking, not a substitute for extraction + retrieval.
+Product positioning — **preference extraction + recommendations are core**; **review coaching is optional** and a **separate** system (writer feedback, not the retrieval query). Details: [`product_vision_recommender_and_review_coaching.md`](../product_vision_recommender_and_review_coaching.md).
+
+Phased work across the whole repo (data pipeline, tabular models, recommender, API) is tracked in **[`project_todo_plan.md`](../project_todo_plan.md)**. That doc uses the **same priority**: **preference extraction + recommender v1 → @K eval** is the primary execution lane; tabular `recommended` / `votes_helpful` models are **supporting** signals for analysis and **v2 hybrid** reranking, not a substitute for extraction + retrieval.
 
 ## North star (single lane)
 
@@ -56,7 +58,7 @@ Example blended score (illustrative only; tune on validation):
 
 - **Per-review profile table** (train, thumbs-up only): `artifacts/recs/embeddings/game_profile/default/game_profile_reviews.parquet` — one row per review; capped per game. **Game vector:** embed each row, **mean-pool per `app_id`**, L2-normalize (`recs_002`).
 
-**Notebooks:** `recs_001_game_profile_reviews.ipynb` → `embeddings/game_profile/default/game_profile_reviews.parquet`. `recs_002_game_embeddings_raw.ipynb` → `embeddings/game_profile/default/game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve_smoke.ipynb` → query embed + top‑K (demo; see `docs/usage_pipeline.md`). `recs_004_eval_proxy_same_user.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_game_embeddings_structured.ipynb` → structured index artifacts in `embeddings/game_profile/structured_eval/` (experimental). `recs_006_eval_ablation_4way.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV under `experiments/review_style/4way_proxy/`.
+**Notebooks:** `recs_001_game_profile_reviews.ipynb` → `embeddings/game_profile/default/game_profile_reviews.parquet`. `recs_002_game_embeddings_raw.ipynb` → `embeddings/game_profile/default/game_profile_embeddings.npz` + index Parquet. `recs_003_query_retrieve_smoke.ipynb` → query embed + top‑K (demo; see [`usage_pipeline.md`](../usage_pipeline.md)). `recs_004_eval_proxy_same_user.ipynb` → val proxy metrics (**raw vs structured**, random + popularity baselines, optional multi-review pooling). `recs_005_game_embeddings_structured.ipynb` → structured index artifacts in `embeddings/game_profile/structured_eval/` (experimental). `recs_006_eval_ablation_4way.ipynb` → 4-way comparison (`raw_raw`, `structured_raw`, `raw_structured`, `structured_structured`) + proxy summary CSV under `experiments/review_style/4way_proxy/`.
 
 - `vectorizer.pkl` (or embedding model reference)
 
@@ -227,8 +229,8 @@ This proxy is **aligned with content-based retrieval** you already built: if nei
 
 **v1**
 
-1. ~~Build `**game_profile_reviews.parquet`** from training reviews (`recs_001`), then **per-game vectors** (`recs_002`).~~ **Done** (see `docs/project_todo_plan.md` checklist).
-2. Implement **preference extraction** + `build_embedding_input` (**ablation** path); **default** retrieval embed = **raw** text until structured wins on **val** (`recs_004` / `recs_006`). Current decision is tracked in `docs/retrieval_decision_log.md`.
+1. ~~Build `**game_profile_reviews.parquet`** from training reviews (`recs_001`), then **per-game vectors** (`recs_002`).~~ **Done** (see [`project_todo_plan.md`](../project_todo_plan.md) checklist).
+2. Implement **preference extraction** + `build_embedding_input` (**ablation** path); **default** retrieval embed = **raw** text until structured wins on **val** (`recs_004` / `recs_006`). Current decision is tracked in [`retrieval_decision_log.md`](../retrieval_decision_log.md).
 3. **Demo done:** `recs_003` — retrieval + **§9** raw vs structured vs negative penalty. **`recs_004`** — val proxy vs **random** + **popularity** baselines; optional **multi-review** pooling.
 4. Evaluate with @K metrics; document vs. baselines; **raw vs structured** on val proxy (and fixed drafts as needed).
 5. Run an A/B matrix on fixed drafts: raw+positive-only, structured+positive-only, raw+dual-index, structured+dual-index (if dual-index is available).
