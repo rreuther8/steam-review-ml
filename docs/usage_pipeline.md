@@ -197,6 +197,11 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
   `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`  
   or set **`examples_parquet`** in the job config (path relative to repo root). **`run_meta["prep_diagnostics"]`** records `examples_source: parquet_cache` and the path.
 
+**Two-tower train + eval (planned, script-only)** — trained `updated_user__updated_profile200_item`; train on Task A train examples; benchmark on cached val cohort. Full swimlane runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
+
+- Planned train job: `scripts/recs_job_train_two_tower.py` + `configs/recs_job_train_two_tower.json`
+- Eval: extend `recs_job_eval_retrieval.py` with method `two_tower_v1` and `--examples-parquet` (same as baselines)
+
 **Retrieval mechanism comparison (e.g. baselines vs candidates)** — candidate comparison notebook:
 
 - `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb`

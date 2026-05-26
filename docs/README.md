@@ -6,6 +6,7 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 
 | Doc | Purpose |
 |-----|---------|
+| [project_summary.md](project_summary.md) | One-page repo orientation (layout, flow, status, entry points) |
 | [usage_pipeline.md](usage_pipeline.md) | Commands, configs, artifact outputs, notebook pointers |
 | [artifact_layout.md](artifact_layout.md) | Where things live under `artifacts/recs/` |
 | [recommendation_evaluation_overview.md](recommendation_evaluation_overview.md) | Eval scope, notebook map, **eval contract (v2)**, cached-examples runbook |
