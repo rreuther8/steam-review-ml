@@ -39,6 +39,8 @@ from steam_review_ml.recommender.two_tower_train import load_hub_settings
 METHOD_TWO_TOWER_V1 = "two_tower_v1"
 
 METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
+ORACLE_RANKING_METRIC_COLS = ["OracleHit@K", "OracleNDCG@K"]
+RANKING_REPORT_METRIC_COLS = METRIC_COLS + ORACLE_RANKING_METRIC_COLS
 RETRIEVAL_METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K"]
 MASKING_POLICY_VERSION = "mask_query_app_v1"
 SUPPORT_BUCKET_ORDER = ["0", "1", "2-3", "4-7", "8+"]
@@ -150,6 +152,22 @@ def ndcg_at_k(ranked_rows: np.ndarray, positives: set[int], k: int, app_ids: np.
     if idcg <= 1e-12:
         return 0.0
     return dcg(gains) / idcg
+
+
+def _oracle_ranked_indices_from_retrieved(
+    retrieved_indices: np.ndarray,
+    positives: set[int],
+    app_ids: np.ndarray,
+) -> np.ndarray:
+    """Reorder retrieved rows with positives first (ranking ceiling within the pool)."""
+    pos_rows: list[int] = []
+    neg_rows: list[int] = []
+    for row in retrieved_indices.tolist():
+        if int(app_ids[int(row)]) in positives:
+            pos_rows.append(int(row))
+        else:
+            neg_rows.append(int(row))
+    return np.asarray(pos_rows + neg_rows, dtype=np.int64)
 
 
 def _query_vector_raw(retriever: ContentRetriever, ex: dict) -> np.ndarray:
@@ -535,6 +553,9 @@ def _per_example_retrieval_ranking(
         # Retrieval pool can be larger than final ranking list.
         retrieved_indices = np.asarray(full_order[:k_retrieval], dtype=np.int64)
         ranked_indices = np.asarray(full_order[:k_final], dtype=np.int64)
+        oracle_indices = _oracle_ranked_indices_from_retrieved(
+            retrieved_indices, positives, app_ids
+        )
 
         retr_ids_list = [int(app_ids[int(i)]) for i in retrieved_indices]
         retr_scores_list = [float(scores[int(i)]) for i in retrieved_indices]
@@ -581,6 +602,8 @@ def _per_example_retrieval_ranking(
                 "MAP@K": average_precision_at_k(ranked_indices, positives, k_final, app_ids),
                 "NDCG@K": ndcg_at_k(ranked_indices, positives, k_final, app_ids),
                 "MRR": mrr(ranked_indices, positives, app_ids),
+                "OracleHit@K": hit_rate_at_k(oracle_indices, positives, k_final, app_ids),
+                "OracleNDCG@K": ndcg_at_k(oracle_indices, positives, k_final, app_ids),
             }
         )
 
@@ -705,7 +728,7 @@ def _table_by_support_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: l
 def _table_overall_ranking(df_ex_metrics: pd.DataFrame) -> pd.DataFrame:
     return _table_overall_generic(
         df_ex_metrics,
-        metric_cols=METRIC_COLS,
+        metric_cols=RANKING_REPORT_METRIC_COLS,
         sort_cols=["NDCG@K", "MAP@K", "MRR"],
         ascending=[False, False, False],
     )
@@ -1128,11 +1151,15 @@ def run_retrieval_eval(
     by_slice_retrieval = _table_by_slice_for_metrics(
         df_ex_retrieval, metric_cols=RETRIEVAL_METRIC_COLS, ranking=False
     )
-    by_slice_ranking = _table_by_slice_for_metrics(df_ex_ranking, metric_cols=METRIC_COLS, ranking=True)
+    by_slice_ranking = _table_by_slice_for_metrics(
+        df_ex_ranking, metric_cols=RANKING_REPORT_METRIC_COLS, ranking=True
+    )
     by_support_retrieval = _table_by_support_for_metrics(
         df_ex_retrieval, metric_cols=RETRIEVAL_METRIC_COLS, ranking=False
     )
-    by_support_ranking = _table_by_support_for_metrics(df_ex_ranking, metric_cols=METRIC_COLS, ranking=True)
+    by_support_ranking = _table_by_support_for_metrics(
+        df_ex_ranking, metric_cols=RANKING_REPORT_METRIC_COLS, ranking=True
+    )
     pop_ret, pop_delta_ret, ex_pop_map = _table_popularity(
         df_ex_metrics=df_ex_retrieval,
         examples=inputs.examples,
@@ -1147,7 +1174,7 @@ def run_retrieval_eval(
         app_ids=inputs.app_ids,
         pop_row=inputs.pop_row,
         enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
-        metric_cols=METRIC_COLS,
+        metric_cols=RANKING_REPORT_METRIC_COLS,
     )
     personalization = _table_personalization(
         methods=selected_registry,

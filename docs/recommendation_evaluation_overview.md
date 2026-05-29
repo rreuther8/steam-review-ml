@@ -111,6 +111,8 @@ Computed at **`k_retrieval`** (columns still labeled `Hit@K`, `Precision@K`, `Re
 
 Computed at **`k_final`** (columns `MAP@K`, `NDCG@K`, `MRR`, and Hit / Precision / Recall on **`eval_ranking_*`**).
 
+**Oracle ceiling (diagnostic, same tables):** `OracleHit@K` and `OracleNDCG@K` on **`eval_ranking_*`** report the best possible top-`k_final` order **within each method’s retrieved top-`k_retrieval` pool** (positives ranked first). Compare to actual `Hit@K` / `NDCG@K` to see ranker headroom; not a competing method.
+
 - **Slice A (`n_eval_targets >= 2`)** — Primary: `NDCG@K`; tie-breakers: `MAP@K`, then `MRR`, then remaining ranking columns as needed
 - **Slice B (`n_eval_targets == 1`)** — Primary: `Hit@K`; secondary: `MRR`; tie-breakers: `NDCG@K`, `MAP@K`, …
 - **Slice C (`n_eval_targets == 0`)** — No ranking metrics; coverage diagnostic only

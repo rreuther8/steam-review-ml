@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 REQUIRED_METHODS = ("raw", "popularity_train", "multi_mean_train")
-RANKING_REGRESSION_METRICS = ("Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
+RANKING_REGRESSION_METRICS = ("Hit@K", "Recall@K", "MAP@K", "NDCG@K", "MRR", "OracleHit@K", "OracleNDCG@K")
 RETRIEVAL_REGRESSION_METRICS = ("Hit@K", "Precision@K", "Recall@K")
 EXPECTED_EVAL_FILES = (
     "eval_retrieval_overall.csv",
