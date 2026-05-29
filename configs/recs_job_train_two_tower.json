@@ -1,0 +1,20 @@
+{
+  "run_tag": "val_dev_12k_v1",
+  "artifact_dir": "artifacts/recs",
+  "output_dir": "artifacts/recs/towers",
+  "training_mode": "full",
+  "max_train_examples": 800000,
+  "max_val_examples": 10000,
+  "min_review_chars": 30,
+  "max_train_rows_per_user": 5,
+  "batch_size": 64,
+  "proj_dim": 64,
+  "temperature": 0.07,
+  "epochs": 15,
+  "smoke_epochs": 5,
+  "early_stopping_patience": 3,
+  "tower_seed": 2026,
+  "random_seed": 2026,
+  "adam_lr": 0.001,
+  "verbose": true
+}

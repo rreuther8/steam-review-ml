@@ -45,6 +45,7 @@ Then create:
 - Favor clarity over cleverness
 - Call out assumptions explicitly
 - If context is missing, state what is unknown instead of hallucinating
+- If docs/runbook/order-of-operations are affected, verify and update them before marking the review complete.
 
 When recommending code changes:
 
@@ -79,5 +80,6 @@ For every recommendation, include:
 6. **Next single highest-leverage task**
 7. **What NOT to work on yet**
 8. **Where AI assistance is likely to fail in this repo**
+9. **Acceptance checklist (5 items, PASS/FAIL)**
 
 Finally: keep the review actionable for a human merge decision. Do not post code blocks that rewrite entire modules unless the diff clearly requires it.

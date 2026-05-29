@@ -19,15 +19,25 @@ from steam_review_ml.data.loaders import (
     load_normalized_split_df,
     resolve_normalized_split_parquet,
 )
+from steam_review_ml.recommender.contrastive_examples import (
+    TRAIN_ROW_OPTIONAL_FIELDS,
+    USER_COL,
+    TIME_COL,
+    build_eval_records,
+    build_example_dicts,
+    sample_query_rows_by_cohort,
+)
 from steam_review_ml.recommender.math_utils import l2_normalize
 from steam_review_ml.recommender.retrieve import (
     ContentRetriever,
     METHOD_FUSION_C_RAW_PLUS_BEHAVIOR,
     fusion_c_raw_plus_behavior_query_vector,
 )
+from steam_review_ml.recommender.two_tower_score import load_two_tower_model, make_two_tower_score_fn
+from steam_review_ml.recommender.two_tower_train import load_hub_settings
 
-USER_COL = "author.steamid"
-TIME_COL = "timestamp_created"
+METHOD_TWO_TOWER_V1 = "two_tower_v1"
+
 METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
 RETRIEVAL_METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K"]
 MASKING_POLICY_VERSION = "mask_query_app_v1"
@@ -38,13 +48,6 @@ PERSONALIZATION_METRIC_PREFIXES = (
     "CatalogCoverage@",
     "Novelty@",
     "PersonalizationGapVsPopularity@",
-)
-TRAIN_ROW_OPTIONAL_FIELDS = (
-    "_norm_author__playtime_at_review",
-    "_norm_author__playtime_last_two_weeks",
-    "_norm_author__num_games_owned",
-    "_norm_author__num_reviews",
-    "_norm_review_word_count",
 )
 
 @dataclass(frozen=True)
@@ -149,217 +152,12 @@ def ndcg_at_k(ranked_rows: np.ndarray, positives: set[int], k: int, app_ids: np.
     return dcg(gains) / idcg
 
 
-def _build_eval_records(df_val_all: pd.DataFrame, df_train_all: pd.DataFrame) -> pd.DataFrame:
-    val_pos_user_stats = (
-        df_val_all.loc[df_val_all["recommended"] == 1]
-        .groupby(USER_COL)
-        .agg(n_val_pos_rows=("app_id", "size"), n_val_pos_apps=("app_id", "nunique"))
-    )
-    train_any = df_train_all.groupby(USER_COL).size().rename("n_train_support")
-    train_pos = (
-        df_train_all.loc[df_train_all["recommended"] == 1]
-        .groupby(USER_COL)
-        .size()
-        .rename("n_train_pos_support")
-    )
-    cohort_user = (
-        pd.DataFrame(index=pd.Index(df_val_all[USER_COL].unique(), name=USER_COL))
-        .join(train_any, how="left")
-        .join(train_pos, how="left")
-        .join(val_pos_user_stats, how="left")
-        .fillna(0)
-        .astype(
-            {
-                "n_train_support": int,
-                "n_train_pos_support": int,
-                "n_val_pos_rows": int,
-                "n_val_pos_apps": int,
-            }
-        )
-        .reset_index()
-    )
-    cohort_user["eval_pos_cohort"] = np.select(
-        [
-            cohort_user["n_val_pos_apps"] >= 2,
-            cohort_user["n_val_pos_apps"] == 1,
-            cohort_user["n_val_pos_apps"] == 0,
-        ],
-        ["val_multi_pos_eval", "val_single_pos_eval", "val_no_pos_eval"],
-        default="val_no_pos_eval",
-    )
-    cohort_user["cohort"] = np.select(
-        [
-            cohort_user["n_train_pos_support"] >= 2,
-            cohort_user["n_train_pos_support"] == 1,
-            (cohort_user["n_train_support"] >= 1) & (cohort_user["n_train_pos_support"] == 0),
-            cohort_user["n_train_support"] == 0,
-        ],
-        ["val_multi_pos_train", "val_pos_train", "val_train", "val_no_train"],
-        default="val_no_train",
-    )
-    df_val_pos = df_val_all.loc[df_val_all["recommended"] == 1].copy()
-    df_eval_records = df_val_pos.merge(
-        cohort_user[
-            [
-                USER_COL,
-                "cohort",
-                "eval_pos_cohort",
-                "n_train_support",
-                "n_train_pos_support",
-                "n_val_pos_rows",
-                "n_val_pos_apps",
-            ]
-        ],
-        on=USER_COL,
-        how="left",
-        validate="many_to_one",
-    )
-    return df_eval_records[
-        [
-            USER_COL,
-            "review_id",
-            "app_id",
-            "review",
-            "ts",
-            "cohort",
-            "eval_pos_cohort",
-            "n_train_support",
-            "n_train_pos_support",
-            "n_val_pos_rows",
-            "n_val_pos_apps",
-        ]
-    ].reset_index(drop=True)
-
-
-def _sample_eval_base(
-    df_eval_records: pd.DataFrame,
-    *,
-    active_cohort: str,
-    max_examples: int,
-    cohort_sizing: dict[tuple[str, str], float],
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    eval_base = (
-        df_eval_records.copy()
-        if active_cohort == "all"
-        else df_eval_records[df_eval_records["cohort"] == active_cohort].copy()
-    )
-    if len(eval_base) == 0:
-        raise RuntimeError(f"No eval records available for ACTIVE_COHORT={active_cohort!r}.")
-    if max_examples <= 0 or len(eval_base) <= max_examples:
-        return eval_base.reset_index(drop=True)
-    if not cohort_sizing:
-        take = rng.choice(eval_base.index.to_numpy(), size=max_examples, replace=False)
-        return eval_base.loc[take].reset_index(drop=True)
-
-    chosen_idx: list[int] = []
-    for (eval_pos_cohort, cohort), pct in cohort_sizing.items():
-        n_take = int(round(max_examples * float(pct)))
-        if n_take <= 0:
-            continue
-        mask = (eval_base["eval_pos_cohort"] == eval_pos_cohort) & (eval_base["cohort"] == cohort)
-        eligible = eval_base.loc[mask]
-        if len(eligible) == 0:
-            continue
-        n_take = min(n_take, len(eligible))
-        take_idx = rng.choice(eligible.index.to_numpy(), size=n_take, replace=False)
-        chosen_idx.extend(take_idx.tolist())
-    chosen_idx = list(dict.fromkeys(chosen_idx))
-    if len(chosen_idx) < max_examples:
-        remaining = eval_base.loc[~eval_base.index.isin(chosen_idx)]
-        fill_take = min(max_examples - len(chosen_idx), len(remaining))
-        if fill_take > 0:
-            fill_idx = rng.choice(remaining.index.to_numpy(), size=fill_take, replace=False)
-            chosen_idx.extend(fill_idx.tolist())
-    elif len(chosen_idx) > max_examples:
-        chosen_idx = rng.choice(np.asarray(chosen_idx, dtype=int), size=max_examples, replace=False).tolist()
-    return eval_base.loc[chosen_idx].reset_index(drop=True)
-
-
-def _build_examples(
-    eval_base: pd.DataFrame,
-    user_to_eval_apps: dict[str, list[int]],
-    *,
-    df_train_all: pd.DataFrame,
-    max_train_rows_per_user: int,
-    support_app_filter_mode: str,
-    rng: np.random.Generator,
-    verbose: bool = False,
-) -> tuple[list[dict], dict]:
-    train_pos = df_train_all[df_train_all["recommended"] == 1].copy()
-    optional_fields = [c for c in TRAIN_ROW_OPTIONAL_FIELDS if c in train_pos.columns]
-    train_rows_by_user: dict[str, list[dict]] = {}
-    for uid, g in train_pos.groupby(USER_COL):
-        rows_out: list[dict] = []
-        for rec in g.to_dict(orient="records"):
-            row = {
-                "app_id": int(rec["app_id"]),
-                "text": str(rec["review"]),
-                "ts": float(rec["ts"]),
-            }
-            for f in optional_fields:
-                v = rec.get(f)
-                row[f] = None if pd.isna(v) else v
-            rows_out.append(row)
-        train_rows_by_user[str(uid)] = rows_out
-    examples: list[dict] = []
-    drop_reasons: dict[str, int] = {
-        "no_other_positive_app": 0,
-    }
-    row_iter = eval_base.iterrows()
-    if verbose:
-        row_iter = tqdm(
-            row_iter,
-            total=len(eval_base),
-            desc="build eval examples",
-            unit="row",
-        )
-    for _, r in row_iter:
-        uid = str(r[USER_COL])
-        q_app = int(r["app_id"])
-        apps = user_to_eval_apps.get(uid, [])
-        validation_positive_app_ids = {int(a) for a in apps if int(a) != q_app}
-        if not validation_positive_app_ids:
-            drop_reasons["no_other_positive_app"] += 1
-            continue
-        rows = train_rows_by_user.get(uid, [])
-        if support_app_filter_mode == "strict":
-            exclude_apps = set(validation_positive_app_ids) | {q_app}
-            rows = [x for x in rows if int(x["app_id"]) not in exclude_apps]
-        elif support_app_filter_mode == "query_only":
-            rows = [x for x in rows if int(x["app_id"]) != q_app]
-        else:
-            raise ValueError(f"support_app_filter_mode must be query_only|strict, got {support_app_filter_mode!r}")
-        if max_train_rows_per_user > 0 and len(rows) > max_train_rows_per_user:
-            chosen = rng.choice(np.arange(len(rows)), size=max_train_rows_per_user, replace=False)
-            rows = [rows[i] for i in sorted(chosen.tolist())]
-        examples.append(
-            {
-                "user_id": uid,
-                "query_app_id": q_app,
-                "query_text": str(r["review"]),
-                "query_ts": float(r["ts"]),
-                "validation_positive_app_ids": validation_positive_app_ids,
-                "n_eval_targets": len(validation_positive_app_ids),
-                "train_review_rows": rows,
-                "cohort": str(r["cohort"]),
-                "eval_pos_cohort": str(r["eval_pos_cohort"]),
-            }
-        )
-    diagnostics = {
-        "sampled_rows": int(len(eval_base)),
-        "evaluable_examples": int(len(examples)),
-        "dropped_rows": int(len(eval_base) - len(examples)),
-        "drop_reasons": drop_reasons,
-    }
-    return examples, diagnostics
-
-
 def _query_vector_raw(retriever: ContentRetriever, ex: dict) -> np.ndarray:
     return retriever.embed_text(ex["query_text"])
 
 
 def _query_vector_multi_mean_train(retriever: ContentRetriever, ex: dict, *, multi_max_reviews: int) -> np.ndarray:
+    """Average query text embedding with up to ``multi_max_reviews-1`` train review embeddings."""
     texts = [str(ex["query_text"]).strip()]
     for row in ex.get("train_review_rows", [])[: max(0, int(multi_max_reviews) - 1)]:
         t = row.get("text")
@@ -379,10 +177,12 @@ def _scores_from_query(
     query_app_id: int,
     mask_query_app: bool,
 ) -> np.ndarray:
+    """Project a query vector against catalog matrix and optionally mask the query app row."""
     s = (X @ q).astype(np.float32)
     if mask_query_app:
         row = app_to_row.get(int(query_app_id))
         if row is not None:
+            # Prevent trivial self-retrieval when query app exists in the indexed catalog.
             s[row] = -np.inf
     return s
 
@@ -396,7 +196,10 @@ def _build_method_registry(
     multi_max_reviews: int,
     rng: np.random.Generator,
     mask_query_app: bool,
+    two_tower_model_path: Path | None = None,
+    two_tower_catalog_item_batch: int = 256,
 ) -> dict[str, Callable[[dict], np.ndarray]]:
+    """Build all scoring methods available for offline retrieval evaluation."""
     def score_raw(ex: dict) -> np.ndarray:
         q = _query_vector_raw(retriever, ex)
         return _scores_from_query(q, X=X, app_to_row=app_to_row, query_app_id=int(ex["query_app_id"]), mask_query_app=mask_query_app)
@@ -436,13 +239,29 @@ def _build_method_registry(
             mask_query_app=mask_query_app,
         )
 
-    return {
+    registry: dict[str, Callable[[dict], np.ndarray]] = {
         "raw": score_raw,
         "popularity_train": score_popularity_train,
         "multi_mean_train": score_multi_mean_train,
         METHOD_FUSION_C_RAW_PLUS_BEHAVIOR: score_fusion_c_raw_plus_behavior,
         "random": score_random,
     }
+    if two_tower_model_path is not None:
+        hub_url, hub_max_chars = load_hub_settings(retriever)
+        tower_model = load_two_tower_model(
+            two_tower_model_path,
+            hub_url=hub_url,
+            n_items=len(retriever.app_ids),
+            embed_dim=int(retriever.embedding_matrix.shape[1]),
+        )
+        registry[METHOD_TWO_TOWER_V1] = make_two_tower_score_fn(
+            tower_model,
+            retriever,
+            max_chars=hub_max_chars,
+            catalog_item_batch=int(two_tower_catalog_item_batch),
+            mask_query_app=mask_query_app,
+        )
+    return registry
 
 
 def prepare_eval_inputs(
@@ -459,6 +278,7 @@ def prepare_eval_inputs(
     artifact_dir: Path | None = None,
     verbose: bool = False,
 ) -> EvalInputs:
+    """Materialize retriever/artifacts plus sampled eval examples and popularity baseline vector."""
     retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
     X = retriever.embedding_matrix
     app_ids = retriever.app_ids
@@ -494,7 +314,7 @@ def prepare_eval_inputs(
             f"eval={len(df_val_all):,} train={len(df_train_all):,} "
             f"split_used={eval_split_name}"
         )
-    df_eval_records = _build_eval_records(df_val_all, df_train_all)
+    df_eval_records = build_eval_records(df_val_all, df_train_all)
     user_to_eval_apps = (
         df_eval_records.groupby(USER_COL)["app_id"]
         .apply(lambda s: sorted({int(x) for x in s}))
@@ -502,16 +322,16 @@ def prepare_eval_inputs(
     )
 
     rng = np.random.default_rng(int(random_seed))
-    eval_base = _sample_eval_base(
+    eval_base = sample_query_rows_by_cohort(
         df_eval_records,
         active_cohort=active_cohort,
         max_examples=int(max_examples),
         cohort_sizing=cohort_sizing,
         rng=rng,
     )
-    examples, build_diagnostics = _build_examples(
+    examples, build_diagnostics = build_example_dicts(
         eval_base,
-        user_to_eval_apps={str(k): v for k, v in user_to_eval_apps.items()},
+        user_to_query_split_apps={str(k): v for k, v in user_to_eval_apps.items()},
         df_train_all=df_train_all,
         max_train_rows_per_user=max_train_rows_per_user,
         support_app_filter_mode=support_app_filter_mode,
@@ -658,6 +478,7 @@ def prepare_eval_inputs_from_cache(
 
 
 def _embedding_model_snapshot(retriever: ContentRetriever | None) -> str:
+    """Best-effort model id for run metadata; avoids hard failure if retriever is absent."""
     if retriever is None:
         return "unknown"
     url = getattr(retriever, "_tfhub_url", None)
@@ -665,6 +486,7 @@ def _embedding_model_snapshot(retriever: ContentRetriever | None) -> str:
 
 
 def _slice_and_bucket_for_example(ex: dict) -> tuple[str, str]:
+    """Compute eval slice and train-support bucket labels for one example."""
     n_eval = int(ex.get("n_eval_targets", 0))
     if n_eval >= 2:
         slice_name = "slice_a_multi_target"
@@ -706,9 +528,11 @@ def _per_example_retrieval_ranking(
         validation_positive_app_ids_set = set(int(x) for x in ex["validation_positive_app_ids"])
         positives = validation_positive_app_ids_set
         if not positives:
+            # Metric definitions assume at least one positive target.
             continue
         scores = score_fn(ex)
         full_order = _rank_rows(scores)
+        # Retrieval pool can be larger than final ranking list.
         retrieved_indices = np.asarray(full_order[:k_retrieval], dtype=np.int64)
         ranked_indices = np.asarray(full_order[:k_final], dtype=np.int64)
 
@@ -792,6 +616,7 @@ def _per_example_retrieval_ranking(
 
 
 def _coverage_from_examples(examples: list[dict]) -> pd.DataFrame:
+    """Return one-row coverage diagnostics over eval target counts."""
     ex_npos = pd.DataFrame(
         {
             "ex_idx": np.arange(len(examples), dtype=int),
@@ -833,6 +658,7 @@ def _table_overall_generic(
 
 
 def _table_by_slice_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: list[str], ranking: bool) -> pd.DataFrame:
+    """Aggregate metrics by slice and method using ranking/retrieval-specific sort priorities."""
     df = df_ex_metrics.copy()
     df["slice_name"] = np.select(
         [df["n_eval_targets"] >= 2, df["n_eval_targets"] == 1, df["n_eval_targets"] == 0],
@@ -855,6 +681,7 @@ def _table_by_slice_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: lis
 
 
 def _table_by_support_for_metrics(df_ex_metrics: pd.DataFrame, *, metric_cols: list[str], ranking: bool) -> pd.DataFrame:
+    """Aggregate metrics by support bucket and method with stable bucket ordering."""
     df = df_ex_metrics.copy()
     df["train_support_bucket"] = df["n_support_train"].fillna(0).astype(int).map(_support_bucket)
     df["train_support_bucket"] = pd.Categorical(
@@ -899,6 +726,7 @@ def _example_popularity_segments(
     app_ids: np.ndarray,
     pop_row: np.ndarray,
 ) -> pd.DataFrame:
+    """Compute per-example positive-target popularity and assign deciles."""
     app_pop = {int(a): float(c) for a, c in zip(app_ids, pop_row)}
     pos_pop_rows = []
     for ex_idx, ex in enumerate(examples):
@@ -934,6 +762,7 @@ def _table_popularity(
     enable_popularity_decile_diagnostics: bool,
     metric_cols: list[str],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build popularity-decile tables and deltas versus ``popularity_train`` reference."""
     if not enable_popularity_decile_diagnostics:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     df_ex_pop = _example_popularity_segments(examples=examples, app_ids=app_ids, pop_row=pop_row)
@@ -971,6 +800,7 @@ def _table_personalization(
     example_indices: set[int] | None = None,
     verbose: bool = False,
 ) -> pd.DataFrame:
+    """Compute method-level diversity/novelty/coverage and gap-vs-popularity metrics."""
     pop_counts = np.asarray(pop_row, dtype=np.float64)
     pop_share = (pop_counts + 1.0) / float(pop_counts.sum() + len(pop_counts))
     item_novelty = -np.log2(pop_share)
@@ -1078,6 +908,7 @@ def _personalization_by_group(
     group_col: str,
     verbose: bool = False,
 ) -> pd.DataFrame:
+    """Run personalization metrics on grouped example subsets (slice/support/popularity)."""
     if group_map.empty or group_col not in group_map.columns:
         return pd.DataFrame()
     out: list[pd.DataFrame] = []
@@ -1196,6 +1027,8 @@ def run_retrieval_eval(
     artifact_dir: Path | None = None,
     verbose: bool = False,
     examples_parquet: Path | None = None,
+    two_tower_model_path: Path | None = None,
+    two_tower_catalog_item_batch: int = 256,
 ) -> EvalTables:
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
@@ -1244,7 +1077,14 @@ def run_retrieval_eval(
         multi_max_reviews=multi_max_reviews,
         rng=rng,
         mask_query_app=True,
+        two_tower_model_path=two_tower_model_path,
+        two_tower_catalog_item_batch=two_tower_catalog_item_batch,
     )
+    if METHOD_TWO_TOWER_V1 in methods and two_tower_model_path is None:
+        raise ValueError(
+            "Method 'two_tower_v1' requires 'two_tower_model_path' in the eval job config "
+            "(e.g. artifacts/recs/towers/<run_tag>/updated_user__updated_profile200_item.keras)."
+        )
     unknown = sorted(set(methods).difference(registry.keys()))
     if unknown:
         raise ValueError(f"Unknown methods requested: {unknown}. Available={sorted(registry.keys())}")

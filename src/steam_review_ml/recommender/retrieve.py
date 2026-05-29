@@ -29,6 +29,7 @@ class ContentRetriever:
     """
 
     def __init__(self, artifact_dir: Path | None = None, *, repo_root: Path | None = None) -> None:
+        """Initialize retriever from an explicit artifact directory or repo-relative default."""
         root = repo_root or default_repo_root()
         if artifact_dir is not None:
             self._artifact_dir = Path(artifact_dir)
@@ -68,6 +69,7 @@ class ContentRetriever:
         )
 
     def _load_artifacts(self) -> None:
+        """Load matrix/index/meta artifacts and validate cross-file alignment invariants."""
         npz_path, idx_path, meta_path = self._artifact_paths()
         for path in (npz_path, idx_path, meta_path):
             if not path.is_file():
@@ -93,19 +95,25 @@ class ContentRetriever:
         index_df = pd.read_parquet(idx_path)
         n_rows = len(index_df)
         n_embed = embedding_matrix.shape[0]
+        # The parquet index and embedding matrix must have one row per game, in lockstep.
         if n_rows != n_embed:
             raise ValueError(
                 f"Index row count ({n_rows}) != embedding row count ({n_embed})"
             )
+        # Retrieval assumes "row i" means the same app across both files.
         index_app_ids = index_df["app_id"].to_numpy()
+        # Enforce exact order equality (not just set equality) to prevent silent score/app mismatches.
         if not np.array_equal(index_app_ids, npz_app_ids):
             raise ValueError("game_profile_embedding_index.parquet app_id order does not match npz")
         return index_df
 
     @staticmethod
     def _read_hub_meta(meta_path: Path) -> tuple[str, int | None]:
+        # Metadata is written during embedding export and tells us which Hub model to load.
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        # Historical key name is "model_name"; value is the TF-Hub URL.
         model_url = meta["model_name"]
+        # Optional truncation cap keeps inference-time text handling consistent with export-time settings.
         max_chars = meta.get("max_chars_per_review")
         return model_url, max_chars
 
@@ -196,6 +204,7 @@ class ContentRetriever:
         *,
         min_similarity: float,
     ) -> list[tuple[float, np.ndarray]]:
+        """Embed history texts and keep only vectors sufficiently similar to the query."""
         if not history_texts:
             return []
         cleaned_history = [str(text).strip() for text in history_texts if str(text).strip()]
@@ -218,16 +227,20 @@ class ContentRetriever:
         alpha: float,
         history_top_k: int,
     ) -> np.ndarray:
+        """Blend query vector with relevance-weighted history vectors, then re-normalize."""
         if not vectors_with_sim:
             return query_vector
 
         vectors_with_sim.sort(key=lambda item: item[0], reverse=True)
         selected = vectors_with_sim[: max(1, int(history_top_k))]
+        # Use non-negative similarities as blending weights; negative values would invert intent.
         sims = np.asarray([max(0.0, sim) for sim, _ in selected], dtype=np.float32)
         vecs = np.stack([vec for _, vec in selected], axis=0).astype(np.float32)
         if float(sims.sum()) > L2_EPS:
+            # Weighted centroid when we have usable relevance mass.
             history_vector = l2_normalize((vecs * sims[:, None]).sum(axis=0))
         else:
+            # Fallback avoids divide-by-near-zero when all similarities are tiny.
             history_vector = l2_normalize(vecs.mean(axis=0))
         return l2_normalize((1.0 - alpha) * query_vector + alpha * history_vector)
 
@@ -367,14 +380,17 @@ def _weighted_mean_behavior_embedding(
     if weighted_vecs:
         mat = np.stack(weighted_vecs, axis=0)
         w_arr = np.asarray(weights, dtype=np.float32)
+        # Weighted average of catalog vectors using normalized-in-practice playtime magnitudes.
         vec = (mat * w_arr[:, None]).sum(axis=0) / float(np.maximum(w_arr.sum(), 1e-12))
         return l2_normalize(vec).astype(np.float32, copy=False), True
+    # Fallback 1: equal-mean over unique support apps when weights are missing/zero.
     support_ids = sorted(
         {int(r.get("app_id")) for r in rows if int(r.get("app_id", -1)) in app_to_row}
     )
     if support_ids:
         mat = np.stack([embedding_matrix[app_to_row[a]] for a in support_ids], axis=0).astype(np.float32)
         return l2_normalize(mat.mean(axis=0)).astype(np.float32, copy=False), False
+    # Fallback 2: caller-provided vector (typically review-text embedding).
     return np.asarray(fallback, dtype=np.float32), False
 
 

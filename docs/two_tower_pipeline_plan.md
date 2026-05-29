@@ -13,11 +13,11 @@ Script-only runbook for **trained two-tower retrieval** (`updated_user__updated_
 
 | Choice | Decision |
 |--------|----------|
-| **Train job reads** | **Game embeddings** (`ContentRetriever` / recs_002 NPZ + index + meta) — **not** `game_profile_reviews.parquet` |
-| **Item init** | Rows from `embedding_matrix` (same geometry as catalog); profile parquet is only input to the embeddings job |
-| **Training labels** | Task A semantics: `prepare_eval_inputs(split="train")` → other liked apps in train |
-| **Benchmark eval** | Cached `eval_examples.parquet` via `recs_job_eval_retrieval.py --examples-parquet` (not the small val set used for `val_loss` during fit) |
-| **Winning spec** | `updated_user__updated_profile200_item` — trainable USE user tower + trainable item tower (init from embeddings) |
+| **Train job reads** | **Game embeddings** (`ContentRetriever` / NPZ + index + meta) — **not** `game_profile_reviews.parquet` |
+| **Item init** | Rows from `embedding_matrix` (catalog); profile parquet is only input to the embeddings job |
+| **Training labels** | `build_contrastive_examples(split="train")` — same-split positives (not the offline eval job API) |
+| **Benchmark eval** | Cached `eval_examples.parquet` + `recs_job_eval_retrieval.py` with method `two_tower_v1` |
+| **Production model** | Single architecture: trainable USE user tower + trainable item tower |
 
 Profiles parquet is an **internal** artifact between `recs_job_game_profiles` and `recs_job_game_embeddings`. The train job does not open it.
 
@@ -46,13 +46,13 @@ flowchart TB
   end
 
   subgraph lane_train["Train"]
-    tj["recs_job_train_two_tower<br/>reads train split"]
+    tj["recs_job_train_two_tower"]
     tout["Tower artifacts<br/>model.keras + train_history.csv"]
     tj --> tout
   end
 
   evj["recs_job_eval_retrieval<br/>method two_tower_v1"]
-  evo["Offline eval tables<br/>overall / slice / support"]
+  evo["Offline eval tables"]
 
   data --> pj
   data --> cj
@@ -64,93 +64,65 @@ flowchart TB
   evj --> evo
 ```
 
-Solid arrows: primary data flow. Dotted arrow: profiles feeds **embeddings job only**, not train.
-
 ---
 
 ## Per-job artifacts
 
-| Job | Reads | Writes | Notebooks (explore only) |
-|-----|-------|--------|--------------------------|
-| `recs_job_game_profiles` | train norm parquet | `game_profile_reviews.parquet` | recs_001 |
-| `recs_job_game_embeddings` | profiles parquet | NPZ + index + meta (recs_002) | recs_002 |
-| `recs_job_build_eval_examples` | val norm parquet + cohort config | `eval_examples.parquet` | — |
-| `recs_job_train_two_tower` *(planned)* | train parquet + **game embeddings** | model + `train_history.csv` + metadata | recs_012_task_A |
-| `recs_job_eval_retrieval` *(extended)* | eval cache + embeddings + tower model | `eval_retrieval_*`, `eval_ranking_*`, jsonl | recs_011 |
+| Job | Reads | Writes |
+|-----|-------|--------|
+| `recs_job_game_profiles` | train norm parquet | `game_profile_reviews.parquet` |
+| `recs_job_game_embeddings` | profiles parquet | game embeddings (NPZ + index + meta) |
+| `recs_job_build_eval_examples` | val norm parquet + cohort config | `eval_examples.parquet` |
+| `recs_job_train_two_tower` | train/val parquet + game embeddings | `*.keras`, `train_history.csv`, `run_metadata.json` |
+| `recs_job_eval_retrieval` | eval cache + embeddings + tower model | `eval_retrieval_*`, `eval_ranking_*`, jsonl |
+
+**Library modules:** `steam_review_ml.recommender.contrastive_examples`, `two_tower_train`, `two_tower_score`.
 
 ---
 
-## Train job internals (planned)
+## Train job internals
 
 **Reads**
 
-- Train norm parquet → `prepare_eval_inputs(split="train")`
-- Game embeddings via `ContentRetriever`: catalog matrix, `app_to_row`, USE hub meta
-- `item_init` ← `embedding_matrix` rows (no profile parquet at train time)
+- `build_contrastive_examples(split="train"|"val")` from [`contrastive_examples.py`](../src/steam_review_ml/recommender/contrastive_examples.py)
+- Game embeddings via `ContentRetriever`
+- `item_init` ← `embedding_matrix` only
 
 **Trains**
 
-- User: trainable USE (Hub) → 64-d projection, L2-normalized
-- Item: trainable `item_base` (init from embedding rows) → 64-d projection
-- Loss: multi-positive in-batch contrastive (Task A row expansion)
+- User: trainable USE → 64-d projection
+- Item: trainable `item_base` (catalog init) → 64-d projection
+- Multi-positive in-batch contrastive loss; early stopping on val contrastive loss
 
-**Writes**
+**Writes** (under `artifacts/recs/towers/<run_tag>/`)
 
-- `model.keras` (or SavedModel)
-- `train_history.csv` — `loss`, `val_loss`, `user_to_item_loss`, `item_to_user_loss`, per epoch (Keras `History`)
-- `run_metadata.json` — config path, spec label, artifact paths, timestamps
-
-**Fit monitoring:** early stopping on contrastive `val_loss` from a held-out val sample is a **training convenience** only; contract metrics come from the cached eval parquet (see [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md)).
+- `updated_user__updated_profile200_item.keras`
+- `train_history.csv`
+- `run_metadata.json`
 
 ---
 
 ## Commands (no notebooks)
 
-Run from repo root after processed splits exist.
+```bash
+python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json
+python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json
+python scripts/recs_job_build_eval_examples.py configs/recs_job_build_eval_examples.json
+python scripts/recs_job_train_two_tower.py configs/recs_job_train_two_tower.json
+```
+
+Benchmark eval with trained tower (add `two_tower_v1` to `methods` and set `two_tower_model_path` in config):
 
 ```bash
-# 1. Profiles (input to embeddings job)
-python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json
-
-# 2. Game embeddings (recs_002 catalog)
-python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json
-
-# 3. Fixed eval cohort (Task A)
-python scripts/recs_job_build_eval_examples.py configs/recs_job_build_eval_examples.json
-
-# 4. Train two-tower (planned)
-python scripts/recs_job_train_two_tower.py configs/recs_job_train_two_tower.json
-
-# 5. Offline eval including tower method (planned: two_tower_v1 in methods)
 python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json \
   --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
 ```
 
-Default tower artifact layout (planned):
+Example config keys:
 
-```text
-artifacts/recs/towers/<run_tag>/
-  updated_user__updated_profile200_item.keras
-  train_history.csv
-  run_metadata.json
+```json
+"methods": ["raw", "popularity_train", "multi_mean_train", "fusion_c_raw_plus_behavior", "two_tower_v1"],
+"two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras"
 ```
 
----
-
-## Implementation phases
-
-1. **[ ]** Extract `steam_review_ml/recommender/two_tower_train.py` from `recs_012_two_tower_training_rows_explore_task_A.ipynb`
-2. **[ ]** Add `scripts/recs_job_train_two_tower.py` + `configs/recs_job_train_two_tower.json`
-3. **[ ]** Item init from `embedding_matrix` only (drop train-time profile parquet reads)
-4. **[ ]** Register `two_tower_v1` scorer in `retrieval_offline_eval` + eval job config
-5. **[ ]** Document run order in [`usage_pipeline.md`](usage_pipeline.md) §7
-
----
-
-## Interactive diagram
-
-A swimlane canvas with the same layout lives in the IDE at:
-
-`canvases/two_tower-pipeline-plan.canvas.tsx` (Cursor project canvases folder)
-
-Use that for visual review; this markdown file is the repo-canonical copy for git and onboarding.
+Smoke training: set `"training_mode": "smoke"` in `configs/recs_job_train_two_tower.json`.

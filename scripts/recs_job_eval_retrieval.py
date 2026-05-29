@@ -195,6 +195,14 @@ def main() -> None:
     if examples_parquet is not None:
         print(f"examples_parquet={examples_parquet} (cached cohort; max_examples/cohort_sizing unused for sampling)")
 
+    two_tower_model_path: Path | None = None
+    if cfg.get("two_tower_model_path"):
+        p = Path(str(cfg["two_tower_model_path"]).strip())
+        two_tower_model_path = p if p.is_absolute() else repo_root / p
+    two_tower_catalog_item_batch = int(cfg.get("two_tower_catalog_item_batch", 256))
+    if two_tower_model_path is not None:
+        print(f"two_tower_model_path={two_tower_model_path}")
+
     tables = run_retrieval_eval(
         repo_root=repo_root,
         split=split,
@@ -215,6 +223,8 @@ def main() -> None:
         artifact_dir=artifact_dir,
         verbose=verbose,
         examples_parquet=examples_parquet,
+        two_tower_model_path=two_tower_model_path,
+        two_tower_catalog_item_batch=two_tower_catalog_item_batch,
     )
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"
