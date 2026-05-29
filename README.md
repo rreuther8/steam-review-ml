@@ -95,7 +95,7 @@ Dataset URL: [https://www.kaggle.com/datasets/najzeko/steam-reviews-2021](https:
 - **Docs map:** [`docs/README.md`](docs/README.md) — index of all `docs/` (reduces sprawl).
 - Pipeline run order and command references: [`docs/usage_pipeline.md`](docs/usage_pipeline.md)
 - Retrieval decision log (current default + rationale): [`docs/retrieval_decision_log.md`](docs/retrieval_decision_log.md)
-- Transition plan for recommender v1 -> v2: [`docs/recommender_transition_plan.md`](docs/recommender_transition_plan.md)
+- Archived v1→v2 transition narrative: [`docs/archive/recommender_transition_plan.md`](docs/archive/recommender_transition_plan.md) — eval contract and overview: [`docs/recommendation_evaluation_overview.md`](docs/recommendation_evaluation_overview.md)
 
 Quick regression check after running `recs_006`:
 

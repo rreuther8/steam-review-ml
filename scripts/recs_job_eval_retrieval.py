@@ -4,15 +4,21 @@ Writes paired `eval_retrieval_*` and `eval_ranking_*` tables, per-example
 `eval_offline_examples.jsonl`, and run metadata under the configured directory
 (default: ``artifacts/recs/offline_eval/runs/latest``).
 
-Default baseline methods (config `methods`; must include all three):
-- raw
-- popularity_train
-- multi_mean_train
+The config ``methods`` list must include **three** required baselines (contract + regression):
 
-Default config also evaluates **Candidate C**: `two_tower_c_raw_plus_behavior` (`evaluation.two_tower_c_raw_plus_behavior_query_vector`).
+- ``raw``
+- ``popularity_train``
+- ``multi_mean_train``
+
+You may append additional registered scorer names (wired in ``steam_review_ml.evaluation.retrieval_offline_eval``).
+The default JSON config also runs **Candidate C** as ``fusion_c_raw_plus_behavior``: a
+hand-fused query vector (session USE embed + playtime-weighted train catalog blend) implemented
+in ``steam_review_ml.recommender.retrieve.fusion_c_raw_plus_behavior_query_vector`` — same game
+matrix as ``raw``, not a separately trained two-tower model.
 
 Optional non-gating sanity baseline:
-- random
+
+- ``random``
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from pathlib import Path
 
 import pandas as pd
 from steam_review_ml.constants import PROJECT_RANDOM_SEED
-from steam_review_ml.recommender.evaluation import (
+from steam_review_ml.evaluation.retrieval_offline_eval import (
     REQUIRED_PHASE1_METHODS,
     RETRIEVAL_METRIC_COLS,
     run_retrieval_eval,
@@ -189,6 +195,14 @@ def main() -> None:
     if examples_parquet is not None:
         print(f"examples_parquet={examples_parquet} (cached cohort; max_examples/cohort_sizing unused for sampling)")
 
+    two_tower_model_path: Path | None = None
+    if cfg.get("two_tower_model_path"):
+        p = Path(str(cfg["two_tower_model_path"]).strip())
+        two_tower_model_path = p if p.is_absolute() else repo_root / p
+    two_tower_catalog_item_batch = int(cfg.get("two_tower_catalog_item_batch", 256))
+    if two_tower_model_path is not None:
+        print(f"two_tower_model_path={two_tower_model_path}")
+
     tables = run_retrieval_eval(
         repo_root=repo_root,
         split=split,
@@ -209,6 +223,8 @@ def main() -> None:
         artifact_dir=artifact_dir,
         verbose=verbose,
         examples_parquet=examples_parquet,
+        two_tower_model_path=two_tower_model_path,
+        two_tower_catalog_item_batch=two_tower_catalog_item_batch,
     )
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"

@@ -1,4 +1,8 @@
-"""Evaluation helpers shared across notebooks (metrics, aggregations)."""
+"""Evaluation helpers shared across notebooks (metrics, aggregations).
+
+Offline retrieval/ranking contract eval lives in
+``steam_review_ml.evaluation.retrieval_offline_eval``.
+"""
 
 from steam_review_ml.evaluation.metrics import (
     as_table,

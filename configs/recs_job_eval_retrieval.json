@@ -4,7 +4,8 @@
     "raw",
     "popularity_train",
     "multi_mean_train",
-    "two_tower_c_raw_plus_behavior"
+    "fusion_c_raw_plus_behavior",
+    "two_tower_v1"
   ],
   "active_cohort": "all",
   "max_examples": 12500,
@@ -28,5 +29,6 @@
     "val_multi_pos_eval|val_no_train": 0.1
   },
   "artifact_dir": "artifacts/recs",
-  "output_dir": "artifacts/recs/offline_eval/runs/latest"
+  "output_dir": "artifacts/recs/offline_eval/runs/latest",
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras"
 }
