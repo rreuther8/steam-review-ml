@@ -112,6 +112,9 @@ def main() -> None:
         hub_url=hub_url,
         item_init_matrix=item_init,
     )
+    if not model.built:
+        model.build()
+    print(f"n_weights before save: {len(model.weights)}")
     model.save(model_path)
     hist_df = history_to_dataframe(history)
     hist_df.to_csv(history_path, index=False)

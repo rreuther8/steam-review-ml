@@ -24,6 +24,8 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 | Doc | Purpose |
 |-----|---------|
 | [project_todo_plan.md](project_todo_plan.md) | Repo-wide prioritized todos + focused backlog (retrieval/ranking split, simplification, deferred notebook) |
+| [ranker_exploration_plan.md](ranker_exploration_plan.md) | **Fill-in** questionnaire + decisions for ranker / rerank next steps |
+| [two_tower_pipeline_plan.md](two_tower_pipeline_plan.md) | Two-tower train + eval runbook (script-only) |
 | [archive/recommender_transition_plan.md](archive/recommender_transition_plan.md) | **Archived** v1→v2 engineering narrative |
 
 ## Product / hiring / misc
