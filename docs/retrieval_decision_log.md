@@ -31,7 +31,7 @@ Evidence:
 - `src/steam_review_ml/recommender/retrieve.py` — `fusion_c_raw_plus_behavior_query_vector`, `METHOD_FUSION_C_RAW_PLUS_BEHAVIOR`, behavior-weight helpers.
 - `src/steam_review_ml/evaluation/retrieval_offline_eval.py` — scorer registry; calls into `retrieve` for fusion vectors.
 - `scripts/recs_job_eval_retrieval.py`, `configs/recs_job_eval_retrieval.json`.
-- `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate grid; align **`k_retrieval` / `k_final`** with the job config when diffing.
+- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate grid; align **`k_retrieval` / `k_final`** with the job config when diffing.
 - `tests/test_evaluation.py` — `test_fusion_c_query_vector_fuses_session_and_weighted_behavior`.
 
 Relation to earlier note:

@@ -1,0 +1,16 @@
+{
+  "cache_name": "train_ranker_v1",
+  "purpose": "ranker_train",
+  "split": "train",
+  "active_cohort": "all",
+  "max_examples": 150000,
+  "support_app_filter_mode": "strict",
+  "min_review_chars": 30,
+  "max_train_rows_per_user": 5,
+  "random_seed": 2027,
+  "disjoint_from_cache": "val_dev_12k_v1",
+  "verbose": true,
+  "cohort_sizing": {},
+  "artifact_dir": "artifacts/recs",
+  "output_dir": "artifacts/recs/eval_cache"
+}

@@ -50,7 +50,7 @@ When recommending changes:
 ## Repo-specific focus (steam_recommendations)
 
 - **ML / evaluation**: target definition, feature leakage, train/val/test splits, metric definitions, artifact paths under `artifacts/`, seeds and config paths, reproducibility.
-- **Notebooks**: live under `notebooks/` (eda, etl, models, retrieval_ranking); prefer reusing `src/steam_review_ml/` over inline reimplementation.
+- **Notebooks**: live under `notebooks/` (eda, etl, models, retrieval, ranking); prefer reusing `src/steam_review_ml/` over inline reimplementation.
 - **Python**: when logic is stable, suggest `src/` + tests in `tests/` rather than growing the notebook.
 
 For every recommendation, include:

@@ -57,7 +57,7 @@ steam_recommendations/
       tabular/          # recommended + votes_helpful baselines / simple models
       game_embeddings/  # recs_001–002 game profiles + index vectors
       query_embeddings/ # recs_003–007 query methods, ablations, qual eval
-    retrieval_ranking/  # history blend, pipeline parity, two-tower, central eval
+    retrieval/  # history blend, pipeline parity, two-tower, central eval
   scripts/              # CLI entry points for pipeline + recs jobs
   src/steam_review_ml/  # installable package
   tests/                # preprocess, evaluation, regression baselines

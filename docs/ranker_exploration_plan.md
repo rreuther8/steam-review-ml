@@ -206,7 +206,7 @@ _Assumption: hard negatives = other items in the top-100 pool._
 
 ### F1. Where experiments live first
 
-- [ ] Notebook: `notebooks/retrieval_ranking/` (name: ___________)
+- [ ] Notebook: `notebooks/retrieval/` (name: ___________)
 - [ ] Library + eval job method
 - [x] Notebook spike → promote to job
 
@@ -286,7 +286,7 @@ _______________________________________________
 
 ### H2. Prior art in repo
 
-- [ ] Revive `notebooks/retrieval_ranking/recs_XXX_eval_two_stage_habit_session.ipynb`
+- [ ] Revive `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`
 - [ ] Ignore; fresh design
 - [x] Unsure
 
@@ -330,9 +330,11 @@ Mark **T** or **F**. Correct in the “If F” column.
 
 ### J1. Agreed next actions (checkbox backlog)
 
-- [ ] Export/cache top-100 pools for `raw` and `two_tower_v1` from latest eval artifacts
-- [ ] Notebook: heuristic rerank (score + popularity) on both pools
-- [ ] Re-run eval with new composite method name(s); compare Slice A + oracle gap in `recs_011_view_offline_eval__20260530.ipynb`
+- [x] `recs_job_build_example_cohort.py` + train config (`train_ranker_v1`, disjoint from val)
+- [x] `recs_job_export_retrieval_pools.py` → `artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet`
+- [x] Run train cohort + pool export jobs locally (TF required for export; use `tf_condaforge` env)
+- [x] `recs_013_ranker_d1_heuristic.ipynb`: tune on train pools, report on val jsonl
+- [ ] Wire `two_tower_v1_heuristic_pop` into eval job when val wins
 
 ### J2. Implementation checklist (leave empty until decisions locked)
 

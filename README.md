@@ -16,7 +16,7 @@ and integration from modeling notebooks to API behavior.
 
 ## Current results snapshot
 
-Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval_ranking/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
+Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
 
 | Variant | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -26,7 +26,7 @@ Fill this table with your latest best run from [`recs_008_history_blend_gridsear
 
 There is **no single headline offline number** that summarizes the whole project: retrieval quality is demonstrated through complementary notebooks that answer different questions.
 
-**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration, pipeline consumers, and mechanism comparisons live under [`notebooks/retrieval_ranking/`](notebooks/retrieval_ranking/).
+**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration and mechanism comparisons under [`notebooks/retrieval/`](notebooks/retrieval/); ranker/heuristic work under [`notebooks/ranking/`](notebooks/ranking/).
 
 ### Offline evaluation suites
 

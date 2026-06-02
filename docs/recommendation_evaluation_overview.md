@@ -25,7 +25,7 @@ Offline evaluation for text-to-game retrieval:
 - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_c.ipynb` — diagnostic Task C
 - `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb` — 4-way query/index ablation
 - `notebooks/models/query_embeddings/recs_007_eval_qual_user_facing.ipynb` — qualitative checkpoint / failure tags
-- `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_retrieval.py`
+- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_retrieval.py`
 - [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md) — script-only train + eval runbook for learned two-tower (`updated_user__updated_profile200_item`)
 
 ## Methods evaluated
@@ -141,9 +141,9 @@ Guardrails use **`k_personalization`** (suffix in column names matches that inte
 ### Notebook / script alignment
 
 - Notebook reference (analysis / cleaned sweep): `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a_002.ipynb`
-- Consumer of scripted retrieval artifacts: `notebooks/retrieval_ranking/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Consumer of scripted retrieval artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
 - Pipeline target: `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json` (same slices / metrics)
-- Candidate comparison (dual retrieval / ranking tables): `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb`
+- Candidate comparison (dual retrieval / ranking tables): `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
 ---
 
