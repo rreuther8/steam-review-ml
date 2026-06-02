@@ -33,6 +33,11 @@ from steam_review_ml.recommender.retrieve import (
     METHOD_FUSION_C_RAW_PLUS_BEHAVIOR,
     fusion_c_raw_plus_behavior_query_vector,
 )
+from steam_review_ml.evaluation.heuristic_ranker import (
+    PoolRerankSpec,
+    pool_rerank_registry,
+    rerank_scores_on_pool,
+)
 from steam_review_ml.recommender.two_tower_score import load_two_tower_model, make_two_tower_score_fn
 from steam_review_ml.recommender.two_tower_train import load_hub_settings
 
@@ -51,6 +56,15 @@ PERSONALIZATION_METRIC_PREFIXES = (
     "Novelty@",
     "PersonalizationGapVsPopularity@",
 )
+
+@dataclass(frozen=True)
+class RankingCatalogContext:
+    """Catalog index + train-split popularity for rankers on frozen retrieval pools."""
+
+    app_ids: np.ndarray
+    app_to_row: dict[int, int]
+    pop_row: np.ndarray
+
 
 @dataclass(frozen=True)
 class EvalInputs:
@@ -392,7 +406,7 @@ def prepare_eval_inputs(
 
 
 def load_eval_examples_from_parquet(parquet_path: Path) -> list[dict]:
-    """Load eval examples produced by ``recs_job_build_eval_examples.py`` (stable parquet schema).
+    """Load example cohort rows from parquet (``recs_job_build_example_cohort.py`` schema).
 
     Returns the same ``list[dict]`` shape ``prepare_eval_inputs`` uses so ``run_retrieval_eval`` stays unchanged.
     """
@@ -432,30 +446,14 @@ def load_eval_examples_from_parquet(parquet_path: Path) -> list[dict]:
     return examples
 
 
-def prepare_eval_inputs_from_cache(
+def _train_pop_row(
     *,
     repo_root: Path,
-    split: str,
+    app_ids: np.ndarray,
     min_review_chars: int,
-    examples_parquet: Path,
-    artifact_dir: Path | None = None,
-    verbose: bool = False,
-) -> EvalInputs:
-    """Retriever + popularity row from artifacts; examples from parquet (no cohort resampling).
-
-    Caller is responsible for using a parquet that matches offline eval semantics (typically built via
-    ``recs_job_build_eval_examples.py`` with the intended split/cohort/seed frozen in its meta).
-    ``split`` is still resolved for ``eval_split_name`` parity with scripted runs on the same config.
-    """
-    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
-    X = retriever.embedding_matrix
-    app_ids = retriever.app_ids
-    app_to_row = {int(a): i for i, a in enumerate(app_ids)}
+) -> np.ndarray:
     indexed_apps = set(int(a) for a in app_ids.tolist())
-
-    processed = repo_root / "data" / "processed"
-    eval_parquet, eval_split_name = resolve_normalized_split_parquet(processed, split)
-    train_parquet = processed / NORMALIZED_SPLIT_FILENAMES["train"]
+    train_parquet = repo_root / "data" / "processed" / NORMALIZED_SPLIT_FILENAMES["train"]
     if not train_parquet.is_file():
         raise FileNotFoundError(f"Missing train parquet: {train_parquet}")
 
@@ -470,7 +468,46 @@ def prepare_eval_inputs_from_cache(
     train_pos = df_train_all[df_train_all["recommended"] == 1]
     vc = train_pos.groupby("app_id").size()
     pop_row = np.asarray([float(vc.get(int(a), 0.0)) for a in app_ids], dtype=np.float32)
-    pop_row = np.maximum(pop_row, 1e-6).astype(np.float32)
+    return np.maximum(pop_row, 1e-6).astype(np.float32)
+
+
+def load_ranking_catalog_context(
+    *,
+    repo_root: Path,
+    min_review_chars: int = 30,
+    artifact_dir: Path | None = None,
+) -> RankingCatalogContext:
+    """Catalog index + train popularity for rankers; no example cohort required."""
+    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
+    app_ids = retriever.app_ids
+    app_to_row = {int(a): i for i, a in enumerate(app_ids)}
+    pop_row = _train_pop_row(repo_root=repo_root, app_ids=app_ids, min_review_chars=min_review_chars)
+    return RankingCatalogContext(app_ids=app_ids, app_to_row=app_to_row, pop_row=pop_row)
+
+
+def prepare_eval_inputs_from_cache(
+    *,
+    repo_root: Path,
+    split: str,
+    min_review_chars: int,
+    examples_parquet: Path,
+    artifact_dir: Path | None = None,
+    verbose: bool = False,
+) -> EvalInputs:
+    """Retriever + popularity row from artifacts; examples from parquet (no cohort resampling).
+
+    Caller is responsible for using a parquet that matches offline eval semantics (typically built via
+    ``recs_job_build_example_cohort.py`` with the intended split/cohort/seed frozen in its meta).
+    ``split`` is still resolved for ``eval_split_name`` parity with scripted runs on the same config.
+    """
+    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
+    X = retriever.embedding_matrix
+    app_ids = retriever.app_ids
+    app_to_row = {int(a): i for i, a in enumerate(app_ids)}
+    pop_row = _train_pop_row(repo_root=repo_root, app_ids=app_ids, min_review_chars=min_review_chars)
+
+    processed = repo_root / "data" / "processed"
+    eval_parquet, eval_split_name = resolve_normalized_split_parquet(processed, split)
 
     examples = load_eval_examples_from_parquet(examples_parquet)
     if not examples:
@@ -561,6 +598,167 @@ def _per_example_retrieval_ranking(
         retr_scores_list = [float(scores[int(i)]) for i in retrieved_indices]
         ranked_ids_list = [int(app_ids[int(i)]) for i in ranked_indices]
         ranked_scores_list = [float(scores[int(i)]) for i in ranked_indices]
+
+        slice_name, bucket = _slice_and_bucket_for_example(ex)
+        retrieved_app_ids_set = set(retr_ids_list)
+        n_positive_in_retrieved = int(len(positives & retrieved_app_ids_set))
+
+        retrieval_rows.append(
+            {
+                "method": method_name,
+                "ex_idx": ex_idx,
+                "slice_name": slice_name,
+                "user_id": ex["user_id"],
+                "query_app_id": int(ex["query_app_id"]),
+                "n_eval_targets": int(ex["n_eval_targets"]),
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
+                "n_unique_train_apps": int(
+                    len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})
+                ),
+                "n_positive_in_retrieved": n_positive_in_retrieved,
+                "Hit@K": hit_rate_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Precision@K": precision_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+                "Recall@K": recall_at_k(retrieved_indices, positives, k_retrieval, app_ids),
+            }
+        )
+        ranking_rows.append(
+            {
+                "method": method_name,
+                "ex_idx": ex_idx,
+                "slice_name": slice_name,
+                "user_id": ex["user_id"],
+                "query_app_id": int(ex["query_app_id"]),
+                "n_eval_targets": int(ex["n_eval_targets"]),
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
+                "n_unique_train_apps": int(
+                    len({int(r["app_id"]) for r in ex.get("train_review_rows", [])})
+                ),
+                "Hit@K": hit_rate_at_k(ranked_indices, positives, k_final, app_ids),
+                "Precision@K": precision_at_k(ranked_indices, positives, k_final, app_ids),
+                "Recall@K": recall_at_k(ranked_indices, positives, k_final, app_ids),
+                "MAP@K": average_precision_at_k(ranked_indices, positives, k_final, app_ids),
+                "NDCG@K": ndcg_at_k(ranked_indices, positives, k_final, app_ids),
+                "MRR": mrr(ranked_indices, positives, app_ids),
+                "OracleHit@K": hit_rate_at_k(oracle_indices, positives, k_final, app_ids),
+                "OracleNDCG@K": ndcg_at_k(oracle_indices, positives, k_final, app_ids),
+            }
+        )
+
+        ranked_set = set(ranked_ids_list)
+        retr_set = set(retr_ids_list)
+        assert ranked_set <= retr_set, "ranked ids must stay within retrieved candidates"
+
+        artifact_rows.append(
+            {
+                "ex_idx": int(ex_idx),
+                "method": method_name,
+                "query_app_id": int(ex["query_app_id"]),
+                "user_id": ex["user_id"],
+                "validation_positive_app_ids_json": json.dumps(sorted(positives)),
+                "retrieved_app_ids_json": json.dumps(retr_ids_list),
+                "retrieved_scores_json": json.dumps(retr_scores_list),
+                "ranked_app_ids_json": json.dumps(ranked_ids_list),
+                "ranked_scores_json": json.dumps(ranked_scores_list),
+                "n_eval_targets": int(ex["n_eval_targets"]),
+                "slice_name": slice_name,
+                "n_support_train": int(len(ex.get("train_review_rows", []))),
+                "train_support_bucket": bucket,
+                "retrieval_k": int(k_retrieval),
+                "final_k": int(k_final),
+                "masking_policy_version": masking_policy_version,
+                "model_version": model_version,
+            }
+        )
+
+    df_retrieval = pd.DataFrame(retrieval_rows)
+    df_ranking = pd.DataFrame(ranking_rows)
+    return df_retrieval, df_ranking, artifact_rows
+
+
+def _make_pool_rerank_score_fn(
+    *,
+    base_score_fn: Callable[[dict], np.ndarray],
+    spec: PoolRerankSpec,
+    app_ids: np.ndarray,
+    app_to_row: dict[int, int],
+    pop_row: np.ndarray,
+    k_retrieval: int,
+) -> Callable[[dict], np.ndarray]:
+    """Full-catalog scores for personalization: only the retrieval pool is reranked."""
+
+    def score(ex: dict) -> np.ndarray:
+        base_scores = base_score_fn(ex)
+        retrieved_indices = np.asarray(_rank_rows(base_scores)[:k_retrieval], dtype=np.int64)
+        pool_apps = [int(app_ids[int(i)]) for i in retrieved_indices]
+        pool_retr_scores = [float(base_scores[int(i)]) for i in retrieved_indices]
+        reranked = rerank_scores_on_pool(
+            pool_apps,
+            pool_retr_scores,
+            spec,
+            pop_row=pop_row,
+            app_to_row=app_to_row,
+        )
+        full = np.full(len(app_ids), -np.inf, dtype=np.float64)
+        for idx, score_val in zip(retrieved_indices, reranked):
+            full[int(idx)] = float(score_val)
+        return full.astype(np.float32)
+
+    return score
+
+
+def _per_example_retrieval_with_pool_rerank(
+    *,
+    method_name: str,
+    base_score_fn: Callable[[dict], np.ndarray],
+    spec: PoolRerankSpec,
+    examples: list[dict],
+    app_ids: np.ndarray,
+    app_to_row: dict[int, int],
+    pop_row: np.ndarray,
+    k_retrieval: int,
+    k_final: int,
+    masking_policy_version: str,
+    model_version: str,
+    verbose: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
+    """Score retrieval with ``base_score_fn`` @k_retrieval; rerank that pool for ranking @k_final."""
+    retrieval_rows: list[dict[str, Any]] = []
+    ranking_rows: list[dict[str, Any]] = []
+    artifact_rows: list[dict[str, Any]] = []
+    ex_iter = enumerate(examples)
+    if verbose:
+        ex_iter = tqdm(
+            ex_iter,
+            total=len(examples),
+            desc=f"score {method_name}",
+            unit="example",
+        )
+    for ex_idx, ex in ex_iter:
+        validation_positive_app_ids_set = set(int(x) for x in ex["validation_positive_app_ids"])
+        positives = validation_positive_app_ids_set
+        if not positives:
+            continue
+
+        base_scores = base_score_fn(ex)
+        full_order = _rank_rows(base_scores)
+        retrieved_indices = np.asarray(full_order[:k_retrieval], dtype=np.int64)
+        pool_apps = [int(app_ids[int(i)]) for i in retrieved_indices]
+        pool_retr_scores = [float(base_scores[int(i)]) for i in retrieved_indices]
+        rerank_scores = rerank_scores_on_pool(
+            pool_apps,
+            pool_retr_scores,
+            spec,
+            pop_row=pop_row,
+            app_to_row=app_to_row,
+        )
+        rerank_order = np.argsort(-np.asarray(rerank_scores, dtype=np.float64))
+        ranked_indices = retrieved_indices[rerank_order[:k_final]]
+        oracle_indices = _oracle_ranked_indices_from_retrieved(retrieved_indices, positives, app_ids)
+
+        retr_ids_list = pool_apps
+        retr_scores_list = pool_retr_scores
+        ranked_ids_list = [int(app_ids[int(i)]) for i in ranked_indices]
+        ranked_scores_list = [float(rerank_scores[int(i)]) for i in rerank_order[:k_final]]
 
         slice_name, bucket = _slice_and_bucket_for_example(ex)
         retrieved_app_ids_set = set(retr_ids_list)
@@ -1103,39 +1301,97 @@ def run_retrieval_eval(
         two_tower_model_path=two_tower_model_path,
         two_tower_catalog_item_batch=two_tower_catalog_item_batch,
     )
-    if METHOD_TWO_TOWER_V1 in methods and two_tower_model_path is None:
+    rerank_specs = pool_rerank_registry()
+    rerank_methods = [m for m in methods if m in rerank_specs]
+    direct_methods = [m for m in methods if m not in rerank_specs]
+
+    needs_two_tower = METHOD_TWO_TOWER_V1 in direct_methods or any(
+        rerank_specs[m].base_method == METHOD_TWO_TOWER_V1 for m in rerank_methods
+    )
+    if needs_two_tower and two_tower_model_path is None:
         raise ValueError(
-            "Method 'two_tower_v1' requires 'two_tower_model_path' in the eval job config "
+            "Methods requiring two_tower_v1 need 'two_tower_model_path' in the eval job config "
             "(e.g. artifacts/recs/towers/<run_tag>/updated_user__updated_profile200_item.keras)."
         )
-    unknown = sorted(set(methods).difference(registry.keys()))
-    if unknown:
-        raise ValueError(f"Unknown methods requested: {unknown}. Available={sorted(registry.keys())}")
+
+    unknown_direct = sorted(set(direct_methods).difference(registry.keys()))
+    if unknown_direct:
+        raise ValueError(
+            f"Unknown methods requested: {unknown_direct}. "
+            f"Available={sorted(registry.keys())}; pool rerankers={sorted(rerank_specs.keys())}"
+        )
+    unknown_rerank = sorted(set(rerank_methods).difference(rerank_specs.keys()))
+    if unknown_rerank:
+        raise ValueError(f"Unknown pool rerank methods: {unknown_rerank}")
+
+    for rerank_name in rerank_methods:
+        base = rerank_specs[rerank_name].base_method
+        if base not in registry:
+            raise ValueError(
+                f"Pool rerank method {rerank_name!r} requires base retriever {base!r} "
+                f"(add it to methods and supply any model paths it needs)."
+            )
 
     run_methods = methods.copy()
     if include_random_sanity and "random" not in run_methods:
         run_methods.append("random")
-    selected_registry = {m: registry[m] for m in run_methods}
+        if "random" not in direct_methods:
+            direct_methods.append("random")
 
-    method_iter = selected_registry.items()
+    selected_registry: dict[str, Callable[[dict], np.ndarray]] = {m: registry[m] for m in direct_methods}
+    for rerank_name in rerank_methods:
+        spec = rerank_specs[rerank_name]
+        selected_registry[rerank_name] = _make_pool_rerank_score_fn(
+            base_score_fn=registry[spec.base_method],
+            spec=spec,
+            app_ids=inputs.app_ids,
+            app_to_row=inputs.app_to_row,
+            pop_row=inputs.pop_row,
+            k_retrieval=k_r,
+        )
+
+    method_iter: list[tuple[str, Callable[[dict], np.ndarray] | None, PoolRerankSpec | None]] = []
+    for name in run_methods:
+        if name in rerank_specs:
+            method_iter.append((name, None, rerank_specs[name]))
+        else:
+            method_iter.append((name, selected_registry[name], None))
+
     if verbose:
-        method_iter = tqdm(method_iter, total=len(selected_registry), desc="methods", unit="method")
+        method_iter = tqdm(method_iter, total=len(method_iter), desc="methods", unit="method")  # type: ignore[assignment]
     retrieval_frames: list[pd.DataFrame] = []
     ranking_frames: list[pd.DataFrame] = []
     artifact_rows_acc: list[dict[str, Any]] = []
     model_snap = _embedding_model_snapshot(inputs.retriever)
-    for name, fn in method_iter:
-        df_r, df_k, arts = _per_example_retrieval_ranking(
-            method_name=name,
-            score_fn=fn,
-            examples=inputs.examples,
-            app_ids=inputs.app_ids,
-            k_retrieval=k_r,
-            k_final=k_final,
-            masking_policy_version=MASKING_POLICY_VERSION,
-            model_version=model_snap,
-            verbose=verbose,
-        )
+    for name, fn, rerank_spec in method_iter:
+        if rerank_spec is not None:
+            base_fn = registry[rerank_spec.base_method]
+            df_r, df_k, arts = _per_example_retrieval_with_pool_rerank(
+                method_name=name,
+                base_score_fn=base_fn,
+                spec=rerank_spec,
+                examples=inputs.examples,
+                app_ids=inputs.app_ids,
+                app_to_row=inputs.app_to_row,
+                pop_row=inputs.pop_row,
+                k_retrieval=k_r,
+                k_final=k_final,
+                masking_policy_version=MASKING_POLICY_VERSION,
+                model_version=model_snap,
+                verbose=verbose,
+            )
+        else:
+            df_r, df_k, arts = _per_example_retrieval_ranking(
+                method_name=name,
+                score_fn=fn,  # type: ignore[arg-type]
+                examples=inputs.examples,
+                app_ids=inputs.app_ids,
+                k_retrieval=k_r,
+                k_final=k_final,
+                masking_policy_version=MASKING_POLICY_VERSION,
+                model_version=model_snap,
+                verbose=verbose,
+            )
         retrieval_frames.append(df_r)
         ranking_frames.append(df_k)
         artifact_rows_acc.extend(arts)

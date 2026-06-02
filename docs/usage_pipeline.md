@@ -188,14 +188,35 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 **Cached eval examples (optional, recommended for fast iteration)** — materialize a static eval examples artifact once and reuse it across notebook/model experiments:
 
-- Job: `python scripts/recs_job_build_eval_examples.py configs/recs_job_build_eval_examples.json`
+- Job: `python scripts/recs_job_build_example_cohort.py configs/recs_job_build_eval_examples.json`  
+  (legacy wrapper: `recs_job_build_eval_examples.py`)
 - Outputs (default): `artifacts/recs/eval_cache/<cache_name>/`
-  - `eval_examples.parquet`
-  - `eval_examples_summary.csv`
-  - `eval_examples_meta.json`
+  - `example_cohort.parquet` (legacy name: `eval_examples.parquet`)
+  - `example_cohort_summary.csv`, `example_cohort_meta.json`
 - **Run offline eval on that parquet (skip cohort resampling):** either  
   `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`  
   or set **`examples_parquet`** in the job config (path relative to repo root). **`run_meta["prep_diagnostics"]`** records `examples_source: parquet_cache` and the path.
+
+**Ranker train cohort + frozen retrieval pools (Plan A)** — disjoint from val eval cache; tune rankers on train, report on val only:
+
+- Build train cohort: `python scripts/recs_job_build_example_cohort.py configs/recs_job_build_example_cohort_train_ranker.json`
+  - Writes `artifacts/recs/eval_cache/train_ranker_v1/example_cohort.parquet` (`purpose: ranker_train`, `disjoint_from_cache: val_dev_12k_v1`)
+- Export pools (TF env): `python scripts/recs_job_export_retrieval_pools.py configs/recs_job_export_retrieval_pools_train_ranker.json`
+  - Writes `artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet`
+- Notebook: `notebooks/ranking/recs_013_ranker_d1_heuristic.ipynb` — tune `alpha` on train pools, eval on val `eval_offline_examples.jsonl`
+- Candidate guide: `notebooks/ranking/recs_013_ranker_d1_heuristic_candidates_learn.ipynb`
+
+**Ranking eval (fast, frozen pools)** — after retrieval job writes `eval_offline_examples.jsonl`:
+
+```bash
+python scripts/recs_job_eval_ranking.py configs/recs_job_eval_ranking.json
+# optional: --pools-jsonl path/to/eval_offline_examples.jsonl
+# promote: --write-baseline  (merges into runs/latest/eval_retrieval_baseline_overall.json)
+```
+
+- Writes: `artifacts/recs/offline_eval/runs/latest_ranking/eval_ranking_*.csv`
+- Reads pools jsonl **read-only**; `examples_parquet` required for personalization
+- View results: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb`
 
 **Two-tower train + eval (script-only)** — trained dual-tower model; see [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
 
@@ -205,22 +226,22 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 **View offline eval CSVs (read-only, no re-score):**
 
-- `notebooks/retrieval_ranking/recs_011_view_offline_eval.ipynb` — set `EVAL_RUN` to `latest` or `20260526_144828__baseline_retrieval`
+- `notebooks/retrieval/recs_011_view_offline_eval.ipynb` — set `EVAL_RUN` to `latest` or `20260526_144828__baseline_retrieval`
 
 **Checkpoint fidelity (train save vs load):**
 
-- `notebooks/retrieval_ranking/recs_012_checkpoint_fidelity_test.ipynb` — must-pass before trusting `two_tower_v1` eval metrics
+- `notebooks/retrieval/recs_012_checkpoint_fidelity_test.ipynb` — must-pass before trusting `two_tower_v1` eval metrics
 
 **Retrieval mechanism comparison (e.g. baselines vs candidates)** — candidate comparison notebook (includes heavy A–F re-score section):
 
-- `notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb`
+- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
-Other **retrieval** notebooks (under `notebooks/retrieval_ranking/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
+Other **retrieval** notebooks (under `notebooks/retrieval/`; embedding recipe notebooks stay under `notebooks/models/query_embeddings/`):
 
-- Task A consumer (reads `eval_retrieval_*` + `eval_ranking_*`): `notebooks/retrieval_ranking/recs_004_eval_proxy_same_user_task_a_003.ipynb`
-- Pipeline vs frozen baseline parity: `notebooks/retrieval_ranking/recs_009_phase1_pipeline_notebook_parity.ipynb`
-- History blend grid search: `notebooks/retrieval_ranking/recs_008_history_blend_gridsearch.ipynb`
-- Deferred two-stage habit → session eval: `notebooks/retrieval_ranking/recs_XXX_eval_two_stage_habit_session.ipynb`
+- Task A consumer (reads `eval_retrieval_*` + `eval_ranking_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Pipeline vs frozen baseline parity: `notebooks/retrieval/recs_009_phase1_pipeline_notebook_parity.ipynb`
+- History blend grid search: `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`
+- Deferred two-stage habit → session eval: `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`
 
 **4-way raw/structured comparison + regression baseline (recs_006):**
 
