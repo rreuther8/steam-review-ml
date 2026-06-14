@@ -477,7 +477,11 @@ def load_ranking_catalog_context(
     min_review_chars: int = 30,
     artifact_dir: Path | None = None,
 ) -> RankingCatalogContext:
-    """Catalog index + train popularity for rankers; no example cohort required."""
+    """Catalog index + train popularity for rankers; no example cohort required.
+
+    recs_014 uses ``app_ids``, ``app_to_row``, and ``pop_row`` for pool rerank,
+    full-catalog ``popularity_train``, and masking the query app from catalog ranks.
+    """
     retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
     app_ids = retriever.app_ids
     app_to_row = {int(a): i for i, a in enumerate(app_ids)}

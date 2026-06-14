@@ -64,6 +64,7 @@ class PoolRerankSpec:
 
 
 def pool_rerank_registry() -> dict[str, PoolRerankSpec]:
+    """Registered D1 pool rerankers (recs_014 uses logpop blend for head-to-head)."""
     return {
         METHOD_TWO_TOWER_V1_HEURISTIC_LOGPOP_BLEND: PoolRerankSpec(
             name=METHOD_TWO_TOWER_V1_HEURISTIC_LOGPOP_BLEND,
@@ -82,6 +83,7 @@ def rerank_scores_on_pool(
     pop_row: np.ndarray,
     app_to_row: dict[int, int],
 ) -> np.ndarray:
+    """Apply a :class:`PoolRerankSpec` to one frozen pool; returns per-candidate scores."""
     return spec.rerank_fn(
         pool_app_ids,
         retrieval_scores,

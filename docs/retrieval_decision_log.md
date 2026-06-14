@@ -2,6 +2,66 @@
 
 > This log is intentionally selective: record only high-impact, hard-to-reverse, or likely-to-be-revisited decisions.
 > Do not log routine implementation details or temporary debugging steps.
+>
+> Ranking ship/kill/defer: [`ranking_decision_log.md`](ranking_decision_log.md).
+
+## 2026-05-30: Chosen retrieval mechanism — `two_tower_v1`
+
+Decision:
+
+- **We chose `two_tower_v1` as the retrieval mechanism** for the recommendation pipeline: the **retrieve** step that produces **top-100 candidate pools** before ranking (D1 or ranker spikes).
+- Wire it into offline eval as a first-class method (`configs/recs_job_eval_retrieval.json` → `methods`, `two_tower_model_path`) and into pool export (`recs_job_export_retrieval_pools.py` → `ranker_pools/.../two_tower_v1.parquet`, val pools in `eval_offline_examples.jsonl`).
+- **Supersedes** USE **`raw`**, **`fusion_c`**, and other hand-built query recipes as the **retrieve** step for this stack. Those methods stay in the eval job for **benchmark comparison**, not as the mechanism we ship retrieve with.
+- **Legacy note:** `ContentRetriever` / API default may still be **`raw`** (2026-04-14) until product explicitly promotes two-tower over HTTP — this entry locks the **offline eval + retrieve→rank pipeline**, not necessarily every API code path.
+
+Why:
+
+- Offline val (12.5k frozen cohort, `k_retrieval=100`): **`two_tower_v1` is the strongest personalized retriever** we evaluated:
+  - Hit@100 **0.512**, Recall@100 **0.494**
+  - vs `fusion_c` **0.506** / **0.488**, `raw` **0.453** / **0.435**
+- **`popularity_train` hits higher @100 (~0.763)** but is a popularity baseline, not our personalized retrieval mechanism.
+- Pools are good enough to rank: OracleNDCG@10 ~**0.50** on the same candidates while bare pool order @10 is ~**0.018** — problem shifts to ranking (see [`ranking_decision_log.md`](ranking_decision_log.md) D1 ship).
+
+Evidence:
+
+- **Primary viewer:** `notebooks/retrieval/recs_011_view_offline_eval.ipynb` (run snapshot: `recs_011_view_offline_eval__20260530.ipynb`) — **`eval_retrieval_overall.csv`**, not `eval_ranking_overall.csv`, for this decision.
+- Artifacts: `artifacts/recs/offline_eval/runs/latest/eval_retrieval_overall.csv` (@100) vs `eval_ranking_overall.csv` (@10).
+- Training + eval runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
+- Scorer: `src/steam_review_ml/recommender/two_tower_score.py`; registry in `retrieval_offline_eval.py`.
+
+Pipeline shape (locked):
+
+```text
+two_tower_v1  →  top-100 pool  →  D1 (or challenger ranker)  →  top-10
+     ↑ retrieval mechanism              ↑ ranking (separate decision log)
+```
+
+Evaluation implications:
+
+- Judge **retrieval mechanism** changes on **`eval_retrieval_*`** @ **`k_retrieval=100`**.
+- Judge **ranking** on **`eval_ranking_*`** @ **`k_final=10`**. Strong retrieve + weak bare @10 is expected until D1.
+
+Relation to earlier notes:
+
+- **2026-05-11 (fusion_c):** eval benchmark only for retrieve; not the chosen mechanism after this date.
+- **2026-04-14 (raw default):** historical serving default; **`two_tower_v1` is now the chosen retrieve mechanism for the eval/rank pipeline** documented here.
+
+## 2026-05-11: Eval contract v2 — frozen cohort and k cutoffs
+
+Decision:
+
+- **Frozen val cohort:** `val_dev_12k_v1` — `artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`. Build once via `scripts/recs_job_build_eval_examples.py` + `configs/recs_job_build_eval_examples.json`; **do not resample val between runs** when citing offline retrieval or ranking numbers.
+- **`k_retrieval=100` vs `k_final=10`:** read **`eval_retrieval_*`** (@100, pool generation) and **`eval_ranking_*`** (@10, rerank within pool) separately. Config: `configs/recs_job_eval_retrieval.json`. Do not mix contracts (e.g. compare `two_tower_v1` Hit@100 to D1 NDCG@10 without labeling both k and artifact family).
+
+Why:
+
+- Every retrieval/ranking table in this log assumes the same 12.5k examples; resampling val breaks cross-run comparison.
+- Retrieve→rank is a two-stage eval: strong @100 retrieval + weak bare @10 pool order is expected until a ranker ships (D1).
+
+Evidence:
+
+- Canonical runbook: [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) (eval contract v2).
+- Viewer: `notebooks/retrieval/recs_011_view_offline_eval__20260530.ipynb` — §5 @100 vs §6 @10.
 
 ## 2026-05-11: Documentation map (eval + transition plan)
 
@@ -80,15 +140,15 @@ Evidence:
 - Metrics artifact: `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_metrics.csv`
 - Active baseline snapshot: `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
 
-Retrieval flow in this project (current):
-- Candidate set: currently close to the full indexed catalog (small enough to score broadly).
+Retrieval flow at this date (API / `raw` path — still the HTTP default as of this writing):
+- Candidate set: close to the full indexed catalog (small enough to score broadly).
 - Scoring: cosine similarity (or popularity baseline score).
 - Sorting: explicit ranking by score.
 - Output: top-K recommendations.
 
-Modeling distinction:
-- Current system is best described as **bi-encoder / dual-embedding retrieval** (query embedding vs precomputed item embeddings, matched by similarity).
-- It is **not** a classic jointly-trained **two-tower** retrieval model yet.
+Modeling distinction (historical — this entry describes **`raw` only**, not eval/rank retrieve):
+- **Bi-encoder retrieval:** fixed USE session embedding vs **precomputed** game profile vectors; **no joint user/item tower training**.
+- **Superseded for the eval/rank retrieve step** by jointly trained **`two_tower_v1`** — see **2026-05-30**. That path is the shipped retrieval mechanism for offline eval and pool export; this section remains the record for why **`raw`** stayed the API default.
 
 Serving implications:
 - API default remains `structured=false`.

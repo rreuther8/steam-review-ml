@@ -108,7 +108,15 @@ def examples_to_frame(examples: list[dict]) -> pd.DataFrame:
 
 
 def load_retrieval_pool_rows(parquet_path: Path) -> list[dict[str, Any]]:
-    """Load slim retrieval-pool rows (one row per example) for ranker train/tune."""
+    """Load ranker **train** pools from export parquet (recs_014 ``train_pools``).
+
+    One dict per example from ``recs_job_export_retrieval_pools`` (e.g.
+    ``artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet``).
+    Disjoint train cohort — not the val eval jsonl.
+
+    Required columns include ``retrieved_*_json``, ``validation_positive_app_ids_json``,
+    ``slice_name``, ``pool_method``. JSON fields are strings (same as jsonl rows).
+    """
     df = pd.read_parquet(parquet_path)
     required = {
         "ex_idx",
@@ -126,6 +134,14 @@ def load_retrieval_pool_rows(parquet_path: Path) -> list[dict[str, Any]]:
 
 
 def load_retrieval_pools_jsonl(jsonl_path: Path, *, method: str) -> list[dict[str, Any]]:
+    """Load ranker **val** pools from offline eval jsonl (recs_014 ``val_pools``).
+
+    Reads ``eval_offline_examples.jsonl`` (multi-method audit file) and keeps
+    only rows where ``method`` matches (typically ``two_tower_v1``). Use for
+    report-only head-to-head — do not tune hyperparameters on these pools.
+
+    Extra val-only fields (e.g. ``ranked_app_ids_json``) are ignored by pool rerankers.
+    """
     pools: list[dict[str, Any]] = []
     with Path(jsonl_path).open(encoding="utf-8") as f:
         for line in f:

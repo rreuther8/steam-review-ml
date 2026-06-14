@@ -204,6 +204,8 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 - Export pools (TF env): `python scripts/recs_job_export_retrieval_pools.py configs/recs_job_export_retrieval_pools_train_ranker.json`
   - Writes `artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet`
 - Notebook: `notebooks/ranking/recs_013_ranker_d1_heuristic.ipynb` — tune `alpha` on train pools, eval on val `eval_offline_examples.jsonl`
+- D2/D3 learned rankers: `notebooks/ranking/recs_014_ranker_d2_d3_train_head_to_head.ipynb`
+- D4 cross-encoder spike (val rerank only): `notebooks/ranking/recs_015_ranker_d4_cross_encoder.ipynb` — requires `pip install -e '.[cross-encoder]'`
 - Candidate guide: `notebooks/ranking/recs_013_ranker_d1_heuristic_candidates_learn.ipynb`
 
 **Ranking eval (fast, frozen pools)** — after retrieval job writes `eval_offline_examples.jsonl`:
@@ -241,7 +243,7 @@ Other **retrieval** notebooks (under `notebooks/retrieval/`; embedding recipe no
 - Task A consumer (reads `eval_retrieval_*` + `eval_ranking_*`): `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
 - Pipeline vs frozen baseline parity: `notebooks/retrieval/recs_009_phase1_pipeline_notebook_parity.ipynb`
 - History blend grid search: `notebooks/retrieval/recs_008_history_blend_gridsearch.ipynb`
-- Deferred two-stage habit → session eval: `notebooks/retrieval/recs_XXX_eval_two_stage_habit_session.ipynb`
+- D5 habit/session: `notebooks/ranking/recs_016_ranker_embedding_habit_session_pool.ipynb` (pool rerank); `notebooks/retrieval/recs_017_eval_habit_session_retrieval.ipynb` (full-catalog cascade/fusion)
 
 **4-way raw/structured comparison + regression baseline (recs_006):**
 
@@ -268,6 +270,7 @@ python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json -
 
 Decision/log artifacts:
 - `docs/retrieval_decision_log.md`
+- `docs/ranking_decision_log.md`
 - `artifacts/recs/retrieval/configs/active_retrieval_config.json`
 - `artifacts/recs/experiments/review_style/4way_proxy/eval_review_style_4way_proxy_baseline_raw_raw.json`
 

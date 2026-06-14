@@ -5,7 +5,8 @@
     "popularity_train",
     "multi_mean_train",
     "fusion_c_raw_plus_behavior",
-    "two_tower_v1"
+    "two_tower_v1",
+    "two_tower_v1_heuristic_logpop_blend"
   ],
   "active_cohort": "all",
   "max_examples": 12500,

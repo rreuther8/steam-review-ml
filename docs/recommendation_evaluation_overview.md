@@ -26,6 +26,7 @@ Offline evaluation for text-to-game retrieval:
 - `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb` — 4-way query/index ablation
 - `notebooks/models/query_embeddings/recs_007_eval_qual_user_facing.ipynb` — qualitative checkpoint / failure tags
 - `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_retrieval.py`
+- `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` — **read-only viewer** for `recs_job_eval_ranking.py` outputs (`runs/latest_ranking`); headline ranker vs `popularity_train` deltas
 - [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md) — script-only train + eval runbook for learned two-tower (`updated_user__updated_profile200_item`)
 
 ## Methods evaluated
@@ -48,7 +49,7 @@ Offline evaluation for text-to-game retrieval:
 - Serving default: **`raw_query + raw_index`**
 - Structured path: experimental / ablation unless it wins on the same contract on validation.
 
-Authoritative dated rationale: [`retrieval_decision_log.md`](retrieval_decision_log.md).
+Authoritative dated rationale: [`retrieval_decision_log.md`](retrieval_decision_log.md) (retrieval); [`ranking_decision_log.md`](ranking_decision_log.md) (rerank ship/kill/defer).
 
 ## Metrics and reporting (summary)
 
@@ -71,7 +72,8 @@ Decision view (maps to contract slices via `n_eval_targets`):
 
 ## Related docs
 
-- [`retrieval_decision_log.md`](retrieval_decision_log.md) — dated decisions
+- [`retrieval_decision_log.md`](retrieval_decision_log.md) — dated retrieval decisions
+- [`ranking_decision_log.md`](ranking_decision_log.md) — dated ranking ship/kill/defer (D1–D5)
 - [`retrieval_metrics_guide.md`](retrieval_metrics_guide.md) — metric semantics
 - [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md) — archived v1→v2 engineering narrative
 - [`archive/recs_004_three_task_review.md`](archive/recs_004_three_task_review.md) — task A/B/C comparison detail
@@ -142,7 +144,9 @@ Guardrails use **`k_personalization`** (suffix in column names matches that inte
 
 - Notebook reference (analysis / cleaned sweep): `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a_002.ipynb`
 - Consumer of scripted retrieval artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
-- Pipeline target: `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json` (same slices / metrics)
+- Pipeline target (retrieval): `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json` (same slices / metrics)
+- Pipeline target (ranking gate): `scripts/recs_job_eval_ranking.py` + `configs/recs_job_eval_ranking.json` → `artifacts/recs/offline_eval/runs/latest_ranking/`
+- Ranking results viewer: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` (ranker vs `popularity_train` deltas; does not re-score)
 - Candidate comparison (dual retrieval / ranking tables): `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
 ---
