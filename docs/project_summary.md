@@ -57,7 +57,7 @@ steam_recommendations/
       tabular/          # recommended + votes_helpful baselines / simple models
       game_embeddings/  # recs_001–002 game profiles + index vectors
       query_embeddings/ # recs_003–007 query methods, ablations, qual eval
-    retrieval_ranking/  # history blend, pipeline parity, two-tower, central eval
+    retrieval/  # history blend, pipeline parity, two-tower, central eval
   scripts/              # CLI entry points for pipeline + recs jobs
   src/steam_review_ml/  # installable package
   tests/                # preprocess, evaluation, regression baselines
@@ -130,7 +130,7 @@ flowchart LR
 |------|--------|-------|
 | **Primary — recommendations** | v1 near complete | Game index, raw-default retrieval, val eval contract, dev API |
 | **Supporting — tabular** | Baselines done | `recommended` classification, `votes_helpful` regression; feeds analysis and future v2 features |
-| **Next — two-tower + ranker** | In progress | Trained user/item towers; learned rerank on retrieved candidates |
+| **Next — two-tower + ranker** | Heuristic ranker shipped | `two_tower_v1` pools + D1 log-pop rerank beats `popularity_train` on ranking contract (`runs/latest_ranking`); D2–D4 learned rankers in progress |
 
 **Default retrieval:** raw review text embeddings beat structured preference rewrites on validation proxy tasks (`recs_004`, `recs_006`). Structured path remains an explicit ablation.
 
@@ -148,7 +148,8 @@ flowchart LR
 | `scripts/recs_job_game_profiles.py` | Build per-game review profile tables |
 | `scripts/recs_job_game_embeddings.py` | Embed game profiles → index artifacts |
 | `scripts/recs_job_build_eval_examples.py` | Cache offline eval cohorts |
-| `scripts/recs_job_eval_retrieval.py` | Central offline retrieval + ranking eval |
+| `scripts/recs_job_eval_retrieval.py` | Central offline retrieval eval (+ shared example pools) |
+| `scripts/recs_job_eval_ranking.py` | Ranking-stage eval: frozen pools → rerank vs `popularity_train` |
 | `scripts/recs_migrate_artifacts_layout.py` | Move legacy artifact paths |
 
 Configs live beside each job under `configs/`.
@@ -163,7 +164,8 @@ Configs live beside each job under `configs/`.
 | **Tabular** | `model_000`–`002` | Dumb baselines, linear/logistic models |
 | **Game index** | `recs_001`, `recs_002`, `recs_005` | Profiles, raw vs structured game vectors |
 | **Query / representation** | `recs_003`–`007`, `recs_004_*` | Smoke retrieval, same-user proxy, 4-way ablation, qual |
-| **Retrieval orchestration** | `recs_008`–`012`, `recs_011` | History blend, pipeline parity, two-tower comparison, training-row explore |
+| **Retrieval orchestration** | `recs_008`–`012`, `recs_011` (retrieval) | History blend, pipeline parity, two-tower comparison, training-row explore |
+| **Ranking** | `recs_011` (viewer), `recs_013`–`015` | View `latest_ranking` eval; heuristic + learned ranker head-to-head |
 
 Metric definitions: [`retrieval_metrics_guide.md`](retrieval_metrics_guide.md). Eval contract and notebook map: [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md).
 
@@ -174,7 +176,8 @@ Metric definitions: [`retrieval_metrics_guide.md`](retrieval_metrics_guide.md). 
 Standard layout under `artifacts/recs/` — see [`artifact_layout.md`](artifact_layout.md).
 
 - **`embeddings/game_profile/`** — Parquet profiles, `.npz` vectors, index metadata
-- **`offline_eval/runs/latest/`** — `eval_retrieval_*`, `eval_ranking_*`, examples JSONL
+- **`offline_eval/runs/latest/`** — retrieval job: `eval_retrieval_*`, shared `eval_offline_examples.jsonl`
+- **`offline_eval/runs/latest_ranking/`** — ranking job: `eval_ranking_*` (rerank vs `popularity_train`)
 - **`eval_cache/`** — frozen eval example cohorts
 - **`experiments/`** — one-off study outputs (e.g. 4-way proxy, history blend)
 
@@ -208,10 +211,12 @@ python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json -
 
 ---
 
-## Current focus (May 2026)
+## Current focus (June 2026)
 
-1. **True two-tower retrieval** — learned user/query and item towers, integrated with `recs_job_eval_retrieval` / `recs_011`. Runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
-2. **Ranking model** — rerank retrieved candidates so `eval_ranking_*` reflects learned order, not similarity-only.
-3. **Wrap-up** — stabilize method IDs, refresh baselines and docs when the modeling pass lands.
+1. **Learned rankers (D2–D4)** — beat `two_tower_v1_heuristic_logpop_blend` on `runs/latest_ranking`; see [`ranker_exploration_plan.md`](ranker_exploration_plan.md).
+2. **Two-tower retrieval** — improve pool oracle ceiling (ranker already beats popularity despite lower oracle). Runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
+3. **Wrap-up** — refresh retrieval regression baseline (oracle metrics), stabilize method IDs.
+
+**Headline result (ranking gate):** `two_tower_v1_heuristic_logpop_blend` beats `popularity_train` on NDCG@10 and Hit@10 overall and on Slice A — viewer: [`recs_011_view_offline_ranking_eval.ipynb`](../notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb).
 
 Parked until API leaves trusted/local use: auth, rate limits, deploy hardening.

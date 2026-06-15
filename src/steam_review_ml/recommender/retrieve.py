@@ -403,7 +403,7 @@ def fusion_c_raw_plus_behavior_query_vector(
 ) -> np.ndarray:
     """Candidate C: ``l2_normalize(embed(query_text) + weighted_mean_behavior_embed)``.
 
-    Same recipe as ``notebooks/retrieval_ranking/recs_011_eval_retrieval_two_tower_comparison.ipynb``.
+    Same recipe as ``notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb``.
     Uses ``BEHAVIOR_WEIGHT_PLAYTIME_KEYS`` on train-history rows for weights, then fuses with the
     session vector before a final ``l2_normalize``.
     """

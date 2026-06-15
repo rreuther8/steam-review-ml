@@ -1,5 +1,6 @@
 {
   "cache_name": "val_dev_12k_v1",
+  "purpose": "offline_eval",
   "split": "val",
   "active_cohort": "all",
   "max_examples": 12500,
@@ -17,4 +18,3 @@
   "artifact_dir": "artifacts/recs",
   "output_dir": "artifacts/recs/eval_cache"
 }
-

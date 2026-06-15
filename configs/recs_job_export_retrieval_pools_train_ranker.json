@@ -1,0 +1,13 @@
+{
+  "cohort_cache_name": "train_ranker_v1",
+  "cohort_cache_root": "artifacts/recs/eval_cache",
+  "split": "train",
+  "pool_method": "two_tower_v1",
+  "k_retrieval": 100,
+  "min_review_chars": 30,
+  "artifact_dir": "artifacts/recs",
+  "catalog_item_batch": 256,
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras",
+  "output_path": "artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet",
+  "verbose": true
+}

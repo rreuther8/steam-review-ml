@@ -30,17 +30,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
 from steam_review_ml.constants import PROJECT_RANDOM_SEED
-from steam_review_ml.evaluation.retrieval_offline_eval import (
-    REQUIRED_PHASE1_METHODS,
-    RETRIEVAL_METRIC_COLS,
-    run_retrieval_eval,
-)
+from steam_review_ml.evaluation.eval_baseline import write_offline_baseline_dual
+from steam_review_ml.evaluation.retrieval_offline_eval import REQUIRED_PHASE1_METHODS, run_retrieval_eval
 from steam_review_ml.utils import load_config
-
-
-RANKING_SUMMARY_METRICS = ("Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
 
 
 def _parse_cohort_sizing(raw: dict[str, float] | None) -> dict[tuple[str, str], float]:
@@ -56,42 +49,6 @@ def _parse_cohort_sizing(raw: dict[str, float] | None) -> dict[tuple[str, str], 
         left, right = key.split("|", 1)
         out[(left.strip(), right.strip())] = float(pct)
     return out
-
-
-def _method_metric_snapshot(
-    overall: pd.DataFrame, *, metric_names: tuple[str, ...]
-) -> dict[str, dict[str, float]]:
-    cols = ["method"] + list(metric_names)
-    missing = [c for c in cols if c not in overall.columns]
-    if missing:
-        raise ValueError(f"Cannot write baseline; overall table missing columns: {missing}")
-    overall_by_method: dict[str, dict[str, float]] = {}
-    for _, row in overall.iterrows():
-        method = str(row["method"])
-        overall_by_method[method] = {m: float(row[m]) for m in metric_names}
-    return overall_by_method
-
-
-def _write_offline_baseline_dual(
-    *,
-    ranking_overall: pd.DataFrame,
-    retrieval_overall: pd.DataFrame,
-    baseline_path: Path,
-) -> None:
-    ranking_snapshot = _method_metric_snapshot(ranking_overall, metric_names=RANKING_SUMMARY_METRICS)
-    retrieval_snapshot = _method_metric_snapshot(
-        retrieval_overall, metric_names=tuple(RETRIEVAL_METRIC_COLS)
-    )
-    payload = {
-        "created_utc": datetime.now(timezone.utc).isoformat(),
-        "required_methods": sorted(REQUIRED_PHASE1_METHODS),
-        "required_ranking_metrics": list(RANKING_SUMMARY_METRICS),
-        "required_retrieval_metrics": list(RETRIEVAL_METRIC_COLS),
-        "overall_by_method": ranking_snapshot,
-        "ranking_overall_by_method": ranking_snapshot,
-        "retrieval_overall_by_method": retrieval_snapshot,
-    }
-    baseline_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _archive_run(
@@ -127,7 +84,7 @@ def main() -> None:
         default=None,
         metavar="PATH",
         help=(
-            "If set, load eval cohort from this parquet (from recs_job_build_eval_examples) "
+            "If set, load example cohort from this parquet (from recs_job_build_example_cohort) "
             "instead of resampling prepare_eval_inputs. Overrides config key examples_parquet."
         ),
     )
@@ -294,7 +251,7 @@ def main() -> None:
         print(f"Wrote {p}")
 
     if args.write_baseline:
-        _write_offline_baseline_dual(
+        write_offline_baseline_dual(
             ranking_overall=tables.ranking_overall,
             retrieval_overall=tables.retrieval_overall,
             baseline_path=baseline_path,

@@ -14,6 +14,7 @@ dependencies = ["pandas", "pyarrow", "tqdm", "numpy", "scikit-learn"]
 # use conda-forge in the env (typical for CUDA), then: pip install -e .  (and .[api] if you serve HTTP).
 # Use recs-pip only in pip-only environments (e.g. Docker); do not mix with conda-managed TensorFlow.
 recs-pip = ["tensorflow>=2.15.0", "tensorflow-hub>=0.16.0"]
+cross-encoder = ["sentence-transformers>=2.2.0"]
 api = ["fastapi>=0.100.0", "uvicorn[standard]>=0.22.0"]
 
 [tool.setuptools]

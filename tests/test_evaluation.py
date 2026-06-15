@@ -176,6 +176,53 @@ def test_fusion_c_query_vector_fuses_session_and_weighted_behavior() -> None:
     np.testing.assert_allclose(out, expected, rtol=1e-5, atol=1e-6)
 
 
+def test_oracle_ranking_metrics_ceiling_within_retrieved_pool() -> None:
+    app_ids = np.array([10, 20, 30], dtype=np.int64)
+    retrieved = np.array([0, 1, 2], dtype=np.int64)
+    positives = {20}
+    ranked_bad = np.array([0, 1], dtype=np.int64)
+    oracle = evaluation._oracle_ranked_indices_from_retrieved(retrieved, positives, app_ids)
+
+    assert list(oracle) == [1, 0, 2]
+    assert evaluation.hit_rate_at_k(ranked_bad, positives, 1, app_ids) == 0.0
+    assert evaluation.hit_rate_at_k(oracle, positives, 1, app_ids) == 1.0
+    assert evaluation.ndcg_at_k(oracle, positives, 1, app_ids) == 1.0
+
+
+def test_ranking_overall_includes_oracle_columns(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_retriever = object()
+    fake_inputs = _fake_eval_inputs(fake_retriever)
+
+    monkeypatch.setattr(evaluation, "prepare_eval_inputs", lambda **kwargs: fake_inputs)
+    monkeypatch.setattr(evaluation, "_build_method_registry", lambda **kwargs: _fake_registry(fake_retriever))
+
+    tables = evaluation.run_retrieval_eval(
+        repo_root=Path("."),
+        split="val",
+        methods=["raw", "popularity_train", "multi_mean_train"],
+        active_cohort="all",
+        max_examples=100,
+        support_app_filter_mode="strict",
+        cohort_sizing={},
+        min_review_chars=1,
+        max_train_rows_per_user=5,
+        multi_max_reviews=5,
+        k_final=2,
+        k_retrieval=3,
+        k_personalization=2,
+        enable_popularity_decile_diagnostics=True,
+        include_random_sanity=False,
+        random_seed=1,
+        artifact_dir=None,
+        verbose=False,
+    )
+
+    for col in evaluation.ORACLE_RANKING_METRIC_COLS:
+        assert col in tables.ranking_overall.columns
+    assert (tables.ranking_overall["OracleHit@K"] >= tables.ranking_overall["Hit@K"]).all()
+    assert (tables.ranking_overall["OracleNDCG@K"] >= tables.ranking_overall["NDCG@K"]).all()
+
+
 def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_retriever = object()
     fake_inputs = _fake_eval_inputs(fake_retriever)

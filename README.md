@@ -16,17 +16,21 @@ and integration from modeling notebooks to API behavior.
 
 ## Current results snapshot
 
-Fill this table with your latest best run from [`recs_008_history_blend_gridsearch.ipynb`](notebooks/retrieval_ranking/recs_008_history_blend_gridsearch.ipynb) (baseline vs history blend):
+### Ranking stage (primary gate) — `latest_ranking`
 
-| Variant | Hit@10 | Recall@10 | MAP@10 | NDCG@10 | MRR |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Baseline retrieval | TODO | TODO | TODO | TODO | TODO |
-| History blend (selected) | TODO | TODO | TODO | TODO | TODO |
-| Delta | TODO | TODO | TODO | TODO | TODO |
+Frozen **val dev cohort** (`n_examples = 12500`, [`artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`](artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet)). **Ranking** metrics at **K = 10** from [`recs_job_eval_ranking.py`](scripts/recs_job_eval_ranking.py) → viewer [`recs_011_view_offline_ranking_eval.ipynb`](notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb). Compares **`two_tower_v1_heuristic_logpop_blend`** (two-tower pool + D1 log-pop rerank) vs full-catalog **`popularity_train`**.
 
-There is **no single headline offline number** that summarizes the whole project: retrieval quality is demonstrated through complementary notebooks that answer different questions.
+| Method | Hit@10 | NDCG@10 | MRR@10 |
+| --- | ---: | ---: | ---: |
+| `two_tower_v1_heuristic_logpop_blend` | 0.193 | 0.093 | 0.067 |
+| `popularity_train` | 0.151 | 0.073 | 0.052 |
+| Delta (ranker − pop) | +0.042 | +0.020 | +0.015 |
 
-**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration, pipeline consumers, and mechanism comparisons live under [`notebooks/retrieval_ranking/`](notebooks/retrieval_ranking/).
+Slice A (multi-positive, primary ranking slice): NDCG@10 **0.068** vs **0.035** (ranker vs popularity).
+
+Retrieval-only and embedding-ablation suites below answer different questions — do not mix them with this ranking-stage gate.
+
+**Layout:** embedding-focused experiments live under [`notebooks/models/query_embeddings/`](notebooks/models/query_embeddings/); retrieval eval orchestration and mechanism comparisons under [`notebooks/retrieval/`](notebooks/retrieval/); ranker/heuristic work under [`notebooks/ranking/`](notebooks/ranking/).
 
 ### Offline evaluation suites
 
@@ -106,7 +110,7 @@ python -m pytest -q tests/test_recs_006_regression.py
 To compare latest metrics against baseline:
 
 ```bash
-pytest tests/retrieval_eval_regression.py
+pytest tests/test_retrieval_eval_regression.py
 ```
 
 Freeze/update baseline from latest eval outputs:

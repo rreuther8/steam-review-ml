@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
+from tensorflow import keras
 
 from steam_review_ml.recommender.math_utils import l2_normalize
 from steam_review_ml.recommender.retrieve import ContentRetriever
-from steam_review_ml.recommender.two_tower_train import clip_text, keras_custom_object_scope
+from steam_review_ml.recommender.two_tower_train import clip_text, keras_custom_object_scope, _init_two_tower_model_class
+
 
 DEFAULT_HUB_URL = "https://tfhub.dev/google/universal-sentence-encoder/4"
 
@@ -21,16 +23,13 @@ def load_two_tower_model(
     n_items: int | None = None,
     embed_dim: int | None = None,
 ):
-    from tensorflow import keras
-
-    import steam_review_ml.recommender.two_tower_train as tt_mod
 
     if not model_path.is_file():
         raise FileNotFoundError(f"two-tower model not found: {model_path}")
     if n_items is None or embed_dim is None:
         raise ValueError("load_two_tower_model requires n_items and embed_dim (from ContentRetriever).")
 
-    model_cls = tt_mod._init_two_tower_model_class()
+    model_cls = _init_two_tower_model_class()
     scope = {
         "TwoTowerModel": model_cls,
         "TwoTower>TwoTowerModel": model_cls,
