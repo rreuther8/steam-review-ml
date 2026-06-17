@@ -107,7 +107,7 @@ Evidence:
 Product / eval implications:
 
 - **Shipped stack (conceptual):** `two_tower_v1` retrieve @100 → D1 rerank @10.
-- **Not yet wired:** default ranking method in `recs_job_eval_ranking.py` / `configs/recs_job_eval_ranking.json` (backlog in ranker plan § J1).
+- **Eval-job wired:** D1 in `configs/recs_job_eval_offline.json` `methods` and `configs/recs_job_eval_ranking.json` `ranker_methods`. Baseline refresh (`--write-baseline`) remains optional housekeeping.
 
 ---
 
@@ -121,12 +121,12 @@ Decision:
 
 Why:
 
-- Matches `recs_job_eval_retrieval.py` split: `eval_retrieval_*` @ `k_retrieval=100` vs `eval_ranking_*` @ `k_final=10`.
+- Matches `recs_job_eval_offline.py` split: `eval_retrieval_*` @ `k_retrieval=100` vs `eval_ranking_*` @ `k_final=10`.
 - Slice A aligns with multi-review users — primary product proxy on this dataset; slice B/C reported but not gating.
 
 Evidence:
 
-- Config: `configs/recs_job_eval_retrieval.json` (`k_retrieval=100`, `k_final=10`)
+- Config: `configs/recs_job_eval_offline.json` (`k_retrieval=100`, `k_final=10`)
 - Overview: `docs/recommendation_evaluation_overview.md`
 - Questionnaire lock-in: `docs/ranker_exploration_plan.md` § A4, C1, D
 

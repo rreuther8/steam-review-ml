@@ -104,7 +104,9 @@ flowchart LR
   end
 
   subgraph quality [Offline quality]
-    RET --> EVAL[recs_job_eval_retrieval]
+    RET --> EVAL[recs_job_eval_offline]
+    EVAL --> POOLS[eval_offline_examples.jsonl]
+    POOLS --> RANK[recs_job_eval_ranking]
     EVAL --> METRICS[eval_retrieval_* / eval_ranking_*]
   end
 
@@ -148,8 +150,8 @@ flowchart LR
 | `scripts/recs_job_game_profiles.py` | Build per-game review profile tables |
 | `scripts/recs_job_game_embeddings.py` | Embed game profiles → index artifacts |
 | `scripts/recs_job_build_eval_examples.py` | Cache offline eval cohorts |
-| `scripts/recs_job_eval_retrieval.py` | Central offline retrieval eval (+ shared example pools) |
-| `scripts/recs_job_eval_ranking.py` | Ranking-stage eval: frozen pools → rerank vs `popularity_train` |
+| `scripts/recs_job_eval_offline.py` | Full offline eval: re-score methods → `eval_retrieval_*` + `eval_ranking_*` + pools jsonl |
+| `scripts/recs_job_eval_ranking.py` | Rank-only eval: frozen pools → rerank vs `popularity_train` (`runs/latest_ranking`) |
 | `scripts/recs_migrate_artifacts_layout.py` | Move legacy artifact paths |
 
 Configs live beside each job under `configs/`.
@@ -194,7 +196,7 @@ python -m pytest -q tests/test_retrieval_eval_regression.py
 Refresh retrieval eval baseline after intentional metric changes:
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --write-baseline
 ```
 
 ---

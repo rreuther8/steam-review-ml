@@ -1,0 +1,311 @@
+# Experiment registry manifest (metadata only — metrics exported from eval CSVs).
+# See docs/plans/experiment_registry_plan.md and docs/experiment_registry.md.
+
+version: 1
+eval_contract:
+  cohort: val_dev_12k_v1
+  examples_parquet: artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
+  k_retrieval: 100
+  k_final: 10
+
+default_paths:
+  offline_eval_dir: artifacts/recs/offline_eval/runs/latest
+  ranking_eval_dir: artifacts/recs/offline_eval/runs/latest_ranking
+
+experiments:
+  # --- v1 retrieval benchmarks (full offline job) ---
+  - experiment_id: v1_retrieve_raw
+    method_id: raw
+    stage: retrieval
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_retrieval_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: full_catalog
+    notebook: null
+    decision_log_ref: docs/retrieval_decision_log.md
+    notes: Phase-1 USE cosine baseline; same sort @100 and @10.
+
+  - experiment_id: v1_retrieve_popularity_train
+    method_id: popularity_train
+    stage: retrieval
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_retrieval_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: full_catalog
+    notebook: null
+    decision_log_ref: docs/retrieval_decision_log.md
+    notes: Global train-pop retrieval baseline; high Hit@100, non-personalized.
+
+  - experiment_id: v1_retrieve_multi_mean_train
+    method_id: multi_mean_train
+    stage: retrieval
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_retrieval_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: full_catalog
+    notebook: null
+    decision_log_ref: docs/retrieval_decision_log.md
+    notes: Phase-1 required baseline.
+
+  - experiment_id: v1_retrieve_fusion_c
+    method_id: fusion_c_raw_plus_behavior
+    stage: retrieval
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_retrieval_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: full_catalog
+    notebook: notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb
+    decision_log_ref: docs/retrieval_decision_log.md
+    notes: Hand-fused session + behavior query; eval benchmark only after two_tower_v1 ship.
+
+  - experiment_id: v1_retrieve_two_tower_v1
+    method_id: two_tower_v1
+    stage: retrieval
+    phase: v1
+    status: shipped
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_retrieval_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: full_catalog
+    notebook: notebooks/retrieval/recs_012_two_tower_training_rows_explore.ipynb
+    decision_log_ref: docs/retrieval_decision_log.md#2026-05-30-chosen-retrieval-mechanism--two_tower_v1
+    notes: Shipped retrieval mechanism @100; checkpoint updated_user__updated_profile200_item.
+
+  # --- v1 ranking (offline job + rank-only job) ---
+  - experiment_id: v1_rank_two_tower_bare
+    method_id: two_tower_v1
+    stage: ranking
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_ranking_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: two_tower_v1@100_frozen_order
+    notebook: null
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Bare pool order @10; weak NDCG without rerank.
+
+  - experiment_id: v1_rank_d1_heuristic_logpop
+    method_id: two_tower_v1_heuristic_logpop_blend
+    stage: ranking
+    phase: v1
+    status: shipped
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_ranking_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: two_tower_v1@100_rerank
+    notebook: notebooks/ranking/recs_013_ranker_d1_heuristic.ipynb
+    decision_log_ref: docs/ranking_decision_log.md#2026-05-30-d1-shipped--heuristic-log-pop-blend-on-two_tower_v1-pools
+    notes: Shipped ranker v1; alpha=0.2 log-pop blend within pool.
+
+  - experiment_id: v1_rank_popularity_catalog
+    method_id: popularity_train
+    stage: ranking
+    phase: v1
+    status: benchmark
+    eval_job_wired: true
+    metrics_source: ranking_eval
+    metrics_table: eval_ranking_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest_ranking
+    pool_contract: full_catalog
+    notebook: null
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Full-catalog pop @10 gating baseline in rank-only job.
+
+  - experiment_id: v1_rank_d2_pointwise
+    method_id: two_tower_v1_ranker_d2_pointwise
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_014_ranker_d2_d3_train_head_to_head.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Val NDCG@10 ~0.089 overall; below D1 promotion bar.
+
+  - experiment_id: v1_rank_d3_listwise
+    method_id: two_tower_v1_ranker_d3_listwise
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_014_ranker_d2_d3_train_head_to_head.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Val NDCG@10 ~0.085 overall; below D1.
+
+  - experiment_id: v1_rank_d4_ce_blend
+    method_id: two_tower_v1_ranker_d4_ce_retr_logpop_blend
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_015_ranker_d4_cross_encoder.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Best D4 ZS hybrid ~0.091 overall; slice A only beat D1; failed co-gate.
+
+  - experiment_id: v1_rank_d5_session_habit
+    method_id: two_tower_v1_ranker_d5_session_habit_blend
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_016_ranker_embedding_habit_session_pool.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: USE session/habit pool rerank ~0.040 NDCG; far below D1.
+
+  - experiment_id: v1_rank_d5_cascade
+    method_id: two_tower_v1_ranker_d5_cascade
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: full_catalog
+    notebook: notebooks/retrieval/recs_017_eval_habit_session_retrieval.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Two-stage / fused USE on full catalog; below fusion_c and D1.
+
+  - experiment_id: v1_rank_d6a_frozen_trunk
+    method_id: two_tower_v1_ranker_d6a_rank_head
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_018_ranker_d6_frozen_trunk_spike.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Frozen trunk rank head spike; did not beat D1 on promotion bar.
+
+  - experiment_id: v1_rank_d6b_biencoder
+    method_id: two_tower_v1_ranker_d6b_biencoder
+    stage: ranking
+    phase: v1
+    status: killed
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: notebooks/ranking/recs_018_ranker_d6_frozen_trunk_spike.ipynb
+    decision_log_ref: docs/ranking_decision_log.md
+    notes: Rank-only second bi-encoder spike; killed with D6a.
+
+  # --- v2 placeholders (rank-only on frozen two_tower_v1 pools) ---
+  - experiment_id: v2_rank_v2a_igdb_summary
+    method_id: two_tower_v1_v2a_igdb_summary
+    stage: ranking
+    phase: v2
+    status: planned
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: igdb.ipynb
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: USE sim(query review, IGDB summary) within pool; spike after IGDB EDA.
+
+  - experiment_id: v2_rank_v2b_query_metadata
+    method_id: two_tower_v1_v2b_query_metadata
+    stage: ranking
+    phase: v2
+    status: planned
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: null
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: Metadata overlap vs query_app_id anchor.
+
+  - experiment_id: v2_rank_v2b_history_metadata
+    method_id: two_tower_v1_v2b_history_metadata
+    stage: ranking
+    phase: v2
+    status: planned
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: null
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: Metadata overlap vs train-likes union anchor.
+
+  - experiment_id: v2_rank_v2c_query_combined
+    method_id: two_tower_v1_v2c_query_summary_metadata
+    stage: ranking
+    phase: v2
+    status: planned
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: null
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: V2a + V2b-query blend; spike after singles show lift.
+
+  - experiment_id: v2_rank_v2d_primary_genre
+    method_id: two_tower_v1_v2d_primary_genre_metadata
+    stage: ranking
+    phase: v2
+    status: planned
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: two_tower_v1@100_frozen
+    notebook: null
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: Genre-weighted metadata overlap refinement.
+
+  - experiment_id: v2_cf_als_deferred
+    method_id: two_tower_v1_cf_als
+    stage: ranking
+    phase: v2.1
+    status: deferred
+    eval_job_wired: false
+    metrics_source: notebook
+    metrics_table: null
+    eval_run_dir: null
+    pool_contract: TBD
+    notebook: null
+    decision_log_ref: docs/plans/recommender_v2_questionnaire.md
+    notes: Collaborative filtering deferred until after metadata hybrid v2.

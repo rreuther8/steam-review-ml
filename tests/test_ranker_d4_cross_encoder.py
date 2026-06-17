@@ -52,7 +52,7 @@ def test_build_app_candidate_texts_uses_longest_review(tmp_path: Path) -> None:
 def test_default_ce_blend_w_grid_excludes_zero() -> None:
     assert 0.0 not in DEFAULT_CE_BLEND_W_GRID
     assert DEFAULT_CE_BLEND_W_GRID[0] == 0.1
-    assert DEFAULT_CE_BLEND_W_GRID[-1] == 1.0
+    assert DEFAULT_CE_BLEND_W_GRID[-1] == 2.0
 
 
 def test_tune_ce_retr_blend_picks_best_w() -> None:

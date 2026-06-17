@@ -172,10 +172,10 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Centralized offline eval job (retrieval + ranking summaries)** — config-driven run for `raw`, `popularity_train`, `multi_mean_train`, plus **`fusion_c_raw_plus_behavior`** (recs_011 Candidate C — raw session + playtime‑weighted catalog history fused in embedding space via `retrieve.fusion_c_raw_plus_behavior_query_vector`). Paired retrieval- and ranking-contract tables:
+**Full offline eval job (`recs_job_eval_offline`)** — re-scores methods end-to-end; writes paired retrieval- and ranking-contract tables plus frozen pools jsonl. Default methods include `raw`, `popularity_train`, `multi_mean_train`, **`fusion_c_raw_plus_behavior`**, `two_tower_v1`, and shipped D1. See [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) § Offline eval jobs for contrast with rank-only `recs_job_eval_ranking`.
 
 - **Slices, metric priorities, K semantics:** [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) (eval contract v2 + notebook map + cached-examples runbook).
-- Job: `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json`
+- Job: `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json`
 - Progress: set `verbose: true|false` in config (default `true`) for tqdm/print status
 - **Cutoffs:** `k_retrieval` (default: omit → same as `k_final`) caps the **retrieved candidate list** for the retrieval contract; `k_final` is the **ranking** / top‑shown list (`eval_ranking_*` Hit/NDCG/etc. use `k_final`; `eval_retrieval_*` Hit/Precision/Recall use `k_retrieval`). Changing these changes numbers — re-run **`--write-baseline`** when you intentionally move the regression contract.
 - Outputs (default): `artifacts/recs/offline_eval/runs/latest/`
@@ -194,7 +194,7 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
   - `example_cohort.parquet` (legacy name: `eval_examples.parquet`)
   - `example_cohort_summary.csv`, `example_cohort_meta.json`
 - **Run offline eval on that parquet (skip cohort resampling):** either  
-  `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`  
+  `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`  
   or set **`examples_parquet`** in the job config (path relative to repo root). **`run_meta["prep_diagnostics"]`** records `examples_source: parquet_cache` and the path.
 
 **Ranker train cohort + frozen retrieval pools (Plan A)** — disjoint from val eval cache; tune rankers on train, report on val only:
@@ -219,6 +219,16 @@ python scripts/recs_job_eval_ranking.py configs/recs_job_eval_ranking.json
 - Writes: `artifacts/recs/offline_eval/runs/latest_ranking/eval_ranking_*.csv`
 - Reads pools jsonl **read-only**; `examples_parquet` required for personalization
 - View results: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb`
+
+**Experiment registry** — join manifest to eval CSVs (after offline/ranking jobs):
+
+```bash
+python scripts/recs_export_experiment_registry.py
+```
+
+- Manifest: `configs/experiment_registry.yaml`
+- Output: `artifacts/recs/experiment_registry_metrics.csv`
+- Doc: [`experiment_registry.md`](experiment_registry.md)
 
 **Two-tower train + eval (script-only)** — trained dual-tower model; see [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
 
@@ -265,7 +275,7 @@ pytest tests/retrieval_eval_regression.py
 Freeze/update the baseline snapshot:
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --write-baseline
 ```
 
 Decision/log artifacts:
@@ -298,7 +308,7 @@ See [`archive/recommender_transition_plan.md`](archive/recommender_transition_pl
 8. (Optional QA) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`, `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, and `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 9. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after embedding artifacts exist
 10. Run `python scripts/recs_job_train_two_tower.py configs/recs_job_train_two_tower.json` to produce `updated_user__updated_profile200_item.keras`
-11. Run `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json` for centralized eval artifacts (include `two_tower_v1` + `two_tower_model_path` in config to benchmark the trained tower)
+11. Run `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json` for centralized eval artifacts (include `two_tower_v1` + `two_tower_model_path` in config to benchmark the trained tower)
 12. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for exploratory/QA analysis (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
 13. (Optional) run `python -m pytest -q tests/test_recs_006_regression.py` after `recs_006` updates
 14. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)

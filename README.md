@@ -116,7 +116,7 @@ pytest tests/test_retrieval_eval_regression.py
 Freeze/update baseline from latest eval outputs:
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --write-baseline
 ```
 
 ## Product scope notes

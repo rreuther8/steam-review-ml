@@ -219,7 +219,7 @@ def test_retrieval_eval_regression_outputs() -> None:
     if missing_contract:
         pytest.skip(
             "Offline eval artifacts missing under artifacts/recs/offline_eval/runs/latest/. "
-            "Run: python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json"
+            "Run: python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json"
         )
 
     retr_csv_path, rank_csv_path = _validate_contract(eval_latest)

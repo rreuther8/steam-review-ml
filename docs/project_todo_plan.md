@@ -58,8 +58,8 @@ Use this as the single “where are we?” list; historical architecture narrati
 - [x] **`recs_004`** — same-user held-out likes proxy on **val**: baselines, raw/structured, train-pool multi, time-weighted train (`notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a.ipynb`; related `*_002` / archived B/C tasks). **Caveat:** eval subset = multi-game-like users; see **[`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md)** → *Selection bias: multi-review vs single-review users*.
 - [x] **`extract_preferences` + `build_embedding_input`** — rules **v0** in `src/steam_review_ml/recommender/preferences.py` (not coaching); LLM upgrade optional
 - [x] **Wire retrieval (product/API)** — `ContentRetriever` in `steam_review_ml.recommender` (`retrieve.py`); optional FastAPI in `steam_review_ml.api` (`create_app`); **default** embed = **raw** (`structured=` flag)
-- [x] **Central offline eval + contract tables** — `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json`; paired `eval_retrieval_*` / `eval_ranking_*` under `artifacts/recs/offline_eval/runs/latest/`; slice/metric policy in [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md)
-- [x] **Eval regression / baseline snapshot** — `tests/retrieval_eval_regression.py` (contract + optional JSON baseline); refresh with `python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json --write-baseline` (see [`usage_pipeline.md`](usage_pipeline.md))
+- [x] **Central offline eval + contract tables** — `scripts/recs_job_eval_offline.py` + `configs/recs_job_eval_offline.json`; paired `eval_retrieval_*` / `eval_ranking_*` under `artifacts/recs/offline_eval/runs/latest/`; slice/metric policy in [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md)
+- [x] **Eval regression / baseline snapshot** — `tests/retrieval_eval_regression.py` (contract + optional JSON baseline); refresh with `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --write-baseline` (see [`usage_pipeline.md`](usage_pipeline.md))
 - [x] **Cached eval cohorts** — `scripts/recs_job_build_eval_examples.py` + `configs/recs_job_build_eval_examples.json`; eval job accepts `--examples-parquet` / config `examples_parquet` (see [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md))
 - [x] **Minimal recommendations API (dev)** — FastAPI `/recommendations`, `/ui`, `/games`, `/health` in `steam_review_ml.api` (install `.[api]`)
 
@@ -69,12 +69,12 @@ Order for closing out **v1** before **v2** (IGDB hybrid) and wrap-up:
 
 1. **[x] Two-tower retrieval** — `two_tower_v1` shipped as retrieve mechanism (`retrieval_decision_log` § 2026-05-30).
 2. **[x] Ranking model (v1 scope)** — D1 `two_tower_v1_heuristic_logpop_blend` shipped; D2–D6 killed (`ranking_decision_log`, `recs_018`).
-3. **[ ] Wire D1 into combined retrieval eval job** — add `two_tower_v1_heuristic_logpop_blend` to `configs/recs_job_eval_retrieval.json` `methods` (ranking-only job already has it); run jobs, `--write-baseline`, update regression if needed (`ranker_exploration_plan` § J1).
-4. **[ ] Experiment registry** — YAML manifest + export script + `docs/experiment_registry.md`; v1 backfill, v2 placeholder rows. **Plan:** [`plans/experiment_registry_plan.md`](plans/experiment_registry_plan.md).
-5. **[ ] Wrap-up** — declare v1 “done” for chosen scope; then fill [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md) → draft **`recommender_v2_plan.md`** (IGDB metadata hybrid). Refresh baselines after method ids stabilize.
+3. **[x] Wire D1 into combined offline eval job** — `two_tower_v1_heuristic_logpop_blend` in `configs/recs_job_eval_offline.json` `methods`; jobs run. Remaining: `--write-baseline`, regression refresh (`ranker_exploration_plan` § J1).
+4. **[x] Experiment registry** — YAML manifest + export script + `docs/experiment_registry.md`; v1 backfill, v2 placeholder rows. **Plan:** [`plans/experiment_registry_plan.md`](plans/experiment_registry_plan.md).
+5. **[x] Wrap-up** — v1 closeout documented in [`recommender_v1_wrap_up.md`](recommender_v1_wrap_up.md); next step remains [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md) → draft **`recommender_v2_plan.md`** (IGDB metadata hybrid).
 6. **Parked:** public API / deploy — **§ Later — public API / deploy** below.
 
-**v1 (content-led retrieval) — near complete:** Shipped stack = `two_tower_v1` @100 → D1 @10. Remaining v1 gaps: D1 in combined eval job, experiment registry, v1 wrap-up doc. *After v1* backlog (test freeze, fixed drafts) stays optional unless pulled forward.
+**v1 (content-led retrieval) — near complete:** Shipped stack = `two_tower_v1` @100 → D1 @10. Remaining v1 gaps: v1 wrap-up doc, optional test freeze. *After v1* backlog (test freeze, fixed drafts) stays optional unless pulled forward.
 
 ### After v1 — evaluation and retrieval experiments (future backlog)
 
@@ -99,7 +99,7 @@ Not needed for the **two-tower + ranking** modeling push; pick these up when the
 | **Game index + demo retrieval (`recs_001`–`003`)** | **Done** | Notebooks: `game_embeddings/recs_001_*`, `recs_002_*`; `query_embeddings/recs_003_*`. Next work is **product path**, not re-embedding unless you change caps/model. |
 | **Preference extraction (structured path)** | **Rules v0 done** | Module in `src/`; **ablation** vs raw — beat **raw** on val proxy (and popularity) before promoting to default. |
 | **Recommender v1 (product retrieval path)** | **Near complete** | **`ContentRetriever.top_k`** + **`steam_review_ml.api`** (UI + endpoints); **`recs_003`** / **`recs_004`** for exploration. Remaining v1 gap is **ops** if you need production hardening, not missing retrieval core. |
-| **Recommender @K evaluation** | **Done (v1 scope)** | **Val path:** `recs_job_eval_retrieval.py`, `eval_retrieval_*` / `eval_ranking_*`, contract v2, decile tables, optional `retrieval_eval_regression` + `--write-baseline`. **Post–v1:** frozen **test**, fixed-draft matrix, extra experiments — see *After v1* above. |
+| **Recommender @K evaluation** | **Done (v1 scope)** | **Val path:** `recs_job_eval_offline.py`, `eval_retrieval_*` / `eval_ranking_*`, contract v2, decile tables, optional `retrieval_eval_regression` + `--write-baseline`. **Post–v1:** frozen **test**, fixed-draft matrix, extra experiments — see *After v1* above. |
 | **API: recommendations** | **Near complete** | **MVP shipped.** **Post–v1 / ops:** auth, abuse limits, deploy hardening for untrusted traffic. |
 | **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; IGDB summary + metadata/genre rerank (see v2 plan). **No tabular** in v2 scope. ALS deferred until after metadata hybrid. |
 
@@ -140,7 +140,7 @@ Not needed for the **two-tower + ranking** modeling push; pick these up when the
 
 ### Deferred `recs_XXX` integration walkthrough
 
-Notebook-first onboarding for offline-eval **extras** stays **postponed**. MVP remains `scripts/recs_job_eval_retrieval.py`, optional `--examples-parquet` / `examples_parquet`, and `recs_011` for deltas. If revived, keep a **`recs_XXX`** notebook as a thin index—do not duplicate `usage_pipeline.md`.
+Notebook-first onboarding for offline-eval **extras** stays **postponed**. MVP remains `scripts/recs_job_eval_offline.py`, optional `--examples-parquet` / `examples_parquet`, and `recs_011` for deltas. If revived, keep a **`recs_XXX`** notebook as a thin index—do not duplicate `usage_pipeline.md`.
 
 ### Code simplification targets (`src/steam_review_ml`)
 

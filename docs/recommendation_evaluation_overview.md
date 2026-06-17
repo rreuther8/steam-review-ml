@@ -2,7 +2,7 @@
 
 Status: active  
 Owner: Ryan Reuther  
-Last reviewed: 2026-05-11
+Last reviewed: 2026-06-15
 
 Single place for **what we evaluate**, **how slices and metrics gate decisions**, and **where notebooks and jobs line up**. The former standalone `eval_contract.md` and `retrieval_eval_cached_examples_plan.md` are merged here (2026-05-11). Metric definitions remain in [`retrieval_metrics_guide.md`](retrieval_metrics_guide.md).
 
@@ -25,7 +25,8 @@ Offline evaluation for text-to-game retrieval:
 - `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_c.ipynb` — diagnostic Task C
 - `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb` — 4-way query/index ablation
 - `notebooks/models/query_embeddings/recs_007_eval_qual_user_facing.ipynb` — qualitative checkpoint / failure tags
-- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_retrieval.py`
+- `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_offline.py`
+- `notebooks/retrieval/recs_011_view_offline_eval.ipynb` — **read-only viewer** for `recs_job_eval_offline.py` outputs (`runs/latest`)
 - `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` — **read-only viewer** for `recs_job_eval_ranking.py` outputs (`runs/latest_ranking`); headline ranker vs `popularity_train` deltas
 - [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md) — script-only train + eval runbook for learned two-tower (`updated_user__updated_profile200_item`)
 
@@ -87,7 +88,7 @@ Defines official offline **slices** and **decision metrics** for:
 - **Retrieval-stage** quality (candidate generation; order-insensitive)
 - **Ranking-stage** quality (retrieval then ranking; order-sensitive)
 
-**Cutoffs** (from `configs/recs_job_eval_retrieval.json`, or equivalent job parameters):
+**Cutoffs** (from `configs/recs_job_eval_offline.json`, or equivalent job parameters):
 
 - **`k_retrieval`**: depth for **retrieval-contract** metrics (Hit / Precision / Recall on the retrieved candidate list). Typical value: **100**.
 - **`k_final`**: depth for **ranking-contract** metrics (MAP, NDCG, MRR, and Hit / Precision / Recall on **`eval_ranking_*`** tables). Typical value: **10**.
@@ -140,12 +141,54 @@ Guardrails use **`k_personalization`** (suffix in column names matches that inte
 - Personalization diagnostics are guardrails for popularity-only or low-diversity behavior.
 - If Slice A support is too low, report instability and treat conclusions as provisional.
 
+### Offline eval jobs (two scripts)
+
+Two jobs share the same **eval contract** (slices, metrics, cutoffs) but differ in **what they score**:
+
+| | **`recs_job_eval_offline`** | **`recs_job_eval_ranking`** |
+|---|---------------------------|---------------------------|
+| **Script** | `scripts/recs_job_eval_offline.py` | `scripts/recs_job_eval_ranking.py` |
+| **Config** | `configs/recs_job_eval_offline.json` | `configs/recs_job_eval_ranking.json` |
+| **Re-scores retrieval?** | **Yes** — full catalog per method | **No** — reads frozen pools jsonl |
+| **Output dir** | `artifacts/recs/offline_eval/runs/latest/` | `artifacts/recs/offline_eval/runs/latest_ranking/` |
+| **Tables written** | `eval_retrieval_*` **and** `eval_ranking_*`, plus `eval_offline_examples.jsonl`, `eval_offline_run_meta.json` | `eval_ranking_*` only |
+| **Typical `methods` config** | `methods`: catalog scorers + pool rerankers (e.g. `raw`, `two_tower_v1`, `two_tower_v1_heuristic_logpop_blend`) | `pool_methods`, `ranker_methods`, `catalog_methods` |
+| **When to run** | Retrieval benchmarks, method comparison @100, export frozen pools, full-stack tables in one place | Fast ranker iteration; **gating** comparison (D1 vs bare pool vs `popularity_train`) |
+| **Viewer notebook** | `notebooks/retrieval/recs_011_view_offline_eval.ipynb` | `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` |
+
+**`recs_job_eval_offline` (full offline eval)** — for each method in `methods`:
+
+1. Score the **full catalog** (or base retriever + pool rerank for D1-style methods).
+2. **Retrieval contract:** top `k_retrieval` candidates → `eval_retrieval_*` (order-insensitive @100).
+3. **Ranking contract:** top `k_final` from that pool (reranked if a pool reranker) → `eval_ranking_*` (order-sensitive @10).
+4. Write **`eval_offline_examples.jsonl`** — frozen top-100 pools per example (input to the ranking job).
+
+Catalog methods (`raw`, `popularity_train`, `two_tower_v1`, …) use the **same score sort** for both cuts: @100 = retrieval, @10 = ranking head. Pool rerankers (e.g. D1) share the base retriever's @100 pool but rerank within it for @10.
+
+**`recs_job_eval_ranking` (rank-only)** — does **not** call retrievers:
+
+1. Load **`eval_offline_examples.jsonl`** from `runs/latest/` (or `--pools-jsonl`).
+2. Score **pool methods** (bare frozen order), **ranker methods** (rerank within pool), and **catalog methods** (`popularity_train` full-catalog baseline).
+3. Write **`eval_ranking_*`** under `runs/latest_ranking/`.
+
+**Recommended run order** for the shipped v1 stack:
+
+```bash
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json \
+  --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
+
+python scripts/recs_job_eval_ranking.py configs/recs_job_eval_ranking.json
+```
+
+Artifact paths under `offline_eval/` are unchanged — only script/config names moved from `recs_job_eval_retrieval` to `recs_job_eval_offline`.
+
 ### Notebook / script alignment
 
 - Notebook reference (analysis / cleaned sweep): `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user_task_a_002.ipynb`
-- Consumer of scripted retrieval artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
-- Pipeline target (retrieval): `scripts/recs_job_eval_retrieval.py` + `configs/recs_job_eval_retrieval.json` (same slices / metrics)
-- Pipeline target (ranking gate): `scripts/recs_job_eval_ranking.py` + `configs/recs_job_eval_ranking.json` → `artifacts/recs/offline_eval/runs/latest_ranking/`
+- Consumer of scripted offline artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
+- Full offline eval: `scripts/recs_job_eval_offline.py` + `configs/recs_job_eval_offline.json` → `runs/latest/`
+- Ranking gate (frozen pools): `scripts/recs_job_eval_ranking.py` + `configs/recs_job_eval_ranking.json` → `runs/latest_ranking/`
+- Offline results viewer: `notebooks/retrieval/recs_011_view_offline_eval.ipynb`
 - Ranking results viewer: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` (ranker vs `popularity_train` deltas; does not re-score)
 - Candidate comparison (dual retrieval / ranking tables): `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
@@ -162,7 +205,7 @@ Guardrails use **`k_personalization`** (suffix in column names matches that inte
 1. **Build cached eval examples** — config (split / cohort / sampling / prep knobs) → frozen examples + metadata on disk.
 2. **Evaluate methods against cached examples** — cached artifact + method config → existing `eval_retrieval_*` / `eval_ranking_*` tables.
 
-**Implemented knobs:** `scripts/recs_job_eval_retrieval.py` accepts **`--examples-parquet PATH`** (or config key **`examples_parquet`**, path relative to repo root) and uses `prepare_eval_inputs_from_cache(...)` instead of resampling `prepare_eval_inputs`. When set, **`max_examples`** / cohort knobs do not re-sample the cohort — the parquet fixes who is evaluated; keep config aligned with how the parquet was built.
+**Implemented knobs:** `scripts/recs_job_eval_offline.py` accepts **`--examples-parquet PATH`** (or config key **`examples_parquet`**, path relative to repo root) and uses `prepare_eval_inputs_from_cache(...)` instead of resampling `prepare_eval_inputs`. When set, **`max_examples`** / cohort knobs do not re-sample the cohort — the parquet fixes who is evaluated; keep config aligned with how the parquet was built.
 
 **Optional future / build job:** a dedicated cache builder (e.g. `configs/recs_job_build_eval_examples.json`, `scripts/recs_job_build_eval_examples.py`) can wrap `prepare_eval_inputs` once and write:
 

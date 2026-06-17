@@ -31,6 +31,8 @@ def test_merge_ranking_preserves_retrieval_baseline(tmp_path: Path) -> None:
                 "MAP@K": 0.06,
                 "NDCG@K": 0.09,
                 "MRR": 0.07,
+                "OracleHit@K": 0.51,
+                "OracleNDCG@K": 0.50,
             }
         ]
     )
