@@ -10,7 +10,7 @@
 Decision:
 
 - **We chose `two_tower_v1` as the retrieval mechanism** for the recommendation pipeline: the **retrieve** step that produces **top-100 candidate pools** before ranking (D1 or ranker spikes).
-- Wire it into offline eval as a first-class method (`configs/recs_job_eval_retrieval.json` → `methods`, `two_tower_model_path`) and into pool export (`recs_job_export_retrieval_pools.py` → `ranker_pools/.../two_tower_v1.parquet`, val pools in `eval_offline_examples.jsonl`).
+- Wire it into offline eval as a first-class method (`configs/recs_job_eval_offline.json` → `methods`, `two_tower_model_path`) and into pool export (`recs_job_export_retrieval_pools.py` → `ranker_pools/.../two_tower_v1.parquet`, val pools in `eval_offline_examples.jsonl`).
 - **Supersedes** USE **`raw`**, **`fusion_c`**, and other hand-built query recipes as the **retrieve** step for this stack. Those methods stay in the eval job for **benchmark comparison**, not as the mechanism we ship retrieve with.
 - **Legacy note:** `ContentRetriever` / API default may still be **`raw`** (2026-04-14) until product explicitly promotes two-tower over HTTP — this entry locks the **offline eval + retrieve→rank pipeline**, not necessarily every API code path.
 
@@ -51,7 +51,7 @@ Relation to earlier notes:
 Decision:
 
 - **Frozen val cohort:** `val_dev_12k_v1` — `artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`. Build once via `scripts/recs_job_build_eval_examples.py` + `configs/recs_job_build_eval_examples.json`; **do not resample val between runs** when citing offline retrieval or ranking numbers.
-- **`k_retrieval=100` vs `k_final=10`:** read **`eval_retrieval_*`** (@100, pool generation) and **`eval_ranking_*`** (@10, rerank within pool) separately. Config: `configs/recs_job_eval_retrieval.json`. Do not mix contracts (e.g. compare `two_tower_v1` Hit@100 to D1 NDCG@10 without labeling both k and artifact family).
+- **`k_retrieval=100` vs `k_final=10`:** read **`eval_retrieval_*`** (@100, pool generation) and **`eval_ranking_*`** (@10, rerank within pool) separately. Config: `configs/recs_job_eval_offline.json`. Do not mix contracts (e.g. compare `two_tower_v1` Hit@100 to D1 NDCG@10 without labeling both k and artifact family).
 
 Why:
 
@@ -78,7 +78,7 @@ Why:
 
 Decision:
 
-- Register **`fusion_c_raw_plus_behavior`** as a **first-class offline-eval method** alongside `raw`, `popularity_train`, and `multi_mean_train` in the default **`recs_job_eval_retrieval.py`** run (`configs/recs_job_eval_retrieval.json` → `methods`). *(Earlier drafts used the misleading id `two_tower_c_raw_plus_behavior`; that string is retired.)*
+- Register **`fusion_c_raw_plus_behavior`** as a **first-class offline-eval method** alongside `raw`, `popularity_train`, and `multi_mean_train` in the default **`recs_job_eval_offline.py`** run (`configs/recs_job_eval_offline.json` → `methods`). *(Earlier drafts used the misleading id `two_tower_c_raw_plus_behavior`; that string is retired.)*
 - Implement the **fused query vector** in **`retrieve.py`** (`fusion_c_raw_plus_behavior_query_vector`, constant `METHOD_FUSION_C_RAW_PLUS_BEHAVIOR`): **raw session text** embedded with the same Hub model as game profiles, **plus** a **playtime-weighted blend of train-app profile vectors** from the catalog matrix, then **L2-normalized** and dotted against the **same** precomputed game matrix as `raw`. **`evaluation.run_retrieval_eval`** only wires the method into the scorer registry; **retrieval-side vector construction** lives next to **`ContentRetriever`**.
 - **Default serving stays `raw`**; this method is for **contract-table** comparisons and R&D (e.g. `recs_011` Candidate C), not an automatic product default.
 
@@ -90,7 +90,7 @@ Evidence:
 
 - `src/steam_review_ml/recommender/retrieve.py` — `fusion_c_raw_plus_behavior_query_vector`, `METHOD_FUSION_C_RAW_PLUS_BEHAVIOR`, behavior-weight helpers.
 - `src/steam_review_ml/evaluation/retrieval_offline_eval.py` — scorer registry; calls into `retrieve` for fusion vectors.
-- `scripts/recs_job_eval_retrieval.py`, `configs/recs_job_eval_retrieval.json`.
+- `scripts/recs_job_eval_offline.py`, `configs/recs_job_eval_offline.json`.
 - `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate grid; align **`k_retrieval` / `k_final`** with the job config when diffing.
 - `tests/test_evaluation.py` — `test_fusion_c_query_vector_fuses_session_and_weighted_behavior`.
 

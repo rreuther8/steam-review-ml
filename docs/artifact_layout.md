@@ -8,8 +8,9 @@ This defines the standard filesystem layout under `artifacts/recs/`.
 artifacts/recs/
   offline_eval/
     runs/
-      latest/                       # default offline eval output (retrieval + ranking summaries)
-      <run_id>/                     # optional named snapshots
+      latest/                       # recs_job_eval_offline: retrieval + ranking + pools jsonl
+      latest_ranking/               # recs_job_eval_ranking: rank-only on frozen pools
+      <run_id>/                     # optional named snapshots (archive_run from offline job)
       legacy_snapshot/              # migrated legacy eval/ folder
   retrieval/
     configs/
@@ -39,8 +40,10 @@ artifacts/recs/
 
 ## Rules
 
-- New offline evaluation jobs write to:
+- Full offline eval (`recs_job_eval_offline`) writes to:
   - `artifacts/recs/offline_eval/runs/latest` (or explicit run-specific directory)
+- Rank-only eval (`recs_job_eval_ranking`) writes to:
+  - `artifacts/recs/offline_eval/runs/latest_ranking`
 - Optional archival snapshots:
   - set `archive_run: true` in eval config to copy `latest` into
     `artifacts/recs/offline_eval/runs/<timestamp>__<run_tag>/`

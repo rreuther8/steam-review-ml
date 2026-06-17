@@ -13,7 +13,16 @@ from steam_review_ml.evaluation.retrieval_offline_eval import (
     RETRIEVAL_METRIC_COLS,
 )
 
-RANKING_SUMMARY_METRICS = ("Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR")
+RANKING_SUMMARY_METRICS = (
+    "Hit@K",
+    "Precision@K",
+    "Recall@K",
+    "MAP@K",
+    "NDCG@K",
+    "MRR",
+    "OracleHit@K",
+    "OracleNDCG@K",
+)
 
 
 def method_metric_snapshot(

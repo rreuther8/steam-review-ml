@@ -91,14 +91,14 @@ Wire **shipped D1** into `recs_job_eval_ranking` / default eval config (§ J1). 
 
 ### A1. Oracle / latest eval
 
-Have you re-run `recs_job_eval_retrieval.py` since `OracleHit@K` / `OracleNDCG@K` landed in code?
+Have you re-run `recs_job_eval_offline.py` since `OracleHit@K` / `OracleNDCG@K` landed in code?
 
 - [x] Yes — run date: 2026-05-28 / 2026-05-30 (`recs_011_view_offline_eval__20260530.ipynb`)
 
 Command when ready:
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json \
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json \
   --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
 ```
 
@@ -106,7 +106,7 @@ Confirm columns: `head -1 artifacts/recs/offline_eval/runs/latest/eval_ranking_o
 
 ### A2. Trusted retriever for ranker v1
 
-_Assumption: two-tower checkpoint in `configs/recs_job_eval_retrieval.json` is the default retrieval stage._
+_Assumption: two-tower checkpoint in `configs/recs_job_eval_offline.json` is the default retrieval stage._
 
 - [x] Yes — use `two_tower_v1` (or method name: ___________)
 - [ ] Not yet — still validating two-tower retrieval first
@@ -183,7 +183,7 @@ _______________________________________________
 
 ### C2. Cutoffs
 
-_Assumption: `k_retrieval=100`, `k_final=10` (see `configs/recs_job_eval_retrieval.json`)._
+_Assumption: `k_retrieval=100`, `k_final=10` (see `configs/recs_job_eval_offline.json`)._
 
 - [x] Keep 100 / 10
 - [ ] Change to: retrieval ___ , final ___
@@ -380,7 +380,7 @@ _Assumption: hard negatives = other items in the top-100 pool._
 - [ ] Library + eval job method
 - [x] Notebook spike → promote to job
 
-### F2. Method naming (for `recs_job_eval_retrieval` `methods` list)
+### F2. Method naming (for `recs_job_eval_offline` `methods` list)
 
 Preferred pattern / examples:
 
@@ -512,7 +512,7 @@ Mark **T** or **F**. Correct in the “If F” column.
 - [x] `recs_014_ranker_d2_d3_train_head_to_head.ipynb`: D2/D3 train + val — **killed** (below D1)
 - [x] `recs_015_ranker_d4_cross_encoder.ipynb`: D4 exploration — **killed** (below D1)
 - [ ] `archive/recs_015_002_ranker_d4_ft_hybrid.ipynb`: FT hybrid on FT CE scores — **deferred** (WSL / background job if reopened)
-- [ ] Wire `two_tower_v1_heuristic_logpop_blend` into eval job as default ranking method
+- [x] Wire `two_tower_v1_heuristic_logpop_blend` into offline eval job (`configs/recs_job_eval_offline.json` `methods`)
 - [ ] D6a: rank head on frozen `two_tower_v1` trunk — listwise on `train_ranker_v1` pools → save **`rank_head.keras`** only if beats D1
 - [ ] D6b: second bi-encoder rank model — separate **`rank_biencoder.keras`**; retrieve checkpoint untouched
 
@@ -531,14 +531,14 @@ Mark **T** or **F**. Correct in the “If F” column.
 **Eval job (writes `eval_ranking_*` + oracle columns on current code):**
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json \
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json \
   --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
 ```
 
 **Refresh regression baseline (only after intentional metric/method changes):**
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json \
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json \
   --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet \
   --write-baseline
 ```

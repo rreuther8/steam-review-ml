@@ -16,7 +16,7 @@ Script-only runbook for **trained two-tower retrieval** (`updated_user__updated_
 | **Train job reads** | **Game embeddings** (`ContentRetriever` / NPZ + index + meta) — **not** `game_profile_reviews.parquet` |
 | **Item init** | Rows from `embedding_matrix` (catalog); profile parquet is only input to the embeddings job |
 | **Training labels** | `build_contrastive_examples(split="train")` — same-split positives (not the offline eval job API) |
-| **Benchmark eval** | Cached `eval_examples.parquet` + `recs_job_eval_retrieval.py` with method `two_tower_v1` |
+| **Benchmark eval** | Cached `eval_examples.parquet` + `recs_job_eval_offline.py` with method `two_tower_v1` |
 | **Production model** | Single architecture: trainable USE user tower + trainable item tower |
 
 Profiles parquet is an **internal** artifact between `recs_job_game_profiles` and `recs_job_game_embeddings`. The train job does not open it.
@@ -51,7 +51,7 @@ flowchart TB
     tj --> tout
   end
 
-  evj["recs_job_eval_retrieval<br/>method two_tower_v1"]
+  evj["recs_job_eval_offline<br/>method two_tower_v1"]
   evo["Offline eval tables"]
 
   data --> pj
@@ -74,7 +74,7 @@ flowchart TB
 | `recs_job_game_embeddings` | profiles parquet | game embeddings (NPZ + index + meta) |
 | `recs_job_build_eval_examples` | val norm parquet + cohort config | `eval_examples.parquet` |
 | `recs_job_train_two_tower` | train/val parquet + game embeddings | `*.keras`, `train_history.csv`, `run_metadata.json` |
-| `recs_job_eval_retrieval` | eval cache + embeddings + tower model | `eval_retrieval_*`, `eval_ranking_*`, jsonl |
+| `recs_job_eval_offline` | eval cache + embeddings + tower model | `eval_retrieval_*`, `eval_ranking_*`, jsonl |
 
 **Library modules:** `steam_review_ml.recommender.contrastive_examples`, `two_tower_train`, `two_tower_score`.
 
@@ -114,7 +114,7 @@ python scripts/recs_job_train_two_tower.py configs/recs_job_train_two_tower.json
 Benchmark eval with trained tower (add `two_tower_v1` to `methods` and set `two_tower_model_path` in config):
 
 ```bash
-python scripts/recs_job_eval_retrieval.py configs/recs_job_eval_retrieval.json \
+python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json \
   --examples-parquet artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet
 ```
 

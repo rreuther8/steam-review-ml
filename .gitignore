@@ -9,6 +9,9 @@ artifacts/
 !.cursor/rules/
 !.cursor/rules/*.mdc
 
+# Understand Anything (knowledge graph tooling)
+.understand-anything/
+
 # Python
 __pycache__/
 *.egg-info/

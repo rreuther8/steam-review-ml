@@ -328,7 +328,7 @@ class ContentRetriever:
 # Train-row keys for behavior pooling weights (aligned with recs_011 Candidate C).
 BEHAVIOR_WEIGHT_PLAYTIME_KEYS: tuple[str, ...] = ("_norm_author__playtime_at_review",)
 
-# Registry id for Candidate C; must match ``configs/recs_job_eval_retrieval.json`` methods entry.
+# Registry id for Candidate C; must match ``configs/recs_job_eval_offline.json`` methods entry.
 METHOD_FUSION_C_RAW_PLUS_BEHAVIOR = "fusion_c_raw_plus_behavior"
 
 

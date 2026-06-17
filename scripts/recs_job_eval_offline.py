@@ -1,8 +1,11 @@
-"""Run centralized offline evaluation from JSON config (retrieval + ranking contracts).
+"""Run full offline evaluation from JSON config (retrieval + ranking contracts).
 
-Writes paired `eval_retrieval_*` and `eval_ranking_*` tables, per-example
-`eval_offline_examples.jsonl`, and run metadata under the configured directory
-(default: ``artifacts/recs/offline_eval/runs/latest``).
+Entry point: ``recs_job_eval_offline`` (formerly ``recs_job_eval_retrieval``).
+Re-scores every method in config, then writes paired retrieval- and ranking-contract
+tables, per-example ``eval_offline_examples.jsonl`` (frozen pools), and run metadata
+under the configured directory (default: ``artifacts/recs/offline_eval/runs/latest``).
+
+For rank-only eval on frozen pools, use ``recs_job_eval_ranking.py`` instead.
 
 The config ``methods`` list must include **three** required baselines (contract + regression):
 

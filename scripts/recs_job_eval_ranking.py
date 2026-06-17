@@ -2,7 +2,7 @@
 
 Writes ``eval_ranking_*`` under ``runs/latest_ranking`` by default.
 ``--write-baseline`` merges ranking snapshots into the dual baseline JSON
-(shared with ``recs_job_eval_retrieval.py``).
+(shared with ``recs_job_eval_offline.py``; rank-only companion to the full offline job).
 """
 
 from __future__ import annotations

@@ -26,7 +26,8 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 |-----|---------|
 | [project_todo_plan.md](project_todo_plan.md) | Repo-wide prioritized todos + focused backlog (retrieval/ranking split, simplification, deferred notebook) |
 | [ranker_exploration_plan.md](ranker_exploration_plan.md) | **Fill-in** questionnaire + decisions for ranker / rerank next steps |
-| [plans/experiment_registry_plan.md](plans/experiment_registry_plan.md) | Implementation plan: v1 experiment registry (YAML + export script); **after** D1 eval wiring |
+| [experiment_registry.md](experiment_registry.md) | **v1 experiment inventory** + export runbook |
+| [plans/experiment_registry_plan.md](plans/experiment_registry_plan.md) | Registry implementation notes (manifest + export) |
 | [plans/recommender_v2_questionnaire.md](plans/recommender_v2_questionnaire.md) | **Fill-in** v2 decisions (IGDB hybrid) — complete before `recommender_v2_plan.md` |
 | [two_tower_pipeline_plan.md](two_tower_pipeline_plan.md) | Two-tower train + eval runbook (script-only) |
 | [archive/recommender_transition_plan.md](archive/recommender_transition_plan.md) | **Archived** v1→v2 engineering narrative |
