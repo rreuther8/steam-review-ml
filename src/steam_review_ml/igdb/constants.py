@@ -55,10 +55,47 @@ V2_CORE_FIELDS = (
 
 STEAM_JOIN_COLS = frozenset({"app_id", "app_name", "join_method", "igdb_game_id", "igdb_name"})
 
-# Artifact filenames under artifacts/recs/igdb/
-IGDB_GAMES_PARQUET = "igdb_games__raw.parquet"
+# Taxonomy FK fields resolved via entity lookup tables (Job 1 / Job 2).
+TAXONOMY_RESOLVE_FIELDS: tuple[str, ...] = (
+    "genres",
+    "themes",
+    "keywords",
+    "game_modes",
+    "player_perspectives",
+)
+
+# Game FK field -> IGDB /v4 endpoint slug (also used as lookup parquet basename).
+TAXONOMY_FIELD_ENDPOINTS: dict[str, str] = {
+    "genres": "genres",
+    "themes": "themes",
+    "keywords": "keywords",
+    "game_modes": "game_modes",
+    "player_perspectives": "player_perspectives",
+}
+
+# How Job 1 fetches each taxonomy endpoint.
+# - full: entire IGDB table (small vocab)
+# - from_games: unique IDs collected from catalog games lookup
+TAXONOMY_FETCH_SCOPE: dict[str, str] = {
+    "genres": "full",
+    "themes": "full",
+    "game_modes": "full",
+    "player_perspectives": "full",
+    "keywords": "from_games",
+}
+
+# Artifact paths under artifacts/igdb/
+IGDB_LOOKUPS_DIR = "lookups"
+IGDB_GAMES_LOOKUP_PARQUET = "lookups/games.parquet"
+IGDB_GAMES_ENRICHED_PARQUET = "igdb_games__enriched.parquet"
+IGDB_LOOKUP_META_FILENAME = "lookups/lookup_meta.json"
+
+# Backward-compatible aliases (canonical games artifact is lookups/games.parquet).
+IGDB_GAMES_PARQUET = IGDB_GAMES_LOOKUP_PARQUET
 IGDB_GAMES_FEATURES_PARQUET = "igdb_games__features.parquet"
 USE_EMBEDDING_FIELD_SUFFIX = "__use"
+TAXONOMY_NAMES_POOLED_USE_SUFFIX = "__use_pooled"
+TAXONOMY_NAMES_SUFFIX = "_names"
 
 
 def format_game_fields_query(field_names: Iterable[str]) -> str:

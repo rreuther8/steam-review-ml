@@ -1,0 +1,6 @@
+{
+  "output_dir": "artifacts/igdb",
+  "games_lookup_path": "artifacts/igdb/lookups/games.parquet",
+  "lookups_dir": "artifacts/igdb/lookups",
+  "taxonomy_fields": ["genres", "themes", "keywords", "game_modes", "player_perspectives"]
+}

@@ -14,7 +14,7 @@ import pandas as pd
 
 from steam_review_ml.igdb.client import IGDBClient
 from steam_review_ml.igdb.constants import (
-    IGDB_GAMES_PARQUET,
+    IGDB_GAMES_LOOKUP_PARQUET,
     STEAM_EXTERNAL_GAME_SOURCE,
     STEAM_JOIN_COLS,
     V2_CORE_FIELDS,
@@ -363,10 +363,12 @@ def write_igdb_artifacts(
     joined: pd.DataFrame,
     join_report: dict[str, Any],
     meta: dict[str, Any],
-    output_filename: str = IGDB_GAMES_PARQUET,
+    output_filename: str = IGDB_GAMES_LOOKUP_PARQUET,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    joined.to_parquet(output_dir / output_filename, index=False)
+    parquet_path = output_dir / output_filename
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    joined.to_parquet(parquet_path, index=False)
     (output_dir / "igdb_join_report.json").write_text(
         json.dumps(join_report, indent=2), encoding="utf-8"
     )
@@ -413,7 +415,6 @@ def fetch_and_join_igdb_games(
 
     join_report = build_join_report(
         steam_catalog=steam_catalog,
-        join_map=join_map,
         joined=joined,
         eval_app_ids=eval_app_ids,
         index_path=index_path,

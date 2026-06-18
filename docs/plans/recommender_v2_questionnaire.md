@@ -176,7 +176,7 @@ _______________________________________________
 **Cache layout (proposed):**
 
 ```text
-artifacts/recs/igdb/
+artifacts/igdb/
   igdb_games.parquet          # joined to app_id
   igdb_join_report.json       # match rate, orphans
   meta.json                   # pull date, API version

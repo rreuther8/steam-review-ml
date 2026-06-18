@@ -1,6 +1,6 @@
 # Artifact Layout
 
-This defines the standard filesystem layout under `artifacts/recs/`.
+This defines the standard filesystem layout under `artifacts/recs/` and `artifacts/igdb/`.
 
 ## Target layout
 
@@ -24,12 +24,6 @@ artifacts/recs/
     game_profile/
       default/
       structured_eval/
-  igdb/
-    igdb_games.parquet              # recs_job_igdb_games: raw join + manual mocks
-    igdb_games__features.parquet     # optional USE embeddings ({field} + {field}__use)
-    igdb_features_meta.json         # USE model + embed field list (when embed_text_fields set)
-    igdb_join_report.json           # match rates, field coverage, eval cohort join rate
-    meta.json                       # fetch config snapshot (game_fields, batch sizes)
   datasets/
     eval_queries/
       default/
@@ -42,6 +36,20 @@ artifacts/recs/
     two_stage/
   qualitative/
     user_facing/
+
+artifacts/igdb/
+  lookups/
+    games.parquet                   # Job 1: catalog-scoped games + summary__use, storyline__use
+    genres.parquet                  # id, name, name__use
+    themes.parquet
+    keywords.parquet
+    game_modes.parquet
+    player_perspectives.parquet
+    lookup_meta.json                # entity row counts, USE model, taxonomy field list
+  igdb_games__enriched.parquet      # Job 2: FK ids + {field}_names + {field}_names__use arrays + {field}_names__use_pooled
+  igdb_games_enriched_meta.json
+  igdb_join_report.json             # match rates, field coverage, eval cohort join rate
+  meta.json                         # fetch config snapshot (game_fields, batch sizes)
 ```
 
 ## Rules
@@ -56,9 +64,9 @@ artifacts/recs/
 - Cached examples stay under:
   - `artifacts/recs/eval_cache/<cache_name>/`
 - IGDB static metadata (v2 ranker features) stays under:
-  - `artifacts/recs/igdb/` (from `recs_job_igdb_games.py`)
-  - **Raw join:** `igdb_games.parquet` — API pull + `configs/igdb_steam_mock_rows.json` mocks; use for EDA (igdb_002)
-  - **Derived features (planned):** `igdb_games_features.parquet` — USE embeddings / resolved tags; do not overwrite raw join
+  - `artifacts/igdb/` (from `recs_job_igdb_games.py` + `recs_job_igdb_games_enriched.py`)
+  - **Job 1 entity lookups:** `lookups/games.parquet` (catalog join + mocks) and `lookups/{genres,themes,...}.parquet` (taxonomy id → name + `name__use`)
+  - **Job 2 enriched:** `igdb_games__enriched.parquet` — FK id columns unchanged; parallel `{field}_names` / `{field}_names__use` arrays joined by id; `{field}_names__use_pooled` = mean-pooled entity vectors per field (L2-normalized)
 - One-off exploratory outputs go under:
   - `artifacts/recs/experiments/<track>/...`
 - User-facing manual evaluation files go under:
