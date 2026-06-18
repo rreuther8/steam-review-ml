@@ -18,7 +18,7 @@ Execution plan for **v2 hybrid reranking** on frozen `two_tower_v1` pools: IGDB 
 | Rank-only rerank within frozen `two_tower_v1` @100 pools | Retrieval changes (`two_tower_v1` checkpoint frozen) |
 | IGDB metadata + summary signals | Tabular scores (`p(recommended)`, `votes_helpful`) |
 | Beat **D1** on val promotion bar | Review coaching |
-| Static IGDB cache under `artifacts/recs/igdb/` | Live IGDB API in eval loop |
+| Static IGDB cache under `artifacts/igdb/` | Live IGDB API in eval loop |
 | Method ids: `two_tower_v1_*` | ALS / CF (deferred **v2.1**) |
 | | IGDB `similar_games` graph (skipped § C3) |
 | | Separate popularity term beyond D1 |
@@ -70,7 +70,7 @@ Summarized from questionnaire — do not re-open without explicit decision log e
 ### Artifact layout
 
 ```text
-artifacts/recs/igdb/
+artifacts/igdb/
   igdb_games.parquet          # app_id + IGDB fields (summary, tag lists)
   igdb_join_report.json       # match rates, field coverage, eval cohort slice
   meta.json                   # pull timestamp, batch config
@@ -186,9 +186,9 @@ Full semantics: [`recommendation_evaluation_overview.md`](recommendation_evaluat
 
 - [x] v2 questionnaire signed off
 - [x] IGDB pipeline job + EDA notebook (`recs_job_igdb_games.py`, `igdb_001_eda_join_coverage.ipynb`)
-- [ ] Run pipeline → `artifacts/recs/igdb/igdb_games.parquet` + join report; sign off coverage in notebook
+- [ ] Run pipeline → `artifacts/igdb/igdb_games.parquet` + join report; sign off coverage in notebook
 - [ ] Review eval-cohort join rate + field coverage
-- [x] Add `artifacts/recs/igdb/` to [`artifact_layout.md`](artifact_layout.md)
+- [x] Add `artifacts/igdb/` to [`artifact_layout.md`](artifact_layout.md)
 
 ### Phase 1 — V2a-query spike
 

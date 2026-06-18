@@ -78,7 +78,7 @@ Order for closing out **v1** before **v2** (IGDB hybrid) and wrap-up:
 
 Plan: [`recommender_v2_plan.md`](recommender_v2_plan.md). Decisions: [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md) (frozen).
 
-**Supporting (not in experiment registry):** IGDB join — `python scripts/recs_job_igdb_games.py configs/recs_job_igdb_games.json` → `artifacts/recs/igdb/`; coverage EDA in [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb).
+**Supporting (not in experiment registry):** IGDB join — `python scripts/recs_job_igdb_games.py configs/recs_job_igdb_games.json` → `artifacts/igdb/`; coverage EDA in [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb).
 
 - [ ] **IGDB EDA** — run pipeline job; review `igdb_join_report.json` eval-cohort coverage in notebook
 - [ ] **V2a-query** — metadata Jaccard vs `query_app_id` on frozen pools; val vs D1

@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from steam_review_ml.igdb.constants import (
+    IGDB_GAMES_ENRICHED_PARQUET,
     IGDB_GAMES_FEATURES_PARQUET,
-    IGDB_GAMES_PARQUET,
+    IGDB_GAMES_LOOKUP_PARQUET,
+    IGDB_LOOKUP_META_FILENAME,
+    IGDB_LOOKUPS_DIR,
+    TAXONOMY_RESOLVE_FIELDS,
     resolve_game_fields,
 )
 
@@ -26,13 +30,22 @@ def _optional_repo_path(repo_root: Path, rel: str | None) -> Path | None:
     return repo_root / str(rel).strip()
 
 
-def _parse_embed_text_fields(raw: Any) -> tuple[str, ...]:
+def _parse_str_list(raw: Any, *, key: str) -> tuple[str, ...]:
     if raw is None:
         return ()
     if not isinstance(raw, list):
-        raise ValueError("embed_text_fields must be a JSON list of field names or null.")
-    fields = tuple(str(field).strip() for field in raw if str(field).strip())
-    return fields
+        raise ValueError(f"{key} must be a JSON list of field names or null.")
+    return tuple(str(field).strip() for field in raw if str(field).strip())
+
+
+def _parse_embed_text_fields(raw: Any) -> tuple[str, ...]:
+    return _parse_str_list(raw, key="embed_text_fields")
+
+
+def _parse_taxonomy_fields(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return TAXONOMY_RESOLVE_FIELDS
+    return _parse_str_list(raw, key="taxonomy_fields")
 
 
 @dataclass(frozen=True)
@@ -48,10 +61,13 @@ class IgdbGamesJobConfig:
     max_name_lookups: int = 200
     request_min_interval_s: float = 0.26
     mock_rows_path: Path | None = None
-    output_filename: str = IGDB_GAMES_PARQUET
+    output_filename: str = IGDB_GAMES_LOOKUP_PARQUET
     write_artifacts: bool = True
     skip_fetch: bool = False
     embed_text_fields: tuple[str, ...] = ()
+    taxonomy_fields: tuple[str, ...] = TAXONOMY_RESOLVE_FIELDS
+    entity_lookup_batch_size: int = 100
+    embed_taxonomy_names: bool = True
     features_output_filename: str = IGDB_GAMES_FEATURES_PARQUET
     tfhub_url: str | None = None
     game_embedding_meta_path: Path | None = None
@@ -73,10 +89,13 @@ class IgdbGamesJobConfig:
             max_name_lookups=int(cfg.get("max_name_lookups", 200)),
             request_min_interval_s=float(cfg.get("request_min_interval_s", 0.26)),
             mock_rows_path=_optional_repo_path(repo_root, cfg.get("mock_rows_path")),
-            output_filename=str(cfg.get("output_filename") or IGDB_GAMES_PARQUET).strip(),
+            output_filename=str(cfg.get("output_filename") or IGDB_GAMES_LOOKUP_PARQUET).strip(),
             write_artifacts=True,
             skip_fetch=bool(cfg.get("skip_fetch", False)),
             embed_text_fields=_parse_embed_text_fields(cfg.get("embed_text_fields")),
+            taxonomy_fields=_parse_taxonomy_fields(cfg.get("taxonomy_fields")),
+            entity_lookup_batch_size=int(cfg.get("entity_lookup_batch_size", 100)),
+            embed_taxonomy_names=bool(cfg.get("embed_taxonomy_names", True)),
             features_output_filename=str(
                 cfg.get("features_output_filename") or IGDB_GAMES_FEATURES_PARQUET
             ).strip(),
@@ -101,5 +120,51 @@ class IgdbGamesJobConfig:
     def raw_parquet_path(self) -> Path:
         return self.output_dir / self.output_filename
 
+    def games_lookup_path(self) -> Path:
+        return self.output_dir / self.output_filename
+
+    def lookups_dir(self) -> Path:
+        return self.output_dir / IGDB_LOOKUPS_DIR
+
+    def lookup_meta_path(self) -> Path:
+        return self.output_dir / IGDB_LOOKUP_META_FILENAME
+
     def features_parquet_path(self) -> Path:
         return self.output_dir / self.features_output_filename
+
+
+@dataclass(frozen=True)
+class IgdbGamesEnrichedJobConfig:
+    repo_root: Path
+    output_dir: Path
+    games_lookup_path: Path | None = None
+    lookups_dir: Path | None = None
+    taxonomy_fields: tuple[str, ...] = TAXONOMY_RESOLVE_FIELDS
+    enriched_output_filename: str = IGDB_GAMES_ENRICHED_PARQUET
+
+    @classmethod
+    def from_json(cls, repo_root: Path, cfg: dict[str, Any]) -> IgdbGamesEnrichedJobConfig:
+        output_dir = repo_root / _require_str(cfg, "output_dir")
+        games_lookup = cfg.get("games_lookup_path")
+        lookups_dir = cfg.get("lookups_dir")
+        return cls(
+            repo_root=repo_root,
+            output_dir=output_dir,
+            games_lookup_path=(
+                repo_root / str(games_lookup).strip()
+                if games_lookup and str(games_lookup).strip()
+                else output_dir / IGDB_GAMES_LOOKUP_PARQUET
+            ),
+            lookups_dir=(
+                repo_root / str(lookups_dir).strip()
+                if lookups_dir and str(lookups_dir).strip()
+                else output_dir / IGDB_LOOKUPS_DIR
+            ),
+            taxonomy_fields=_parse_taxonomy_fields(cfg.get("taxonomy_fields")),
+            enriched_output_filename=str(
+                cfg.get("enriched_output_filename") or IGDB_GAMES_ENRICHED_PARQUET
+            ).strip(),
+        )
+
+    def enriched_parquet_path(self) -> Path:
+        return self.output_dir / self.enriched_output_filename

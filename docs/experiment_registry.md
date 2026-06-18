@@ -81,7 +81,7 @@ Killed challengers — metrics from notebooks (`metrics_joined=false` in CSV). S
 
 Rank-only on frozen `two_tower_v1` pools; beat D1 on overall + slice A. See [`recommender_v2_plan.md`](recommender_v2_plan.md) and [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md).
 
-**Not in this registry:** IGDB join ([`scripts/recs_job_igdb_games.py`](../scripts/recs_job_igdb_games.py) + coverage EDA [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb)) is **supporting data work**, not a ranker experiment — no manifest row. The job pulls the **full** IGDB `/v4/games` field list into `artifacts/recs/igdb/igdb_games.parquet`; see [api-docs.igdb.com](https://api-docs.igdb.com/#game).
+**Not in this registry:** IGDB join ([`scripts/recs_job_igdb_games.py`](../scripts/recs_job_igdb_games.py) + coverage EDA [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb)) is **supporting data work**, not a ranker experiment — no manifest row. The job pulls the **full** IGDB `/v4/games` field list into `artifacts/igdb/igdb_games.parquet`; see [api-docs.igdb.com](https://api-docs.igdb.com/#game).
 
 | experiment_id | method_id (planned) | status |
 |---------------|---------------------|--------|
