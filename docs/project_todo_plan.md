@@ -71,10 +71,24 @@ Order for closing out **v1** before **v2** (IGDB hybrid) and wrap-up:
 2. **[x] Ranking model (v1 scope)** — D1 `two_tower_v1_heuristic_logpop_blend` shipped; D2–D6 killed (`ranking_decision_log`, `recs_018`).
 3. **[x] Wire D1 into combined offline eval job** — `two_tower_v1_heuristic_logpop_blend` in `configs/recs_job_eval_offline.json` `methods`; jobs run. Remaining: `--write-baseline`, regression refresh (`ranker_exploration_plan` § J1).
 4. **[x] Experiment registry** — YAML manifest + export script + `docs/experiment_registry.md`; v1 backfill, v2 placeholder rows. **Plan:** [`plans/experiment_registry_plan.md`](plans/experiment_registry_plan.md).
-5. **[x] Wrap-up** — v1 closeout documented in [`recommender_v1_wrap_up.md`](recommender_v1_wrap_up.md); next step remains [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md) → draft **`recommender_v2_plan.md`** (IGDB metadata hybrid).
+5. **[x] Wrap-up** — v1 closeout documented in [`recommender_v1_wrap_up.md`](recommender_v1_wrap_up.md); [`recommender_v2_plan.md`](recommender_v2_plan.md) drafted (IGDB metadata hybrid).
 6. **Parked:** public API / deploy — **§ Later — public API / deploy** below.
 
-**v1 (content-led retrieval) — near complete:** Shipped stack = `two_tower_v1` @100 → D1 @10. Remaining v1 gaps: v1 wrap-up doc, optional test freeze. *After v1* backlog (test freeze, fixed drafts) stays optional unless pulled forward.
+### v2 recommender — Active checklist
+
+Plan: [`recommender_v2_plan.md`](recommender_v2_plan.md). Decisions: [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md) (frozen).
+
+**Supporting (not in experiment registry):** IGDB join — `python scripts/recs_job_igdb_games.py configs/recs_job_igdb_games.json` → `artifacts/recs/igdb/`; coverage EDA in [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb).
+
+- [ ] **IGDB EDA** — run pipeline job; review `igdb_join_report.json` eval-cohort coverage in notebook
+- [ ] **V2a-query** — metadata Jaccard vs `query_app_id` on frozen pools; val vs D1
+- [ ] **V2b** — USE summary sim (`query_review` ⟷ `igdb_summary`); val vs D1
+- [ ] **V2a-history** — metadata vs train-likes union; val vs D1 / V2a-query
+- [ ] **V2c-query** — combined blend (only if singles show lift on train_tune)
+- [ ] **V2d** — primary-genre-weighted metadata (optional refinement)
+- [ ] **Ship** — wire winner into rank eval job + registry + ranking decision log (if promotion bar met)
+
+**v1 (content-led retrieval) — complete for chosen scope:** Shipped stack = `two_tower_v1` @100 → D1 @10. Optional backlog: test freeze, fixed-draft studies (*After v1* below).
 
 ### After v1 — evaluation and retrieval experiments (future backlog)
 
@@ -82,7 +96,7 @@ Order for closing out **v1** before **v2** (IGDB hybrid) and wrap-up:
 - **Fixed-draft A/B matrix** — hold **the same user drafts** fixed and compare retrieval recipes so differences reflect **modeling choices**, not which examples landed in the bucket. The **main scientific point** is to learn whether you need something that **separately accounts for negative / complaint-side signal** (vs treating the review as one positive-direction embedding only). *Example* designs include a small factorial over **raw vs structured** query text and **single-vector vs dual-channel / penalty-style** scoring (as explored in `recs_003`); the exact cells are **not** locked in advance—pick whatever contrasts best isolate “negative-handling” for your stack. **Not** required to declare v1 retrieval “done.”
 - **Stronger encoder for structured text** — e.g. rerun `recs_006` 4-way with a non-USE embedding model (same splits/seeds) to see if structured text closes the gap.
 - **Negative / complaint-side policy** — caps and balancing if you lean hard into pos/neg query channels or separate pos/neg **item** vectors (see archived transition plan negative-handling notes).
-- **v2 hybrid rerank** — IGDB summary + metadata/genre signals on frozen pools (no tabular); ALS later — see **`recommender_v2_plan.md`** (todo after v1 wrap-up) and [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md).
+- **v2 hybrid rerank** — active checklist in **§ v2 recommender — active checklist** above; plan: [`recommender_v2_plan.md`](recommender_v2_plan.md).
 
 ### Later — public API / deploy (parked)
 
@@ -101,7 +115,7 @@ Not needed for the **two-tower + ranking** modeling push; pick these up when the
 | **Recommender v1 (product retrieval path)** | **Near complete** | **`ContentRetriever.top_k`** + **`steam_review_ml.api`** (UI + endpoints); **`recs_003`** / **`recs_004`** for exploration. Remaining v1 gap is **ops** if you need production hardening, not missing retrieval core. |
 | **Recommender @K evaluation** | **Done (v1 scope)** | **Val path:** `recs_job_eval_offline.py`, `eval_retrieval_*` / `eval_ranking_*`, contract v2, decile tables, optional `retrieval_eval_regression` + `--write-baseline`. **Post–v1:** frozen **test**, fixed-draft matrix, extra experiments — see *After v1* above. |
 | **API: recommendations** | **Near complete** | **MVP shipped.** **Post–v1 / ops:** auth, abuse limits, deploy hardening for untrusted traffic. |
-| **Recommender v2 (hybrid rerank)** | Todo | Same candidates as v1; IGDB summary + metadata/genre rerank (see v2 plan). **No tabular** in v2 scope. ALS deferred until after metadata hybrid. |
+| **Recommender v2 (hybrid rerank)** | **In progress** | Rank-only on frozen pools; IGDB EDA → V2a-query → V2b → … See [`recommender_v2_plan.md`](recommender_v2_plan.md). ALS deferred v2.1. |
 
 ### Supporting — data pipeline & tabular review models
 

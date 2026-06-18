@@ -1,0 +1,24 @@
+[
+  {
+    "app_id": 431960,
+    "igdb_game_id": -431960,
+    "join_method": "manual_mock",
+    "igdb_name": "Wallpaper Engine",
+    "_note": "IGDB external_games join failed for this Steam utilities title. igdb_game_id is a negative mock sentinel. Summary/storyline from https://store.steampowered.com/app/431960/Wallpaper_Engine/ (2026-06). ID-list fields left empty — metadata Jaccard will be weak; summary available for V2b.",
+    "age_ratings": [],
+    "collections": [],
+    "franchises": [],
+    "game_engines": [],
+    "game_modes": [],
+    "game_type": 0,
+    "genres": [],
+    "involved_companies": [],
+    "keywords": [],
+    "multiplayer_modes": [],
+    "player_perspectives": [],
+    "storyline": "Use stunning live wallpapers on your desktop. Animate your own images to create new wallpapers or import videos and websites and share them on the Steam Workshop.",
+    "summary": "Wallpaper Engine enables you to use live wallpapers on your Windows desktop. Various types of animated wallpapers are supported, including 3D and 2D animations, websites, videos and even certain applications. Choose an existing wallpaper or create your own and share it on the Steam Workshop. A companion app can transfer wallpapers to Android devices.",
+    "tags": [],
+    "themes": []
+  }
+]

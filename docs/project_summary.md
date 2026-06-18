@@ -152,6 +152,7 @@ flowchart LR
 | `scripts/recs_job_build_eval_examples.py` | Cache offline eval cohorts |
 | `scripts/recs_job_eval_offline.py` | Full offline eval: re-score methods → `eval_retrieval_*` + `eval_ranking_*` + pools jsonl |
 | `scripts/recs_job_eval_ranking.py` | Rank-only eval: frozen pools → rerank vs `popularity_train` (`runs/latest_ranking`) |
+| `scripts/recs_job_igdb_games.py` | Fetch IGDB metadata + join to Steam catalog → `artifacts/recs/igdb/` |
 | `scripts/recs_migrate_artifacts_layout.py` | Move legacy artifact paths |
 
 Configs live beside each job under `configs/`.

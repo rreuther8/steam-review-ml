@@ -24,6 +24,12 @@ artifacts/recs/
     game_profile/
       default/
       structured_eval/
+  igdb/
+    igdb_games.parquet              # recs_job_igdb_games: raw join + manual mocks
+    igdb_games__features.parquet     # optional USE embeddings ({field} + {field}__use)
+    igdb_features_meta.json         # USE model + embed field list (when embed_text_fields set)
+    igdb_join_report.json           # match rates, field coverage, eval cohort join rate
+    meta.json                       # fetch config snapshot (game_fields, batch sizes)
   datasets/
     eval_queries/
       default/
@@ -49,6 +55,10 @@ artifacts/recs/
     `artifacts/recs/offline_eval/runs/<timestamp>__<run_tag>/`
 - Cached examples stay under:
   - `artifacts/recs/eval_cache/<cache_name>/`
+- IGDB static metadata (v2 ranker features) stays under:
+  - `artifacts/recs/igdb/` (from `recs_job_igdb_games.py`)
+  - **Raw join:** `igdb_games.parquet` — API pull + `configs/igdb_steam_mock_rows.json` mocks; use for EDA (igdb_002)
+  - **Derived features (planned):** `igdb_games_features.parquet` — USE embeddings / resolved tags; do not overwrite raw join
 - One-off exploratory outputs go under:
   - `artifacts/recs/experiments/<track>/...`
 - User-facing manual evaluation files go under:

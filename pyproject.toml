@@ -7,7 +7,7 @@ name = "steam-review-ml"
 version = "0.1.0"
 description = "Steam reviews ML utilities"
 requires-python = ">=3.9"
-dependencies = ["pandas", "pyarrow", "tqdm", "numpy", "scikit-learn"]
+dependencies = ["pandas", "pyarrow", "tqdm", "numpy", "scikit-learn", "requests", "python-dotenv"]
 
 [project.optional-dependencies]
 # Recommender notebooks / ContentRetriever need TensorFlow + TensorFlow Hub. Pip cannot install conda-forge builds;

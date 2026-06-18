@@ -52,7 +52,7 @@ Interpretation: v1 shipped method beats full-catalog popularity on headline rank
 
 v2 starts as rank-only work on frozen `two_tower_v1` pools:
 
-- Use `docs/plans/recommender_v2_questionnaire.md` as the decision source.
+- Use [`docs/recommender_v2_plan.md`](recommender_v2_plan.md) for execution; questionnaire remains the decision archive.
 - Use `configs/experiment_registry.yaml` for new v2 rows and status tracking.
 - Promotion bar remains: beat D1 on overall + Slice A under the same eval contract.
 
