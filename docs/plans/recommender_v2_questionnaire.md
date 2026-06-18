@@ -1,8 +1,8 @@
 # Recommender v2 — decision questionnaire
 
-Status: **fill-in** (answer here before drafting [`recommender_v2_plan.md`](../recommender_v2_plan.md))  
+Status: **frozen** (decisions copied to [`recommender_v2_plan.md`](../recommender_v2_plan.md))  
 Owner: Ryan  
-Last updated: 2026-06-14
+Last updated: 2026-06-17
 
 **Purpose:** Lock open design choices for v2 hybrid reranking (IGDB summary + metadata/genre on frozen `two_tower_v1` pools). When this doc is done, copy answers into `recommender_v2_plan.md`.
 
@@ -33,7 +33,7 @@ When scoring “games like the one you engaged with,” what is the **anchor**?
 
 - [ ] **A1 — Query game only** — anchor = `query_app_id` (game the user is reviewing in eval/product draft).
 - [ ] **A2 — Train-history genre union** — anchor metadata = union of genres/themes from user’s train likes (no single game).
-- [X] **A3 — Both as separate ablations** — V2b-query vs V2b-history as two rows in the experiment matrix.
+- [X] **A3 — Both as separate ablations** — V2a-query vs V2a-history as two rows in the experiment matrix.
 - [ ] **A4 — Other:** _______________________________________________
 
 **Product note:** At draft-submit time, is `query_app_id` always known?
@@ -42,7 +42,7 @@ When scoring “games like the one you engaged with,” what is the **anchor**?
 - [ ] Sometimes — need fallback when missing: _______________________________________________
 
 **Your answer / notes:**
-v2b-query is the query game only, and the v2b-history is the user's past games they liked.
+v2a-query is the query game only, and the v2a-history is the user's past games they liked.
 _______________________________________________
 
 ---
@@ -222,15 +222,15 @@ All rows below are **rank-only**: frozen `two_tower_v1` @100 pool → rerank @10
 
 | ID | One-line purpose | User story | What it measures | Rank signal (per pool item) | What we learn |
 |----|------------------|------------|------------------|----------------------------|---------------|
-| **V2a** | **Text bridge (official pitch)** | “Games whose *official description* matches what I wrote in my review.” | `sim(query_review, igdb_summary(candidate))` — USE dot product (§ F). | IGDB **summary** text only. **Not** the same as two-tower retrieve: retrieve already matched review-derived **player** profiles; V2a asks whether **publisher/editorial** text adds ordering signal *within* the pool. | Does official copy rerank better than D1 alone? Is summary sim **orthogonal** to review-profile similarity? |
-| **V2b-query** | **Category bridge (this game)** | “More games **like the one I’m reviewing right now** — same genres/themes.” | Metadata overlap between **anchor = `query_app_id`** and each candidate (Jaccard on genres/themes/… per § B). | Set overlap on IGDB tags for **query game** vs candidate. Answers: “similar to *this* title,” not similar to my review text. | Does **item–item metadata** from the draft’s game beat D1? Core “games in this category” mode. |
-| **V2b-history** | **Category bridge (taste history)** | “More games like the **kinds of things I’ve liked before**.” | Same overlap mechanism as V2b-query, but anchor = **union of metadata from user’s train likes** (thumbs-up history). | Set overlap vs **aggregated taste profile** — broader than one game. | Does **history-shaped** metadata help vs single-game anchor? More personalized than V2b-query. |
-| **V2c** | **Combined text + category** | “Match my review *and* stay in the right genre bucket.” | Linear blend (weights TBD on train_tune) of **V2a summary sim** + **V2b** metadata term(s), on top of or alongside D1 components per § D ablation. | Both summary sim and metadata overlap. | Do the two modes **complement** each other, or does one dominate? Likely the main **ship candidate** if singles show lift. |
-| **V2d** | **Coarse genre emphasis** | “Especially more **same primary genre** — RPG people get RPGs.” | Like V2b, but score weights **primary genre** (highest-weight or first genre) more than themes/keywords. | Genre-heavy overlap — stricter “same aisle” prior. | Is **coarse genre** enough, or do themes/keywords matter (compare to full V2b)? |
+| **V2a-query** | **Category bridge (this game)** | “More games **like the one I’m reviewing right now** — same genres/themes.” | Metadata overlap between **anchor = `query_app_id`** and each candidate (Jaccard on genres/themes/… per § B). | Set overlap on IGDB tags for **query game** vs candidate. Answers: “similar to *this* title,” not similar to my review text. | Does **item–item metadata** from the draft’s game beat D1? Core “games in this category” mode. |
+| **V2a-history** | **Category bridge (taste history)** | “More games like the **kinds of things I’ve liked before**.” | Same overlap mechanism as V2a-query, but anchor = **union of metadata from user’s train likes** (thumbs-up history). | Set overlap vs **aggregated taste profile** — broader than one game. | Does **history-shaped** metadata help vs single-game anchor? More personalized than V2a-query. |
+| **V2b** | **Text bridge (official pitch)** | “Games whose *official description* matches what I wrote in my review.” | `sim(query_review, igdb_summary(candidate))` — USE dot product (§ F). | IGDB **summary** text only. **Not** the same as two-tower retrieve: retrieve already matched review-derived **player** profiles; V2b asks whether **publisher/editorial** text adds ordering signal *within* the pool. | Does official copy rerank better than D1 alone? Is summary sim **orthogonal** to review-profile similarity? |
+| **V2c** | **Combined text + category** | “Match my review *and* stay in the right genre bucket.” | Linear blend (weights TBD on train_tune) of **V2b summary sim** + **V2a** metadata term(s), on top of or alongside D1 components per § D ablation. | Both summary sim and metadata overlap. | Do the two modes **complement** each other, or does one dominate? Likely the main **ship candidate** if singles show lift. |
+| **V2d** | **Coarse genre emphasis** | “Especially more **same primary genre** — RPG people get RPGs.” | Like V2a, but score weights **primary genre** (highest-weight or first genre) more than themes/keywords. | Genre-heavy overlap — stricter “same aisle” prior. | Is **coarse genre** enough, or do themes/keywords matter (compare to full V2a)? |
 | **V2-IGDB-sim** | *(optional / likely out)* | “IGDB’s editorial similar-games list.” | Binary or rank: candidate in anchor’s IGDB `similar_games`. | Third-party graph — **skipped per § C3** unless EDA changes your mind. | N/A unless reopened in v2.1. |
 | **V2-CF** | *(deferred)* | “Players like you also liked…” | ALS / co-occurrence on interaction matrix. | Behavioral, not metadata. | **v2.1** — after metadata hybrid is characterized. |
 
-**Yes — V2a is a similarity reranker**, but only on **summary text** inside the pool. **V2b-query** is “games similar to **the game you’re reviewing**” via **metadata tags**, not review embedding. **V2b-history** is “games similar to **your past likes**” via the same tag machinery, different anchor.
+**Yes — V2b is a similarity reranker**, but only on **summary text** inside the pool. **V2a-query** is “games similar to **the game you’re reviewing**” via **metadata tags**, not review embedding. **V2a-history** is “games similar to **your past likes**” via the same tag machinery, different anchor.
 
 **Not in this matrix (handled in § D ablation):** variants **with vs without** D1’s explicit pop/retr blend — e.g. `summary_only` vs `d1_plus_summary`. Those are **weighting ablations** on the same signals, not separate scientific questions. Name them as sub-rows or suffixes (`_no_pop`, `_plus_d1`) when you spike.
 
@@ -240,27 +240,27 @@ All rows below are **rank-only**: frozen `two_tower_v1` @100 pool → rerank @10
 
 | ID | What | In matrix? |
 |----|------|------------|
-| **V2a** | Summary sim only (`review` ⟷ `igdb_summary`) | [X] |
-| **V2b-query** | Metadata overlap vs **query game** anchor (§ A3) | [X] |
-| **V2b-history** | Metadata overlap vs **train-likes** anchor (§ A3) | [X] |
-| **V2c** | Summary + metadata combined (specify which V2b anchor in notes) | [X] |
-| **V2d** | Primary-genre-weighted metadata (vs full V2b) | [X] |
+| **V2a-query** | Metadata overlap vs **query game** anchor (§ A3) | [X] |
+| **V2a-history** | Metadata overlap vs **train-likes** anchor (§ A3) | [X] |
+| **V2b** | Summary sim only (`review` ⟷ `igdb_summary`) | [X] |
+| **V2c** | Summary + metadata combined (specify which V2a anchor in notes) | [X] |
+| **V2d** | Primary-genre-weighted metadata (vs full V2a) | [X] |
 | **V2-IGDB-sim** | IGDB `similar_games` graph — **skipped** (§ C3) | [ ] |
 | **V2-CF** | ALS / co-occurrence | [X] deferred |
 
 **Suggested spike order (after IGDB EDA):**
 
-1. **V2b-query** — cheapest signal, clearest “similar to this game” story; needs join + tags only (no summary embed).
-2. **V2a** — summary embed + dot product; tests text bridge.
-3. **V2b-history** — needs train-history metadata aggregation.
-4. **V2c** — only if at least one of V2a / V2b-query shows lift on train_tune.
-5. **V2d** — optional refinement if V2b-query works but feels too broad.
+1. **V2a-query** — cheapest signal, clearest “similar to this game” story; needs join + tags only (no summary embed).
+2. **V2b** — summary embed + dot product; tests text bridge.
+3. **V2a-history** — needs train-history metadata aggregation.
+4. **V2c** — only if at least one of V2b / V2a-query shows lift on train_tune.
+5. **V2d** — optional refinement if V2a-query works but feels too broad.
 
-**Confirmed matrix (2026-06-14):** V2a, V2b-query, V2b-history, V2c, V2d **in**; V2-IGDB-sim **out**; V2-CF **registry row deferred** (v2.1, not v2 spikes).
+**Confirmed matrix (2026-06-14):** V2a-query, V2a-history, V2b, V2c, V2d **in**; V2-IGDB-sim **out**; V2-CF **registry row deferred** (v2.1, not v2 spikes).
 
-**V2c anchor (default until EDA/spikes say otherwise):** two combined cells — **`V2c-query`** (summary + V2b-query) and **`V2c-history`** (summary + V2b-history). Spike V2c-query first (aligns with V2b-query → V2a order).
+**V2c anchor (default until EDA/spikes say otherwise):** two combined cells — **`V2c-query`** (V2b summary + V2a-query) and **`V2c-history`** (V2b summary + V2a-history). Spike V2c-query first (aligns with V2a-query → V2b order).
 
-**Spike order adopted:** § J list above (V2b-query → V2a → V2b-history → V2c* → V2d).
+**Spike order adopted:** § J list above (V2a-query → V2b → V2a-history → V2c* → V2d).
 
 ---
 
@@ -286,7 +286,8 @@ Use this section for back-and-forth notes as you fill in A–K.
 | Date | Topic | Note |
 |------|-------|------|
 | 2026-06-14 | Created | Answer A, D, G first — highest leverage for plan doc. |
-| 2026-06-14 | § J matrix | Confirmed: V2a, V2b-query/history, V2c (split query+history), V2d in; IGDB-sim out; CF deferred v2.1. |
+| 2026-06-14 | § J matrix | Confirmed: V2a-query/history, V2b, V2c (split query+history), V2d in; IGDB-sim out; CF deferred v2.1. |
+| 2026-06-17 | § J naming | Flipped V2a/V2b labels so letter order matches spike order (V2a = metadata, V2b = summary). |
 
 ---
 

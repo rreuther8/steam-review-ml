@@ -28,7 +28,8 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 | [ranker_exploration_plan.md](ranker_exploration_plan.md) | **Fill-in** questionnaire + decisions for ranker / rerank next steps |
 | [experiment_registry.md](experiment_registry.md) | **v1 experiment inventory** + export runbook |
 | [plans/experiment_registry_plan.md](plans/experiment_registry_plan.md) | Registry implementation notes (manifest + export) |
-| [plans/recommender_v2_questionnaire.md](plans/recommender_v2_questionnaire.md) | **Fill-in** v2 decisions (IGDB hybrid) — complete before `recommender_v2_plan.md` |
+| [plans/recommender_v2_questionnaire.md](plans/recommender_v2_questionnaire.md) | Frozen v2 decisions (IGDB hybrid) — input to plan |
+| [recommender_v2_plan.md](recommender_v2_plan.md) | **Active** v2 execution plan (spike order, eval, promotion bar) |
 | [two_tower_pipeline_plan.md](two_tower_pipeline_plan.md) | Two-tower train + eval runbook (script-only) |
 | [archive/recommender_transition_plan.md](archive/recommender_transition_plan.md) | **Archived** v1→v2 engineering narrative |
 

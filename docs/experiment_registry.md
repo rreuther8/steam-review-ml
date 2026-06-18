@@ -1,7 +1,7 @@
 # Experiment registry
 
 Status: active  
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 
 Single inventory of retrieval/ranking experiments: **what** was tried, **status**, **where evidence lives**, and (for eval-job-wired methods) **latest val metrics** on the frozen cohort.
 
@@ -79,13 +79,15 @@ Killed challengers — metrics from notebooks (`metrics_joined=false` in CSV). S
 
 ## v2 placeholders (planned)
 
-Rank-only on frozen `two_tower_v1` pools; beat D1 on overall + slice A. See [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md).
+Rank-only on frozen `two_tower_v1` pools; beat D1 on overall + slice A. See [`recommender_v2_plan.md`](recommender_v2_plan.md) and [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md).
+
+**Not in this registry:** IGDB join ([`scripts/recs_job_igdb_games.py`](../scripts/recs_job_igdb_games.py) + coverage EDA [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb)) is **supporting data work**, not a ranker experiment — no manifest row. The job pulls the **full** IGDB `/v4/games` field list into `artifacts/recs/igdb/igdb_games.parquet`; see [api-docs.igdb.com](https://api-docs.igdb.com/#game).
 
 | experiment_id | method_id (planned) | status |
 |---------------|---------------------|--------|
-| `v2_rank_v2b_query_metadata` | `two_tower_v1_v2b_query_metadata` | planned (spike first) |
-| `v2_rank_v2a_igdb_summary` | `two_tower_v1_v2a_igdb_summary` | planned |
-| `v2_rank_v2b_history_metadata` | `two_tower_v1_v2b_history_metadata` | planned |
+| `v2_rank_v2a_query_metadata` | `two_tower_v1_v2a_query_metadata` | planned (spike first) |
+| `v2_rank_v2b_igdb_summary` | `two_tower_v1_v2b_igdb_summary` | planned |
+| `v2_rank_v2a_history_metadata` | `two_tower_v1_v2a_history_metadata` | planned |
 | `v2_rank_v2c_query_combined` | `two_tower_v1_v2c_query_summary_metadata` | planned |
 | `v2_rank_v2d_primary_genre` | `two_tower_v1_v2d_primary_genre_metadata` | planned |
 | `v2_cf_als_deferred` | `two_tower_v1_cf_als` | deferred (v2.1) |

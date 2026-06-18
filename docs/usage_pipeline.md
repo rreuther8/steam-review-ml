@@ -163,6 +163,7 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 1. `python scripts/recs_job_game_profiles.py configs/recs_job_game_profiles.json`
 2. `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings.json`
 3. (Optional structured index) `python scripts/recs_job_game_embeddings.py configs/recs_job_game_embeddings_structured.json`
+4. (v2 metadata) `python scripts/recs_job_igdb_games.py configs/recs_job_igdb_games.json` — requires `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` in repo-root `.env` (gitignored) when `skip_fetch` is false. Config **must** set `output_dir`; raw parquet defaults to `IGDB_GAMES_PARQUET` in [`constants.py`](../src/steam_review_ml/igdb/constants.py). Optional `embed_text_fields` (default `["summary", "storyline"]`) writes `IGDB_GAMES_FEATURES_PARQUET` with original text columns plus `{field}__use` L2-normalized USE vectors (same TF Hub model as v1 game embeddings unless `tfhub_url` is set). Set `skip_fetch: true` to re-embed from existing raw parquet without calling IGDB. Also writes `igdb_join_report.json`, `meta.json` (fetch), and `igdb_features_meta.json` (embed). EDA: join coverage [`igdb_001`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb), per-field profiles [`igdb_002`](../notebooks/igdb/igdb_002_eda_game_review.ipynb).
 
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 

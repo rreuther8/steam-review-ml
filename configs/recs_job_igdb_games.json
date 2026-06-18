@@ -1,0 +1,14 @@
+{
+  "game_index_path": "artifacts/recs/embeddings/game_profile/default/game_profile_embedding_index.parquet",
+  "eval_parquet_path": "artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet",
+  "output_dir": "artifacts/recs/igdb",
+  "game_fields_preset": "pipeline",
+  "game_fields": null,
+  "mock_rows_path": "configs/igdb_steam_mock_rows.json",
+  "embed_text_fields": ["summary", "storyline"],
+  "skip_fetch": false,
+  "external_batch_size": 500,
+  "game_detail_batch_size": 50,
+  "max_name_lookups": 200,
+  "request_min_interval_s": 0.26
+}
