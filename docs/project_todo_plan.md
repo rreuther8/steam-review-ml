@@ -69,7 +69,7 @@ Order for closing out **v1** before **v2** (IGDB hybrid) and wrap-up:
 
 1. **[x] Two-tower retrieval** — `two_tower_v1` shipped as retrieve mechanism (`retrieval_decision_log` § 2026-05-30).
 2. **[x] Ranking model (v1 scope)** — D1 `two_tower_v1_heuristic_logpop_blend` shipped; D2–D6 killed (`ranking_decision_log`, `recs_018`).
-3. **[x] Wire D1 into combined offline eval job** — `two_tower_v1_heuristic_logpop_blend` in `configs/recs_job_eval_offline.json` `methods`; jobs run. Remaining: `--write-baseline`, regression refresh (`ranker_exploration_plan` § J1).
+3. **[x] Wire rankers into eval jobs** — v2a `two_tower_v1_v2a_embed_query_logpop_blend` + D1 benchmark in `recs_job_eval_offline.json` / `recs_job_eval_ranking.json`. Remaining: `--write-baseline`, regression refresh.
 4. **[x] Experiment registry** — YAML manifest + export script + `docs/experiment_registry.md`; v1 backfill, v2 placeholder rows. **Plan:** [`plans/experiment_registry_plan.md`](plans/experiment_registry_plan.md).
 5. **[x] Wrap-up** — v1 closeout documented in [`recommender_v1_wrap_up.md`](recommender_v1_wrap_up.md); [`recommender_v2_plan.md`](recommender_v2_plan.md) drafted (IGDB metadata hybrid).
 6. **Parked:** public API / deploy — **§ Later — public API / deploy** below.
@@ -80,13 +80,14 @@ Plan: [`recommender_v2_plan.md`](recommender_v2_plan.md). Decisions: [`plans/rec
 
 **Supporting (not in experiment registry):** IGDB join — `python scripts/recs_job_igdb_games.py configs/recs_job_igdb_games.json` → `artifacts/igdb/`; coverage EDA in [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb).
 
-- [ ] **IGDB EDA** — run pipeline job; review `igdb_join_report.json` eval-cohort coverage in notebook
-- [ ] **V2a-query** — metadata Jaccard vs `query_app_id` on frozen pools; val vs D1
-- [ ] **V2b** — USE summary sim (`query_review` ⟷ `igdb_summary`); val vs D1
-- [ ] **V2a-history** — metadata vs train-likes union; val vs D1 / V2a-query
+- [x] **IGDB EDA** — pipeline job run; enriched parquet + coverage EDA
+- [x] **V2a-query (Jaccard)** — `recs_019`; pure retr+meta killed; logpop_blend candidate (`recs_021` head-to-head)
+- [x] **V2a-embed (USE taxonomy)** — `recs_020`; **`two_tower_v1_v2a_embed_query_logpop_blend` shipped** (`ranking_decision_log` § 2026-06-22)
+- [ ] **V2b** — USE summary sim (`query_review` ⟷ `igdb_summary`); val vs v2a / D1
+- [ ] **V2a-history** — metadata vs train-likes union; val vs v2a / D1
 - [ ] **V2c-query** — combined blend (only if singles show lift on train_tune)
 - [ ] **V2d** — primary-genre-weighted metadata (optional refinement)
-- [ ] **Ship** — wire winner into rank eval job + registry + ranking decision log (if promotion bar met)
+- [x] **Ship v2a** — wired into rank eval jobs + registry + ranking decision log
 
 **v1 (content-led retrieval) — complete for chosen scope:** Shipped stack = `two_tower_v1` @100 → D1 @10. Optional backlog: test freeze, fixed-draft studies (*After v1* below).
 

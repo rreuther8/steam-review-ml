@@ -84,7 +84,12 @@ def _ranking_metrics_from_pool(
         ranked_indices = retrieved_indices[order[:k_final]]
     else:
         blend = rerank_scores_on_pool(
-            pool_apps, retr_scores, spec, pop_row=pop_row, app_to_row=app_to_row
+            pool_apps,
+            retr_scores,
+            spec,
+            pop_row=pop_row,
+            app_to_row=app_to_row,
+            query_app_id=int(row["query_app_id"]),
         )
         order = np.argsort(-np.asarray(blend, dtype=np.float64))
         ranked_indices = retrieved_indices[order[:k_final]]
@@ -132,7 +137,12 @@ def _make_frozen_pool_score_fn(
         row = pools_by_ex[ex_idx]
         pool_apps, retr_scores, _ = _parse_pool_row(row)
         blend = rerank_scores_on_pool(
-            pool_apps, retr_scores, spec, pop_row=pop_row, app_to_row=app_to_row
+            pool_apps,
+            retr_scores,
+            spec,
+            pop_row=pop_row,
+            app_to_row=app_to_row,
+            query_app_id=int(ex["query_app_id"]),
         )
         retrieved_indices = _catalog_indices_for_pool(pool_apps, app_ids=app_ids, app_to_row=app_to_row)
         full = np.full(len(app_ids), -np.inf, dtype=np.float64)

@@ -1,9 +1,11 @@
 # Recommender v1 Wrap-Up
 
-Status: complete  
+Status: complete (ranking superseded by v2a — see [`ranking_decision_log.md`](ranking_decision_log.md) § 2026-06-22)  
 Date: 2026-06-16
 
 This document closes v1 for the chosen scope: content-led retrieval with a practical ranker, evaluated on the frozen `val_dev_12k_v1` cohort.
+
+> **Ranking update:** v1 shipped D1; v2a `two_tower_v1_v2a_embed_query_logpop_blend` is now the production ranker. D1 remains a benchmark in eval jobs.
 
 ## Scope closed in v1
 

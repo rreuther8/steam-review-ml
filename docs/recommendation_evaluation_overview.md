@@ -152,7 +152,7 @@ Two jobs share the same **eval contract** (slices, metrics, cutoffs) but differ 
 | **Re-scores retrieval?** | **Yes** — full catalog per method | **No** — reads frozen pools jsonl |
 | **Output dir** | `artifacts/recs/offline_eval/runs/latest/` | `artifacts/recs/offline_eval/runs/latest_ranking/` |
 | **Tables written** | `eval_retrieval_*` **and** `eval_ranking_*`, plus `eval_offline_examples.jsonl`, `eval_offline_run_meta.json` | `eval_ranking_*` only |
-| **Typical `methods` config** | `methods`: catalog scorers + pool rerankers (e.g. `raw`, `two_tower_v1`, `two_tower_v1_heuristic_logpop_blend`) | `pool_methods`, `ranker_methods`, `catalog_methods` |
+| **Typical `methods` config** | `methods`: catalog scorers + pool rerankers (e.g. `raw`, `two_tower_v1`, `two_tower_v1_v2a_embed_query_logpop_blend`, `two_tower_v1_heuristic_logpop_blend`) | `pool_methods`, `ranker_methods`, `catalog_methods` |
 | **When to run** | Retrieval benchmarks, method comparison @100, export frozen pools, full-stack tables in one place | Fast ranker iteration; **gating** comparison (D1 vs bare pool vs `popularity_train`) |
 | **Viewer notebook** | `notebooks/retrieval/recs_011_view_offline_eval.ipynb` | `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` |
 

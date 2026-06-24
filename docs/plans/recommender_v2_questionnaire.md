@@ -2,7 +2,9 @@
 
 Status: **frozen** (decisions copied to [`recommender_v2_plan.md`](../recommender_v2_plan.md))  
 Owner: Ryan  
-Last updated: 2026-06-17
+Last updated: 2026-06-22
+
+> **Update (2026-06-22):** v2a shipped as `two_tower_v1_v2a_embed_query_logpop_blend`. Questionnaire decisions below remain the design record; promotion bar for new spikes is now “beat v2a.”
 
 **Purpose:** Lock open design choices for v2 hybrid reranking (IGDB summary + metadata/genre on frozen `two_tower_v1` pools). When this doc is done, copy answers into `recommender_v2_plan.md`.
 

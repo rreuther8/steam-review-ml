@@ -132,7 +132,7 @@ flowchart LR
 |------|--------|-------|
 | **Primary — recommendations** | v1 near complete | Game index, raw-default retrieval, val eval contract, dev API |
 | **Supporting — tabular** | Baselines done | `recommended` classification, `votes_helpful` regression; feeds analysis and future v2 features |
-| **Next — two-tower + ranker** | Heuristic ranker shipped | `two_tower_v1` pools + D1 log-pop rerank beats `popularity_train` on ranking contract (`runs/latest_ranking`); D2–D4 learned rankers in progress |
+| **Next — two-tower + ranker** | **v2a ranker shipped** | `two_tower_v1` @100 → `two_tower_v1_v2a_embed_query_logpop_blend` @10 beats D1 and `popularity_train` on ranking contract (`runs/latest_ranking`) |
 
 **Default retrieval:** raw review text embeddings beat structured preference rewrites on validation proxy tasks (`recs_004`, `recs_006`). Structured path remains an explicit ablation.
 
@@ -168,7 +168,7 @@ Configs live beside each job under `configs/`.
 | **Game index** | `recs_001`, `recs_002`, `recs_005` | Profiles, raw vs structured game vectors |
 | **Query / representation** | `recs_003`–`007`, `recs_004_*` | Smoke retrieval, same-user proxy, 4-way ablation, qual |
 | **Retrieval orchestration** | `recs_008`–`012`, `recs_011` (retrieval) | History blend, pipeline parity, two-tower comparison, training-row explore |
-| **Ranking** | `recs_011` (viewer), `recs_013`–`015` | View `latest_ranking` eval; heuristic + learned ranker head-to-head |
+| **Ranking** | `recs_011` (viewer), `recs_013`–`recs_021` | View `latest_ranking` eval; v2a metadata ranker spikes + head-to-head |
 
 Metric definitions: [`retrieval_metrics_guide.md`](retrieval_metrics_guide.md). Eval contract and notebook map: [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md).
 
@@ -216,10 +216,10 @@ python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --wri
 
 ## Current focus (June 2026)
 
-1. **Learned rankers (D2–D4)** — beat `two_tower_v1_heuristic_logpop_blend` on `runs/latest_ranking`; see [`ranker_exploration_plan.md`](ranker_exploration_plan.md).
+1. **V2b summary similarity** — next ranker spike on frozen pools; beat shipped v2a or kill (`recommender_v2_plan.md`).
 2. **Two-tower retrieval** — improve pool oracle ceiling (ranker already beats popularity despite lower oracle). Runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
-3. **Wrap-up** — refresh retrieval regression baseline (oracle metrics), stabilize method IDs.
+3. **Eval housekeeping** — refresh baseline (`--write-baseline`), re-export experiment registry after eval runs.
 
-**Headline result (ranking gate):** `two_tower_v1_heuristic_logpop_blend` beats `popularity_train` on NDCG@10 and Hit@10 overall and on Slice A — viewer: [`recs_011_view_offline_ranking_eval.ipynb`](../notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb).
+**Headline result (ranking gate):** `two_tower_v1_v2a_embed_query_logpop_blend` beats D1 and `popularity_train` on NDCG@10 overall and Slice A — viewer: [`recs_011_view_offline_ranking_eval.ipynb`](../notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb).
 
 Parked until API leaves trusted/local use: auth, rate limits, deploy hardening.

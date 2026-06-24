@@ -17,7 +17,7 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 |-----|---------|
 | [retrieval_metrics_guide.md](retrieval_metrics_guide.md) | Metric definitions used in notebooks and jobs |
 | [retrieval_decision_log.md](retrieval_decision_log.md) | Retrieval decision trail |
-| [ranking_decision_log.md](ranking_decision_log.md) | Ranking ship/kill/defer trail (D1–D5) |
+| [ranking_decision_log.md](ranking_decision_log.md) | Ranking ship/kill/defer trail (D1, v2a, D2–D6) |
 | [retrieval_embedding_matrices_graph.md](retrieval_embedding_matrices_graph.md) | Embedding matrix relationships |
 
 ## Planning / roadmap
@@ -29,6 +29,7 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 | [experiment_registry.md](experiment_registry.md) | **v1 experiment inventory** + export runbook |
 | [plans/experiment_registry_plan.md](plans/experiment_registry_plan.md) | Registry implementation notes (manifest + export) |
 | [plans/recommender_v2_questionnaire.md](plans/recommender_v2_questionnaire.md) | Frozen v2 decisions (IGDB hybrid) — input to plan |
+| [plans/ideal_state_roadmap.md](plans/ideal_state_roadmap.md) | Portfolio ideal state — tiers, checklist, hiring-signal gaps |
 | [recommender_v2_plan.md](recommender_v2_plan.md) | **Active** v2 execution plan (spike order, eval, promotion bar) |
 | [two_tower_pipeline_plan.md](two_tower_pipeline_plan.md) | Two-tower train + eval runbook (script-only) |
 | [archive/recommender_transition_plan.md](archive/recommender_transition_plan.md) | **Archived** v1→v2 engineering narrative |

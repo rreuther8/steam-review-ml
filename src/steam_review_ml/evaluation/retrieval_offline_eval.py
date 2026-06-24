@@ -701,6 +701,7 @@ def _make_pool_rerank_score_fn(
             spec,
             pop_row=pop_row,
             app_to_row=app_to_row,
+            query_app_id=int(ex["query_app_id"]),
         )
         full = np.full(len(app_ids), -np.inf, dtype=np.float64)
         for idx, score_val in zip(retrieved_indices, reranked):
@@ -754,6 +755,7 @@ def _per_example_retrieval_with_pool_rerank(
             spec,
             pop_row=pop_row,
             app_to_row=app_to_row,
+            query_app_id=int(ex["query_app_id"]),
         )
         rerank_order = np.argsort(-np.asarray(rerank_scores, dtype=np.float64))
         ranked_indices = retrieved_indices[rerank_order[:k_final]]

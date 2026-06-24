@@ -225,6 +225,20 @@ experiments:
     decision_log_ref: docs/ranking_decision_log.md
     notes: Rank-only second bi-encoder spike; killed with D6a.
 
+  - experiment_id: v2_rank_v2a_embed_query_logpop_blend
+    method_id: two_tower_v1_v2a_embed_query_logpop_blend
+    stage: ranking
+    phase: v2
+    status: shipped
+    eval_job_wired: true
+    metrics_source: offline_eval
+    metrics_table: eval_ranking_overall
+    eval_run_dir: artifacts/recs/offline_eval/runs/latest
+    pool_contract: two_tower_v1@100_rerank
+    notebook: notebooks/ranking/recs_021_v2a_logpop_blend_head_to_head.ipynb
+    decision_log_ref: docs/ranking_decision_log.md#2026-06-22-v2a-shipped--two_tower_v1_v2a_embed_query_logpop_blend-beats-d1
+    notes: Shipped ranker v2a; w_meta=0.1 pooled USE genre_theme_kw query anchor.
+
   # --- v2 placeholders (rank-only on frozen two_tower_v1 pools) ---
   - experiment_id: v2_rank_v2a_query_metadata
     method_id: two_tower_v1_v2a_query_metadata
