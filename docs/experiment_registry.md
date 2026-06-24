@@ -1,7 +1,7 @@
 # Experiment registry
 
 Status: active  
-Last updated: 2026-06-17
+Last updated: 2026-06-22
 
 Single inventory of retrieval/ranking experiments: **what** was tried, **status**, **where evidence lives**, and (for eval-job-wired methods) **latest val metrics** on the frozen cohort.
 
@@ -35,18 +35,23 @@ Full job semantics: [`recommendation_evaluation_overview.md`](recommendation_eva
 
 ---
 
-## Shipped v1 stack
+## Shipped stack
 
 ```text
-two_tower_v1 @100  →  two_tower_v1_heuristic_logpop_blend @10
+two_tower_v1 @100  →  two_tower_v1_v2a_embed_query_logpop_blend @10
 ```
 
 | Stage | method_id | Hit@K | NDCG@K | Notes |
 |-------|-----------|------:|-------:|-------|
 | Retrieve | `two_tower_v1` | 0.512 | — | Recall@100 = 0.494 |
-| Rank | `two_tower_v1_heuristic_logpop_blend` | 0.193 | **0.093** | Shipped D1 (alpha=0.2 log-pop within pool) |
+| Rank (shipped) | `two_tower_v1_v2a_embed_query_logpop_blend` | **0.196** | **0.095** | v2a: D1 + taxonomy USE (`w_meta=0.1`, query anchor) |
+| Rank (benchmark) | `two_tower_v1_heuristic_logpop_blend` | 0.193 | 0.093 | D1 (alpha=0.2 log-pop within pool) |
 
 Gating baseline (rank-only job): `popularity_train` NDCG@10 = 0.073.
+
+Slice A NDCG@10: v2a **0.070**, D1 **0.068**, popularity **0.035**.
+
+Evidence: [`ranking_decision_log.md`](ranking_decision_log.md) § 2026-06-22; notebooks `recs_020`, `recs_021`.
 
 ---
 
@@ -68,7 +73,7 @@ Killed challengers — metrics from notebooks (`metrics_joined=false` in CSV). S
 
 | experiment_id | Val NDCG@10 (notebook) | status |
 |---------------|------------------------:|--------|
-| `v1_rank_d1_heuristic_logpop` | **0.093** | **shipped** |
+| `v1_rank_d1_heuristic_logpop` | **0.093** | benchmark (superseded by v2a) |
 | `v1_rank_d4_ce_blend` | ~0.091 | killed |
 | `v1_rank_d2_pointwise` | ~0.089 | killed |
 | `v1_rank_d3_listwise` | ~0.085 | killed |
@@ -77,22 +82,21 @@ Killed challengers — metrics from notebooks (`metrics_joined=false` in CSV). S
 
 ---
 
-## v2 placeholders (planned)
+## v2 ranker experiments
 
-Rank-only on frozen `two_tower_v1` pools; beat D1 on overall + slice A. See [`recommender_v2_plan.md`](recommender_v2_plan.md) and [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md).
-
-**Not in this registry:** IGDB join ([`scripts/recs_job_igdb_games.py`](../scripts/recs_job_igdb_games.py) + coverage EDA [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb)) is **supporting data work**, not a ranker experiment — no manifest row. The job pulls the **full** IGDB `/v4/games` field list into `artifacts/igdb/igdb_games.parquet`; see [api-docs.igdb.com](https://api-docs.igdb.com/#game).
-
-| experiment_id | method_id (planned) | status |
-|---------------|---------------------|--------|
-| `v2_rank_v2a_query_metadata` | `two_tower_v1_v2a_query_metadata` | planned (spike first) |
+| experiment_id | method_id | status |
+|---------------|-----------|--------|
+| `v2_rank_v2a_embed_query_logpop_blend` | `two_tower_v1_v2a_embed_query_logpop_blend` | **shipped** |
+| `v2_rank_v2a_query_metadata` | `two_tower_v1_v2a_query_metadata` | killed (pure retr+meta) |
 | `v2_rank_v2b_igdb_summary` | `two_tower_v1_v2b_igdb_summary` | planned |
 | `v2_rank_v2a_history_metadata` | `two_tower_v1_v2a_history_metadata` | planned |
 | `v2_rank_v2c_query_combined` | `two_tower_v1_v2c_query_summary_metadata` | planned |
 | `v2_rank_v2d_primary_genre` | `two_tower_v1_v2d_primary_genre_metadata` | planned |
 | `v2_cf_als_deferred` | `two_tower_v1_cf_als` | deferred (v2.1) |
 
-When a v2 method is wired into eval jobs, set `eval_job_wired: true` in the YAML and re-export.
+See [`recommender_v2_plan.md`](recommender_v2_plan.md) and [`plans/recommender_v2_questionnaire.md`](plans/recommender_v2_questionnaire.md).
+
+**Not in this registry:** IGDB join ([`scripts/recs_job_igdb_games.py`](../scripts/recs_job_igdb_games.py) + coverage EDA [`notebooks/igdb/igdb_001_eda_join_coverage.ipynb`](../notebooks/igdb/igdb_001_eda_join_coverage.ipynb)) is **supporting data work**, not a ranker experiment — no manifest row.
 
 ---
 

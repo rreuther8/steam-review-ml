@@ -174,7 +174,7 @@ Run these jobs independently so profile rebuilds and embedding rebuilds can be s
 
 - Notebook: `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb`
 
-**Full offline eval job (`recs_job_eval_offline`)** — re-scores methods end-to-end; writes paired retrieval- and ranking-contract tables plus frozen pools jsonl. Default methods include `raw`, `popularity_train`, `multi_mean_train`, **`fusion_c_raw_plus_behavior`**, `two_tower_v1`, and shipped D1. See [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) § Offline eval jobs for contrast with rank-only `recs_job_eval_ranking`.
+**Full offline eval job (`recs_job_eval_offline`)** — re-scores methods end-to-end; writes paired retrieval- and ranking-contract tables plus frozen pools jsonl. Default methods include `raw`, `popularity_train`, `multi_mean_train`, **`fusion_c_raw_plus_behavior`**, `two_tower_v1`, shipped **v2a** `two_tower_v1_v2a_embed_query_logpop_blend`, and D1 benchmark. See [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) § Offline eval jobs for contrast with rank-only `recs_job_eval_ranking`.
 
 - **Slices, metric priorities, K semantics:** [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) (eval contract v2 + notebook map + cached-examples runbook).
 - Job: `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json`

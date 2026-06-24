@@ -18,15 +18,16 @@ and integration from modeling notebooks to API behavior.
 
 ### Ranking stage (primary gate) — `latest_ranking`
 
-Frozen **val dev cohort** (`n_examples = 12500`, [`artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`](artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet)). **Ranking** metrics at **K = 10** from [`recs_job_eval_ranking.py`](scripts/recs_job_eval_ranking.py) → viewer [`recs_011_view_offline_ranking_eval.ipynb`](notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb). Compares **`two_tower_v1_heuristic_logpop_blend`** (two-tower pool + D1 log-pop rerank) vs full-catalog **`popularity_train`**.
+Frozen **val dev cohort** (`n_examples = 12500`, [`artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`](artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet)). **Ranking** metrics at **K = 10** from [`recs_job_eval_ranking.py`](scripts/recs_job_eval_ranking.py) → viewer [`recs_011_view_offline_ranking_eval.ipynb`](notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb). Compares **`two_tower_v1_v2a_embed_query_logpop_blend`** (shipped v2a ranker: D1 + taxonomy USE metadata) vs D1 benchmark and full-catalog **`popularity_train`**.
 
 | Method | Hit@10 | NDCG@10 | MRR@10 |
 | --- | ---: | ---: | ---: |
-| `two_tower_v1_heuristic_logpop_blend` | 0.193 | 0.093 | 0.067 |
+| **`two_tower_v1_v2a_embed_query_logpop_blend`** (shipped) | **0.196** | **0.095** | **0.070** |
+| `two_tower_v1_heuristic_logpop_blend` (D1 benchmark) | 0.193 | 0.093 | 0.067 |
 | `popularity_train` | 0.151 | 0.073 | 0.052 |
-| Delta (ranker − pop) | +0.042 | +0.020 | +0.015 |
+| Delta (v2a − pop) | +0.045 | +0.022 | +0.017 |
 
-Slice A (multi-positive, primary ranking slice): NDCG@10 **0.068** vs **0.035** (ranker vs popularity).
+Slice A (multi-positive, primary ranking slice): NDCG@10 **0.070** (v2a) vs **0.068** (D1) vs **0.035** (popularity).
 
 Retrieval-only and embedding-ablation suites below answer different questions — do not mix them with this ranking-stage gate.
 

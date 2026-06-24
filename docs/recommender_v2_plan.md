@@ -1,7 +1,7 @@
 # Recommender v2 Plan
 
-Status: active  
-Last updated: 2026-06-17
+Status: **v2a shipped** (`two_tower_v1_v2a_embed_query_logpop_blend`)  
+Last updated: 2026-06-22
 
 Execution plan for **v2 hybrid reranking** on frozen `two_tower_v1` pools: IGDB **metadata overlap** (V2a) + **summary similarity** (V2b), with combined ablations (V2c, V2d).
 
@@ -23,14 +23,21 @@ Execution plan for **v2 hybrid reranking** on frozen `two_tower_v1` pools: IGDB 
 | | IGDB `similar_games` graph (skipped § C3) |
 | | Separate popularity term beyond D1 |
 
-**Starting stack (unchanged retrieve stage):**
+**Shipped stack (retrieve unchanged; ranker v2a):**
 
 ```text
-two_tower_v1 @100  →  D1 two_tower_v1_heuristic_logpop_blend @10   (v1 shipped)
-                   →  v2 challengers @10 on same frozen pools
+two_tower_v1 @100  →  two_tower_v1_v2a_embed_query_logpop_blend @10   (v2a shipped)
+                   →  D1 two_tower_v1_heuristic_logpop_blend @10         (benchmark)
 ```
 
-**D1 baseline to beat** (latest val, `val_dev_12k_v1`):
+**Shipped v2a ranker** (`val_dev_12k_v1`, `runs/latest_ranking`):
+
+- NDCG@10 overall: **0.095** (vs D1 **0.093**, `popularity_train` **0.073**)
+- Slice A: **0.070** (vs D1 **0.068**)
+- Personalization gap vs pop: **0.726** (≥ D1 **0.720**)
+- Config: `w_meta=0.1`, pooled USE taxonomy (`genres`/`themes`/`keywords`), query anchor
+
+**D1 baseline (superseded for ship, kept as benchmark):**
 
 - NDCG@10 overall: **0.093**
 - Slice A (`slice_a_multi_target`): promotion co-gate (see below)
@@ -192,10 +199,15 @@ Full semantics: [`recommendation_evaluation_overview.md`](recommendation_evaluat
 
 ### Phase 1 — V2a-query spike
 
-- [ ] Notebook: metadata Jaccard ranker on frozen pools
-- [ ] Val metrics vs D1 (overall + slice A + personalization gap)
-- [ ] Update experiment registry row status
-- [ ] Ranking decision log entry
+- [x] Notebook: metadata Jaccard ranker on frozen pools (`recs_019_v2a_metadata_jaccard.ipynb`)
+- [x] Val metrics vs D1 — pure retr+meta **killed**; logpop_blend candidate in `recs_021` head-to-head
+- [x] Ranking decision log entry (§ 2026-06-21)
+
+### Phase 1b — V2a-embed spike (shipped)
+
+- [x] Notebook: taxonomy USE cosine (`recs_020_v2a_taxonomy_use_cosine.ipynb`)
+- [x] Head-to-head vs Jaccard logpop_blend (`recs_021_v2a_logpop_blend_head_to_head.ipynb`)
+- [x] **Ship** `two_tower_v1_v2a_embed_query_logpop_blend` — eval jobs + `pool_rerank_registry` + decision log § 2026-06-22
 
 ### Phase 2 — V2b spike
 
@@ -215,9 +227,9 @@ Full semantics: [`recommendation_evaluation_overview.md`](recommendation_evaluat
 
 ### Phase 5 — Ship (if any spike wins)
 
-- [ ] Wire winner into `recs_job_eval_ranking.json`
+- [x] Wire v2a winner into `recs_job_eval_ranking.json` + `recs_job_eval_offline.json`
 - [ ] Refresh baseline / regression if promoted to shipped stack
-- [ ] Update [`experiment_registry.md`](experiment_registry.md) + export CSV
+- [x] Update [`experiment_registry.md`](experiment_registry.md) + YAML row; re-export metrics CSV
 - [ ] v2 wrap-up note (mirror v1 wrap-up when scope closes)
 
 ---

@@ -2,7 +2,10 @@
   "pools_jsonl": "artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl",
   "examples_parquet": "artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet",
   "pool_methods": ["two_tower_v1"],
-  "ranker_methods": ["two_tower_v1_heuristic_logpop_blend"],
+  "ranker_methods": [
+    "two_tower_v1_v2a_embed_query_logpop_blend",
+    "two_tower_v1_heuristic_logpop_blend"
+  ],
   "catalog_methods": ["popularity_train"],
   "k_final": 10,
   "k_retrieval": 100,

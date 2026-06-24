@@ -1,8 +1,8 @@
 # Ranker exploration plan (fill-in)
 
-Status: **D1 shipped; D2–D5 killed; D6 planned (2 candidates) — see [Ranker experiment matrix](#ranker-experiment-matrix) and § D6**  
+Status: **v2a shipped** (`two_tower_v1_v2a_embed_query_logpop_blend`); D1 benchmark; D2–D5 killed; D6 killed — see [Ranker experiment matrix](#ranker-experiment-matrix)  
 Owner: Ryan  
-Last updated: 2026-06-13
+Last updated: 2026-06-22
 
 Working doc to decide **what to build after two-tower retrieval**, before committing code. Answer in place (checkboxes, tables, short prose). When done, complete **Section J** and we can turn it into an implementation checklist.
 
@@ -27,26 +27,30 @@ Working doc to decide **what to build after two-tower retrieval**, before commit
 ### Shipped stack (what “the ranker” actually is)
 
 ```text
-two_tower_v1  →  top-100 pool  →  D1 heuristic rerank  →  top-10
+two_tower_v1  →  top-100 pool  →  v2a embed+logpop rerank  →  top-10
                       ↑ retrieval                         ↑ ranking
 ```
 
-**D1 is not a learned ranker.** Shipped method `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) = **20% normalized two-tower score + 80% normalized log train-popularity**, min–max normalized **within each pool**. It wins by leaning on a strong popularity prior inside the candidate set, not by modeling query–item text interaction.
+**Shipped v2a** (`two_tower_v1_v2a_embed_query_logpop_blend`): D1 logpop blend + small weight on pooled USE taxonomy cosine (`w_meta=0.1`, query anchor). Beats D1 on val overall and Slice A.
+
+**D1 is not a learned ranker.** Benchmark `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) = **20% normalized two-tower score + 80% normalized log train-popularity**, min–max normalized **within each pool**.
 
 | Baseline | Role | Val NDCG@10 overall | Slice A |
 |----------|------|---------------------|---------|
 | Bare `two_tower_v1` pool order (no rerank) | “Retrieval order @10” | ≈0.018 | ≈0.021 |
-| **D1 `heuristic_logpop_blend`** | **Shipped ranker** | **0.093** | **0.068** |
+| **v2a `embed_query_logpop_blend`** | **Shipped ranker** | **0.095** | **0.070** |
+| **D1 `heuristic_logpop_blend`** | Benchmark (v1) | **0.093** | **0.068** |
 | Oracle on same pool | Ceiling if order were perfect | ≈0.50 | — |
 
-**Eval contract (all rows below unless noted):** frozen val `val_dev_12k_v1`; cached **`two_tower_v1` top-100 pools**; **`k_final=10`**; promotion bar = beat D1 on **both** overall and slice A (`slice_a_multi_target`); no val hyperparameter tuning for challengers.
+**Eval contract (all rows below unless noted):** frozen val `val_dev_12k_v1`; cached **`two_tower_v1` top-100 pools**; **`k_final=10`**; promotion bar = beat **v2a** (or D1 for historical v1 spikes) on **both** overall and slice A (`slice_a_multi_target`); no val hyperparameter tuning for challengers.
 
 ### Everything we tried for ranking
 
 | ID | What it is | Signal / mechanism | Pool contract | Val NDCG@10 overall | Slice A | Status | Notebook |
 |----|------------|-------------------|---------------|---------------------|---------|--------|----------|
 | — | No rerank | Two-tower score only | `two_tower_v1` @100 → @10 | ≈0.018 | ≈0.021 | baseline | `eval_ranking_overall.csv` |
-| **D1** | Heuristic blend | 20% retrieval + 80% log pop (within pool) | frozen TT pools | **0.093** | **0.068** | **shipped** | `recs_013` |
+| **D1** | Heuristic blend | 20% retrieval + 80% log pop (within pool) | frozen TT pools | **0.093** | **0.068** | benchmark | `recs_013` |
+| **v2a embed** | D1 + taxonomy USE | `(1−w)·norm(D1) + w·norm(USE cosine)` | frozen TT pools | **0.095** | **0.070** | **shipped** | `recs_020`, `recs_021` |
 | **D2** | Pointwise classifier | MLP on (query, candidate) pairs, BCE | frozen TT pools | 0.089 | 0.063 | killed | `recs_014` |
 | **D3** | Listwise LTR | Softmax list loss, NDCG@10 | frozen TT pools | 0.085 | 0.059 | killed | `recs_014` |
 | **D4** | Cross-encoder | ZS + FT CE; best = `ce_retr_logpop_blend` | frozen TT pools | 0.091 | 0.070* | killed | `recs_015` |
@@ -212,9 +216,9 @@ Rate **1 = skip for now** … **5 = top priority**. Add notes in the last column
 | D5 | Habit/session embeddings | **Killed** (opt 3: 0.040; opt 1/1b @10 ≈0.034–0.037; stage-1 @100 ≈0.506 vs TT ≈0.512) | best @10: 0.037 | `recs_016` (opt 3); `recs_017` (opt 1/1b/2) |
 | D6 | Rank-only learned rerank (2 candidates) | **Planned** | — | § D6 below |
 
-**Promotion bar (all spikes):** beat `two_tower_v1_heuristic_logpop_blend` on external val **NDCG@10 overall and slice A** (`slice_a_multi_target`). No val tuning.
+**Promotion bar (v2+):** beat shipped v2a (or D1 for pre-v2 spikes) on external val **NDCG@10 overall and slice A** (`slice_a_multi_target`). No val tuning.
 
-**Why D1 is hard to beat:** `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) is mostly a **within-pool popularity rerank** — 80% weight on `norm(log_pop)`, 20% on `norm(retrieval_score)`. On this cohort, that prior is a strong ranking signal. Every completed challenger (**D2–D5**) **failed the promotion bar**. Closest overall: D4 zero-shot `ce_retr_logpop_blend` at 0.091 (still below D1’s 0.093). Bare `two_tower_v1` pool order stays at ≈0.018 — D1’s lift comes largely from leaning on popularity, not from learned text interaction.
+**Why D1 was hard to beat (v1 era):** `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) is mostly a **within-pool popularity rerank** — 80% weight on `norm(log_pop)`, 20% on `norm(retrieval_score)`. Every completed v1 challenger (**D2–D5**) **failed the promotion bar**. **v2a embed+logpop_blend** (2026-06-22) beat D1 with a small taxonomy USE term on top of D1 — see [`ranking_decision_log.md`](ranking_decision_log.md).
 
 **Deferred (not in kill verdict):** `archive/recs_015_002_ranker_d4_ft_hybrid.ipynb` — tune `(w, α)` on **fine-tuned** CE scores (the gap in `recs_015` Phase A). Notebook training crashed on WSL; no trusted full-val result. Revisit only via background train job if we reopen D4.
 
@@ -450,9 +454,7 @@ _______________________________________________
 
 ### H1. Biggest ranker worry on this data
 
-**Within-pool popularity (via D1) is the ranking ceiling so far.** `two_tower_v1_heuristic_logpop_blend` at NDCG@10 ≈0.093 beats every learned reranker we tried (D2–D5). It is difficult to beat because `alpha=0.2` puts most weight on `norm(log_pop)` — challengers must outperform a strong popularity prior, not just fix two-tower’s weak pool order (≈0.018).
-
-**Two-tower is not a retrieval failure** — retrieval @100 is strong; **ranking @10 without rerank is weak** while **OracleNDCG@K ≈0.50** on the same pool. D1 closes much of that gap by leaning on popularity. Further ranker gains likely need better retrieval (so oracle targets are reachable without a pop crutch) or features beyond in-pool scores + one review per game.
+**Shipped ranker (2026-06-22):** v2a `two_tower_v1_v2a_embed_query_logpop_blend` at NDCG@10 ≈**0.095** (Slice A **0.070**), beating D1 **0.093** / **0.068**. D1 remains the v1 ceiling for learned rerankers (D2–D5) and bare pool order (~0.018). Further gains likely need V2b summary signal, better retrieval, or features beyond in-pool scores + one review per game.
 
 ### H2. Prior art in repo
 
@@ -493,7 +495,8 @@ Mark **T** or **F**. Correct in the “If F” column.
 | Field | Your answer |
 |-------|-------------|
 | **Primary retriever (ranker pools)** | `two_tower_v1`; eval all retrievers @100 for context |
-| **Shipped ranker** | D1 `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) — `recs_013` |
+| **Shipped ranker** | v2a `two_tower_v1_v2a_embed_query_logpop_blend` — `recs_020`, `recs_021` |
+| **D1 benchmark** | `two_tower_v1_heuristic_logpop_blend` (`alpha=0.2`) — `recs_013` |
 | **Killed approaches** | D2 pointwise, D3 listwise, D4 cross-encoder (`recs_015`), D5 habit/session (`recs_016`, `recs_017`) |
 | **Deferred** | D4 FT hybrid spike (`archive/recs_015_002`) — incomplete |
 | **Next spike** | D6 rank-only (§ D6): D6a frozen trunk + rank head, then D6b second bi-encoder — **never** mutate `two_tower_v1` retrieve |

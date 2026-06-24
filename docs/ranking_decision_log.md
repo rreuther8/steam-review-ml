@@ -4,6 +4,91 @@
 > Retrieval-side decisions live in [`retrieval_decision_log.md`](retrieval_decision_log.md).
 > Working context and fill-in questionnaire: [`ranker_exploration_plan.md`](ranker_exploration_plan.md).
 
+## 2026-06-22: **Winning ranker — ship `two_tower_v1_v2a_embed_query_logpop_blend`**
+
+Decision:
+
+- **Ship** the production ranker as **`two_tower_v1_v2a_embed_query_logpop_blend`** — this is the **winning model** for v2a and the current default reranker on frozen `two_tower_v1` pools.
+- **Formula:** `(1 − w_meta) · norm(D1) + w_meta · norm(taxonomy USE cosine)` within each pool; **query anchor**; fields `genres`, `themes`, `keywords`; **pooled** USE vectors; **`w_meta = 0.1`** (frozen from `recs_020` train_tune — do not tune on val).
+- **Kill** Jaccard logpop_blend (`two_tower_v1_v2a_query_metadata_logpop_blend`) for production — passed promotion bar but loses head-to-head vs embed winner.
+- **Supersede D1** as the shipped stack default; keep **`two_tower_v1_heuristic_logpop_blend`** in eval jobs as a **benchmark** only.
+
+Why:
+
+- **Promotion bar met** on `val_dev_12k_v1` (12.5k examples): beat D1 on **NDCG@10 overall and Slice A**; personalization guardrail ≥ D1.
+- **Head-to-head** (`recs_021`): embed NDCG@10 **0.095345** / Slice A **0.070334** vs Jaccard **0.095176** / **0.069861** vs D1 **0.092892** / **0.068322**.
+- **Pairwise NDCG@10:** **617 embed wins / 533 Jaccard** (Slice A **56 / 48**); mean Δ embed − Jaccard **+0.00017** overall.
+- **Personalization:** gap vs `popularity_train` **0.726** (embed) vs D1 **0.720** — guardrail passed.
+- **Eval-job confirmation** (`runs/latest_ranking`): v2a **0.095** / **0.070** Slice A vs D1 **0.093** / **0.068** vs `popularity_train` **0.073** / **0.035**.
+
+Evidence:
+
+- Notebooks: `recs_020_v2a_taxonomy_use_cosine.ipynb` (train_tune + val), `recs_021_v2a_logpop_blend_head_to_head.ipynb` (final face-off)
+- Library: `src/steam_review_ml/evaluation/v2a_metadata_ranker.py` → `pool_rerank_registry`
+- Spike artifacts: `artifacts/recs/spikes/v2a_head_to_head/`
+- Eval artifacts: `artifacts/recs/offline_eval/runs/latest_ranking/eval_ranking_*.csv`
+- Config: `configs/recs_job_eval_ranking.json`, `configs/recs_job_eval_offline.json`, `configs/experiment_registry.yaml`
+
+Product / eval implications:
+
+- **Shipped stack:** `two_tower_v1` retrieve @100 → **`two_tower_v1_v2a_embed_query_logpop_blend`** rerank @10.
+- **Prerequisite:** `artifacts/igdb/igdb_games__enriched.parquet` (taxonomy USE pooled columns).
+- **Next ranker spikes** (V2b, V2a-history, …) must beat **v2a** on the same promotion bar, not only D1.
+
+---
+
+## 2026-06-21: V2a `_logpop_blend` passes promotion bar — promotion candidates
+
+> **Superseded by § 2026-06-22** — embed logpop_blend won head-to-head and shipped.
+
+Decision:
+
+- **Kill** retr+meta-only rankers (unchanged): `two_tower_v1_v2a_query`, `two_tower_v1_v2a_history`, `two_tower_v1_v2a_embed_query`, `two_tower_v1_v2a_embed_history`.
+- **Promotion candidates** (val `val_dev_12k_v1`, beat D1 overall + Slice A, personalization guardrail ≥ D1):
+  - `two_tower_v1_v2a_query_metadata_logpop_blend` — Jaccard + D1, `w_meta=0.05`, `genre_theme_kw` (`recs_019`) → **killed** in `recs_021`
+  - `two_tower_v1_v2a_embed_query_logpop_blend` — taxonomy USE + D1, `w_meta=0.1`, pooled, `genre_theme_kw` (`recs_020`) → **shipped** § 2026-06-22
+- **Deferred ship** until head-to-head between the two logpop_blend winners *(resolved 2026-06-22)*.
+
+Why:
+
+- Pure metadata / retr+meta blends failed vs D1; **small metadata weight on top of D1** (`(1−w)·norm(D1) + w·norm(meta)`) lifts val without dropping the log-pop prior.
+- **019 query logpop_blend:** NDCG@10 **0.095** / **0.070** overall / Slice A vs D1 **0.093** / **0.068**; gap vs pop **0.725** vs D1 **0.720**.
+- **020 embed query logpop_blend:** NDCG@10 **0.095** / **0.070** overall / Slice A vs D1 **0.093** / **0.068**; gap vs pop **0.726** vs D1 **0.720**.
+
+Evidence:
+
+- Notebooks: `recs_019_v2a_metadata_jaccard.ipynb`, `recs_020_v2a_taxonomy_use_cosine.ipynb`
+- Artifacts: `artifacts/recs/spikes/v2a/`, `artifacts/recs/spikes/v2a_embed/` (incl. `*_plus_d1_train_tune_grid.csv`)
+
+---
+
+## 2026-06-21: V2a Jaccard killed — metadata FK overlap rerank (retr+meta only)
+
+Decision:
+
+- **Kill** V2a Jaccard rankers (`two_tower_v1_v2a_query`, `two_tower_v1_v2a_history`). Do not wire into `recs_job_eval_ranking.json` or `heuristic_ranker.py`.
+- Shipped stack unchanged: `two_tower_v1` @100 → D1 @10.
+
+Why:
+
+- **Promotion bar:** beat D1 on val **NDCG@10 overall and slice A**. V2a-query **0.042** / **0.045** vs D1 **0.093** / **0.068**; V2a-history **0.038** / **0.034**.
+- Beats bare `two_tower_v1` pool rerank (**0.018** / **0.021**) and passes personalization guardrail (gap vs pop **0.97** vs D1 **0.72**) — insufficient for ship.
+- Train_tune favored α=0 pure metadata (Slice A **0.069**) but val lift did not approach D1; train_tune overstated the signal.
+
+Evidence:
+
+- Notebook: `notebooks/ranking/recs_019_v2a_metadata_jaccard.ipynb`
+- Artifacts: `artifacts/recs/spikes/v2a/` (grid, val overall/slice/personalization CSVs)
+- Cohort: `artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`
+- Best train_tune config: `genre_theme_kw`, α=0 (genres + themes + keywords)
+
+Follow-on:
+
+- Taxonomy USE cosine spike: `notebooks/ranking/recs_020_v2a_taxonomy_use_cosine.ipynb`
+- V2b summary USE per [`recommender_v2_plan.md`](recommender_v2_plan.md)
+
+---
+
 ## 2026-06-13: D5 killed — options 1/1b/2 (habit/session full catalog)
 
 Decision:
@@ -86,6 +171,8 @@ Ops:
 
 ## 2026-05-30: D1 shipped — heuristic log-pop blend on `two_tower_v1` pools
 
+> **Ranking superseded (2026-06-22):** v2a `two_tower_v1_v2a_embed_query_logpop_blend` is the winning ranker. D1 remains a benchmark in eval jobs.
+
 Decision:
 
 - **Ship** ranker v1 as **`two_tower_v1_heuristic_logpop_blend`** with **`alpha=0.2`** (20% normalized retrieval score + 80% normalized log train-popularity within pool, min–max norm per pool).
@@ -104,10 +191,10 @@ Evidence:
 - Train pools: `artifacts/recs/ranker_pools/train_ranker_v1/two_tower_v1.parquet`
 - Val cohort: `artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`
 
-Product / eval implications:
+Product / eval implications (historical v1):
 
-- **Shipped stack (conceptual):** `two_tower_v1` retrieve @100 → D1 rerank @10.
-- **Eval-job wired:** D1 in `configs/recs_job_eval_offline.json` `methods` and `configs/recs_job_eval_ranking.json` `ranker_methods`. Baseline refresh (`--write-baseline`) remains optional housekeeping.
+- **v1 shipped stack:** `two_tower_v1` retrieve @100 → D1 rerank @10 *(superseded by v2a § 2026-06-22)*.
+- D1 still listed in eval job configs as a benchmark alongside v2a.
 
 ---
 
