@@ -8,8 +8,10 @@ This file is the runbook for getting processed data into the expected locations.
 ## 0) Run from repo root
 
 ```bash
-cd /home/ryanr/workspace/steam_recommendations
+cd "$(git rev-parse --show-toplevel)"
 ```
+
+Or open a shell in the repository root (the directory that contains `pyproject.toml`).
 
 ## 1) Install package (editable)
 
