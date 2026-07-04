@@ -72,7 +72,7 @@ steam_recommendations/
 |--------|------|
 | `data/` | Streaming loaders, filters, feature selection, Parquet export |
 | `transforms/` | Normalization rules for tabular features |
-| `recommender/` | `ContentRetriever`, preference extraction, retrieval math |
+| `recommender/` | `ContentRetriever`, `StackedRecommender` (shipped v2a stack), preference extraction |
 | `evaluation/` | Offline retrieval/ranking eval orchestration (`retrieval_offline_eval.py`), shared metrics |
 | `api/` | FastAPI app: `/recommendations`, `/ui`, `/games`, `/health` (optional extra `.[api]`) |
 | `constants.py` | Project-wide random seed |
@@ -91,27 +91,32 @@ flowchart LR
     SPLIT --> NORM[normalize_splits]
   end
 
-  subgraph index [Game index]
+  subgraph index [Game index + tower]
     PROFILES[recs_job_game_profiles] --> EMBED[recs_job_game_embeddings]
     EMBED --> INDEX[(game_profile embeddings + index)]
+    TOWER[recs_job_train_two_tower] --> TTMODEL[(two_tower_v1 checkpoint)]
+    IGDB[recs_job_igdb_games_enriched] --> META[(igdb taxonomy USE)]
   end
 
-  subgraph query [Query path]
-    DRAFT[User draft / history] --> PREF[extract_preferences]
-    PREF --> QVEC[Query embedding]
-    QVEC --> RET[ContentRetriever.top_k]
-    INDEX --> RET
+  subgraph query [Query path - shipped]
+    DRAFT[User draft + query_app_id] --> TTSCORE[two_tower_v1 retrieve @100]
+    TTMODEL --> TTSCORE
+    INDEX --> TTSCORE
+    TTSCORE --> RERANK[v2a_embed_query_logpop_blend @10]
+    META --> RERANK
+    RERANK --> HITS[top 10]
   end
 
   subgraph quality [Offline quality]
-    RET --> EVAL[recs_job_eval_offline]
+    TTSCORE --> EVAL[recs_job_eval_offline]
+    RERANK --> EVAL
     EVAL --> POOLS[eval_offline_examples.jsonl]
-    POOLS --> RANK[recs_job_eval_ranking]
+    POOLS --> RANKJOB[recs_job_eval_ranking]
     EVAL --> METRICS[eval_retrieval_* / eval_ranking_*]
   end
 
   subgraph serve [Serving]
-    RET --> API[FastAPI]
+    HITS --> API[FastAPI StackedRecommender]
   end
 
   NORM --> PROFILES
@@ -119,10 +124,10 @@ flowchart LR
 ```
 
 1. **Ingest:** filter reviews, split users, normalize numeric features.
-2. **Index:** aggregate thumbs-up review text per game → embed (Universal Sentence Encoder) → L2-normalized game vectors.
-3. **Retrieve:** embed query (raw default; structured ablation); dot-product top-K; optional history blend / fusion recipes.
-4. **Evaluate:** scripted job builds examples, scores methods, writes contract tables under `artifacts/recs/offline_eval/runs/latest/`.
-5. **Serve:** same retrieval path exposed over HTTP for draft → recommendations.
+2. **Index:** aggregate thumbs-up review text per game → embed (USE) → train two-tower retrieval; build IGDB enriched taxonomy features for v2a.
+3. **Retrieve + rerank:** `two_tower_v1` @100 → `two_tower_v1_v2a_embed_query_logpop_blend` @10 (query-game IGDB anchor + D1 log-pop blend).
+4. **Evaluate:** scripted jobs score methods and write contract tables under `artifacts/recs/offline_eval/runs/latest/`.
+5. **Serve:** `StackedRecommender` exposed over FastAPI (`method=v2a` default; `method=raw` ablation). **`exclude_app_id`** required for v2a (game being reviewed).
 
 ---
 
