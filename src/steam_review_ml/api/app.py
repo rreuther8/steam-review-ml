@@ -15,11 +15,26 @@ Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+import pandas as pd
+
+from steam_review_ml.recommender.retrieve import ContentRetriever
+from steam_review_ml.recommender.stacked_recommender import StackedRecommender
 
 _UI_HTML = Path(__file__).resolve().parent / "static" / "index.html"
 ServeMethod = Literal["v2a", "raw", "structured"]
+
+
+def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """``DataFrame.to_dict(orient="records")`` typed for JSON response bodies.
+
+    pandas-stubs types this as ``list[dict[Hashable, Any]]``; our columns are
+    always strings, so this is a safe narrowing cast, not a runtime check.
+    """
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
 
 
 def create_app() -> Any:
@@ -29,14 +44,17 @@ def create_app() -> Any:
     except ImportError as e:
         raise ImportError("Install API deps: pip install -e '.[api]'") from e
 
-    from steam_review_ml.recommender.retrieve import ContentRetriever
-    from steam_review_ml.recommender.serve_config import load_serve_config
-    from steam_review_ml.recommender.stacked_recommender import StackedRecommender
-
-    serve_cfg = load_serve_config()
     default_serve_method: ServeMethod = "v2a"
 
-    app = FastAPI(title="steam-review-ml recommendations", version="0.2.0")
+    _state: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        _state["stacked"] = StackedRecommender.from_serve_config()
+        yield
+        _state.clear()
+
+    app = FastAPI(title="steam-review-ml recommendations", version="0.2.0", lifespan=lifespan)
 
     @app.get("/")
     def root() -> dict[str, str]:
@@ -61,7 +79,6 @@ def create_app() -> Any:
         return FileResponse(_UI_HTML, media_type="text/html; charset=utf-8")
 
     _content_retriever: ContentRetriever | None = None
-    _stacked: StackedRecommender | None = None
 
     def content_retriever() -> ContentRetriever:
         nonlocal _content_retriever
@@ -70,10 +87,7 @@ def create_app() -> Any:
         return _content_retriever
 
     def stacked_recommender() -> StackedRecommender:
-        nonlocal _stacked
-        if _stacked is None:
-            _stacked = StackedRecommender.from_serve_config()
-        return _stacked
+        return _state["stacked"]
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -83,7 +97,7 @@ def create_app() -> Any:
             "default_method": default_serve_method,
             "stacked_method_id": stacked.method_id,
             "two_tower_model_path": str(stacked.two_tower_model_path),
-            "igdb_enriched_path": str(serve_cfg.get("igdb_enriched_path", "")),
+            "igdb_enriched_path": stacked.igdb_enriched_path or "",
             "k_retrieval": str(stacked.k_retrieval),
             "k_final": str(stacked.k_final),
         }
@@ -98,7 +112,7 @@ def create_app() -> Any:
         limit: int = Query(50, ge=1, le=200),
     ) -> list[dict[str, Any]]:
         """Catalog slice for a searchable game picker. Pair with ``exclude_app_id`` on ``/recommendations``."""
-        df = content_retriever().index_frame
+        df: pd.DataFrame = content_retriever().index_frame
         for col in ("app_id", "app_name"):
             if col not in df.columns:
                 raise RuntimeError(f"Index frame missing {col!r} — rebuild recs_002 index parquet")
@@ -108,7 +122,7 @@ def create_app() -> Any:
             mask = out["app_name"].str.contains(needle, case=False, na=False, regex=False)
             out = out.loc[mask]
         out = out.sort_values("app_name", kind="mergesort").head(limit)
-        return out.to_dict(orient="records")
+        return _records(out)
 
     @app.get("/recommendations")
     def recommendations(
@@ -165,12 +179,18 @@ def create_app() -> Any:
                         "(select the game being reviewed via GET /games)"
                     ),
                 )
-            hits = stacked_recommender().recommend(
-                q,
-                query_app_id=int(exclude_app_id),
-                k=k,
-            )
-            return hits.to_dict(orient="records")
+            stacked = stacked_recommender()
+            if k > stacked.k_final:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"k={k} exceeds method=v2a's fixed result size "
+                        f"(k_final={stacked.k_final}); request k<={stacked.k_final} "
+                        "or use method=raw for a full-catalog search"
+                    ),
+                )
+            hits = stacked.recommend(q, query_app_id=int(exclude_app_id))
+            return _records(hits.head(k))
 
         use_structured = method == "structured" or structured
         mask = {int(exclude_app_id)} if exclude_app_id is not None else None
@@ -184,6 +204,6 @@ def create_app() -> Any:
             history_top_k=history_top_k,
             history_min_similarity=history_min_similarity,
         )
-        return hits.to_dict(orient="records")
+        return _records(hits)
 
     return app

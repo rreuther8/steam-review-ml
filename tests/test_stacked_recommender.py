@@ -47,9 +47,8 @@ def test_stacked_recommender_recommend_smoke() -> None:
     df = rec.recommend(
         "Great strategy game with deep mechanics.",
         query_app_id=8930,
-        k=5,
     )
-    assert len(df) == 5
+    assert len(df) == rec.k_final
     assert "score" in df.columns
     assert "app_id" in df.columns
     assert 8930 not in set(df["app_id"].astype(int).tolist())

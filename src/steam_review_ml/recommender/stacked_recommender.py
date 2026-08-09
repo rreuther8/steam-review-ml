@@ -68,6 +68,7 @@ class StackedRecommender:
         self._method_id = str(method_id)
         self._k_retrieval = int(k_retrieval)
         self._k_final = int(k_final)
+        self._validate_k_bounds()
         self._two_tower_model_path = Path(two_tower_model_path)
         self._igdb_enriched_path = str(igdb_enriched_path) if igdb_enriched_path else None
 
@@ -76,6 +77,7 @@ class StackedRecommender:
             repo_root=self._repo_root,
             min_review_chars=min_review_chars,
             artifact_dir=artifact_dir,
+            retriever=self._retriever,
         )
         self._app_ids = catalog.app_ids
         self._app_to_row = catalog.app_to_row
@@ -99,6 +101,15 @@ class StackedRecommender:
             len(self._retriever.app_ids),
             batch_size=int(catalog_item_batch),
         )
+        self._encode_query_vector = encode_query_vector
+        self._score_catalog = score_catalog
+
+    def _validate_k_bounds(self) -> None:
+        if self._k_final > self._k_retrieval:
+            raise ValueError(
+                f"k_final ({self._k_final}) cannot exceed k_retrieval ({self._k_retrieval}) — "
+                "the rerank stage can only select from the retrieved pool"
+            )
 
     @classmethod
     def from_serve_config(
@@ -133,6 +144,10 @@ class StackedRecommender:
         return self._two_tower_model_path
 
     @property
+    def igdb_enriched_path(self) -> str | None:
+        return self._igdb_enriched_path
+
+    @property
     def k_retrieval(self) -> int:
         return self._k_retrieval
 
@@ -145,22 +160,18 @@ class StackedRecommender:
         query_text: str,
         *,
         query_app_id: int,
-        k: int | None = None,
-        k_retrieval: int | None = None,
     ) -> pd.DataFrame:
-        """Return top-``k`` catalog rows with rerank scores (query game masked at retrieve)."""
-        from steam_review_ml.recommender.two_tower_score import encode_query_vector, score_catalog
+        """Return top-``k_final`` catalog rows with rerank scores (query game masked at retrieve)."""
+        k_out = self._k_final
+        k_pool = self._k_retrieval
 
-        k_out = int(k if k is not None else self._k_final)
-        k_pool = int(k_retrieval if k_retrieval is not None else self._k_retrieval)
-
-        user_vector = encode_query_vector(
+        user_vector = self._encode_query_vector(
             self._model,
             str(query_text),
             max_chars=self._hub_max_chars,
         )
         mask_row = self._app_to_row.get(int(query_app_id))
-        base_scores = score_catalog(
+        base_scores = self._score_catalog(
             user_vector,
             self._item_vectors,
             mask_row=mask_row,
@@ -183,8 +194,7 @@ class StackedRecommender:
         selected_scores = [float(rerank_scores[int(i)]) for i in top_pool_order]
 
         idx_df = self._retriever.index_frame
-        app_id_to_row = {int(a): i for i, a in enumerate(self._app_ids.tolist())}
-        row_indices = [app_id_to_row[int(a)] for a in selected_apps]
+        row_indices = [self._app_to_row[int(a)] for a in selected_apps]
         out = idx_df.iloc[row_indices].copy()
         out["score"] = selected_scores
         return out.reset_index(drop=True)
