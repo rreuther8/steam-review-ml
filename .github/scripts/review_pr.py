@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run architect-style PR review via Cursor SDK and post a GitHub comment."""
+"""Run architect-style PR review via the Claude API and post a GitHub comment."""
 
 from __future__ import annotations
 
@@ -10,11 +10,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+import anthropic
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROMPT_PATH = REPO_ROOT / "prompts" / "pr_review.md"
 BASE_BRANCH = "main"
 MAX_DIFF_CHARS = 200_000
 MAX_COMMENT_CHARS = 60_000
+MODEL = "claude-opus-5"
+MAX_TOKENS = 16_000
 
 
 def _run(cmd: list[str], *, check: bool = True) -> str:
@@ -113,7 +117,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print prompt prefix only; do not call Cursor or post a comment",
+        help="Print prompt prefix only; do not call the Claude API or post a comment",
     )
     args = parser.parse_args()
 
@@ -126,9 +130,8 @@ def main() -> None:
         print(f"Missing prompt file: {PROMPT_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    api_key = os.environ.get("CURSOR_API_KEY")
-    if not api_key and not args.dry_run:
-        print("CURSOR_API_KEY is not set.", file=sys.stderr)
+    if not os.environ.get("ANTHROPIC_API_KEY") and not args.dry_run:
+        print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         sys.exit(1)
 
     metadata = _pr_metadata(pr_number)
@@ -141,29 +144,38 @@ def main() -> None:
             print(f"\n... [{len(prompt) - 8000} more characters] ...", file=sys.stderr)
         return
 
-    from cursor_sdk import Agent, AgentOptions, CursorAgentError, LocalAgentOptions
+    client = anthropic.Anthropic()
 
     try:
-        result = Agent.prompt(
-            prompt,
-            AgentOptions(
-                api_key=api_key,
-                model="composer-2.5",
-                mode="plan",  # review-only; same plan usage pool as IDE (not Bugbot)
-                local=LocalAgentOptions(cwd=str(REPO_ROOT)),
-            ),
-        )
-    except CursorAgentError as err:
-        print(f"Cursor agent failed to start: {err}", file=sys.stderr)
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            thinking={"type": "adaptive"},
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            response = stream.get_final_message()
+    except anthropic.AuthenticationError:
+        print("ANTHROPIC_API_KEY is invalid.", file=sys.stderr)
+        sys.exit(1)
+    except anthropic.RateLimitError as err:
+        print(f"Rate limited by the Claude API: {err}", file=sys.stderr)
+        sys.exit(1)
+    except anthropic.APIStatusError as err:
+        print(f"Claude API error ({err.status_code}): {err.message}", file=sys.stderr)
+        sys.exit(1)
+    except anthropic.APIConnectionError as err:
+        print(f"Could not reach the Claude API: {err}", file=sys.stderr)
         sys.exit(1)
 
-    if result.status == "error":
-        print(f"Cursor agent run failed: {result.result}", file=sys.stderr)
+    if response.stop_reason == "refusal":
+        print(f"Claude declined to review this PR: {response.stop_details}", file=sys.stderr)
         sys.exit(2)
 
-    review_text = (result.result or "").strip()
+    review_text = "\n".join(
+        block.text for block in response.content if block.type == "text"
+    ).strip()
     if not review_text:
-        print("Cursor agent returned an empty review.", file=sys.stderr)
+        print("Claude returned an empty review.", file=sys.stderr)
         sys.exit(2)
 
     header = (
