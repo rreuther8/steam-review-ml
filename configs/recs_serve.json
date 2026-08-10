@@ -1,0 +1,7 @@
+{
+  "default_method": "two_tower_v1_v2a_embed_query_logpop_blend",
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras",
+  "k_retrieval": 100,
+  "k_final": 10,
+  "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet"
+}

@@ -47,7 +47,7 @@ Interpretation: v1 shipped method beats full-catalog popularity on headline rank
 ## Known v1 limitations (accepted)
 
 - D1 is popularity-heavy (`alpha=0.2` blend) and trades off some personalization for relevance.
-- API serving default may still be historical `raw` in some paths; this wrap-up closes the offline eval/rank pipeline scope.
+- **API serving:** default is now the v2a stacked path (`StackedRecommender` + `configs/recs_serve.json`); see [`usage_pipeline.md`](usage_pipeline.md).
 - No frozen test-holdout gate in v1 closeout (left as optional post-v1 science backlog).
 
 ## Hand-off to v2

@@ -476,13 +476,17 @@ def load_ranking_catalog_context(
     repo_root: Path,
     min_review_chars: int = 30,
     artifact_dir: Path | None = None,
+    retriever: ContentRetriever | None = None,
 ) -> RankingCatalogContext:
     """Catalog index + train popularity for rankers; no example cohort required.
 
     recs_014 uses ``app_ids``, ``app_to_row``, and ``pop_row`` for pool rerank,
     full-catalog ``popularity_train``, and masking the query app from catalog ranks.
+
+    Pass an already-constructed ``retriever`` to avoid loading the embedding
+    matrix + index parquet a second time when the caller already has one.
     """
-    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
+    retriever = retriever or ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
     app_ids = retriever.app_ids
     app_to_row = {int(a): i for i, a in enumerate(app_ids)}
     pop_row = _train_pop_row(repo_root=repo_root, app_ids=app_ids, min_review_chars=min_review_chars)

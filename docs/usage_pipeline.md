@@ -291,10 +291,19 @@ Decision/log artifacts:
 Artifact layout reference:
 - `docs/artifact_layout.md`
 
-**Programmatic retrieval (v1 wire)** — `steam_review_ml.recommender.ContentRetriever` loads `artifacts/recs/` and exposes `top_k(...)` (raw or structured). Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
+**Programmatic retrieval (shipped stack)** — default serve path uses `StackedRecommender` (`configs/recs_serve.json`): `two_tower_v1` retrieve @100 → `two_tower_v1_v2a_embed_query_logpop_blend` rerank @10. Legacy ablation: `ContentRetriever.top_k(...)` (raw or structured).
+
+```python
+from steam_review_ml.recommender.stacked_recommender import StackedRecommender
+
+rec = StackedRecommender.from_serve_config()
+hits = rec.recommend("Great strategy RPG.", query_app_id=8930, k=10)
+```
+
+Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
 
-Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** set to the selected game so it never appears in results.
+Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations.
 
 See [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md) for the archived v1→v2 narrative and [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) for the eval contract + notebook map.
 
@@ -312,10 +321,11 @@ See [`archive/recommender_transition_plan.md`](archive/recommender_transition_pl
 8. (Optional QA) run `notebooks/models/game_embeddings/recs_001_game_profile_reviews.ipynb`, `notebooks/models/game_embeddings/recs_002_game_embeddings_raw.ipynb`, and `notebooks/models/game_embeddings/recs_005_game_embeddings_structured.ipynb`
 9. (Optional) run `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb` after embedding artifacts exist
 10. Run `python scripts/recs_job_train_two_tower.py configs/recs_job_train_two_tower.json` to produce `updated_user__updated_profile200_item.keras`
-11. Run `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json` for centralized eval artifacts (include `two_tower_v1` + `two_tower_model_path` in config to benchmark the trained tower)
-12. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for exploratory/QA analysis (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
-13. (Optional) run `python -m pytest -q tests/test_recs_006_regression.py` after `recs_006` updates
-14. (Optional) serve recommendations: `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]`; pip-only stack: `.[api,recs-pip]`; repo root on `PYTHONPATH` or editable install)
+11. (v2 metadata) run IGDB jobs: `recs_job_igdb_games.py` then `recs_job_igdb_games_enriched.py` → `artifacts/igdb/igdb_games__enriched.parquet`
+12. Run `python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json` for centralized eval artifacts (include `two_tower_v1` + `two_tower_model_path` in config to benchmark the trained tower)
+13. (Optional) run `notebooks/models/query_embeddings/recs_004_eval_proxy_same_user.ipynb` for exploratory/QA analysis (default **val**; `RECS004_EVAL_SPLIT=test` for final holdout)
+14. (Optional) run `python -m pytest -q tests/test_recs_006_regression.py` after `recs_006` updates
+15. Serve recommendations (default v2a stack): `uvicorn steam_review_ml.api:create_app --factory` (requires TF + Hub + `.[api]` + tower + IGDB enriched parquet; config: `configs/recs_serve.json`)
 
 
 

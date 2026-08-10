@@ -93,6 +93,16 @@ kaggle datasets download -d najzeko/steam-reviews-2021 --unzip -p ~/steam_recomm
 
 Dataset URL: [https://www.kaggle.com/datasets/najzeko/steam-reviews-2021](https://www.kaggle.com/datasets/najzeko/steam-reviews-2021)
 
+## Shipped serve stack
+
+Default API and library path (`configs/recs_serve.json`):
+
+```text
+two_tower_v1 @100  →  two_tower_v1_v2a_embed_query_logpop_blend @10
+```
+
+`uvicorn steam_review_ml.api:create_app --factory` — **`exclude_app_id`** required for default `method=v2a`; use `method=raw` for legacy `ContentRetriever`.
+
 ## Reproducibility and usage
 
 - **Random seed:** the project-wide default is [`PROJECT_RANDOM_SEED`](src/steam_review_ml/constants.py) in `steam_review_ml.constants` (used for recommender eval subsampling, tabular `random_state`, and synthetic baseline RNG streams). Train/val/test splitting reads the same value from that module unless you override with **`STEAM_REVIEWS_RANDOM_STATE`** (see [`docs/usage_pipeline.md`](docs/usage_pipeline.md)).
