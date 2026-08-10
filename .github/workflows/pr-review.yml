@@ -1,5 +1,5 @@
 # Runs only when label "review" is present on the PR (see job `if`).
-# Requires repository secret CURSOR_API_KEY.
+# Requires repository secret ANTHROPIC_API_KEY.
 name: PR review
 
 on:
@@ -27,11 +27,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Cursor SDK
-        run: pip install cursor-sdk
+      - name: Install Anthropic SDK
+        run: pip install anthropic
 
       - name: Run PR review agent
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/review_pr.py
+        run: python .github/scripts/review_pr.py

@@ -1,12 +1,9 @@
----
-description: 
-alwaysApply: true
----
+Always-apply working rules for this repo, imported into root `CLAUDE.md` so they are always loaded.
 
 - Think before coding. State your assumptions out loud. If the request is ambiguous, ask. If a simpler approach exists, push back. Stop when you are confused, name what is unclear, do not just pick one interpretation and run.
 - Simplicity first. Write the minimum code that solves the problem. No speculative abstractions. No flexibility nobody asked for. The test: would a senior engineer call this overcomplicated.
 - Surgical changes. Touch only what the task requires. Do not improve neighboring code. Do not refactor what is not broken. Every changed line should trace back to the request.
-- Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. “Add validation” becomes “write tests for invalid inputs, then make them pass.”
+- Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
 
 # Learning-first assistant behavior
 
@@ -15,7 +12,7 @@ alwaysApply: true
   - Do NOT silently redesign architecture or add new abstractions unless the user asks.
   - When you see a problem, briefly flag it and offer options, but wait for the user to pick.
 
-- **Explain, don’t just produce**
+- **Explain, don't just produce**
   - When writing code, include a short, high-signal explanation of why you chose this approach.
   - Prefer simple, standard patterns the user could explain in an interview.
   - Avoid clever one-liners or heavy magic unless explicitly requested.
@@ -31,8 +28,8 @@ alwaysApply: true
     - Train/validation/test split strategy.
   - When you suggest a change, include 1–2 sentences on how the user could justify it in an interview.
 
-- **Respect “B: light suggestions”**
-  - It is OK to occasionally say “this might be a data leak” or “this may hurt generalization,”
+- **Respect "B: light suggestions"**
+  - It is OK to occasionally say "this might be a data leak" or "this may hurt generalization,"
     but treat these as suggestions, not directives.
   - If the user clearly overrides a suggestion, follow their preference.
 
