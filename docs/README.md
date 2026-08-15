@@ -34,6 +34,12 @@ Use this file to avoid **doc sprawl**: prefer these paths before adding new top-
 | [two_tower_pipeline_plan.md](two_tower_pipeline_plan.md) | Two-tower train + eval runbook (script-only) |
 | [archive/recommender_transition_plan.md](archive/recommender_transition_plan.md) | **Archived** v1→v2 engineering narrative |
 
+## Environment / tooling
+
+| Doc | Purpose |
+|-----|---------|
+| [docker_usage.md](docker_usage.md) | Docker on WSL: daemon start/stop, CLI command reference |
+
 ## Product / hiring / misc
 
 | Doc | Purpose |

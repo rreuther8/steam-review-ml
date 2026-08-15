@@ -1,0 +1,21 @@
+# Anchored at repo root (leading slash) so docker/artifacts/ below is unaffected.
+/data
+/artifacts
+/.venv
+/.git
+/notebooks
+/_scrap
+/scrap
+/docs
+/tests
+/.pytest_cache
+/.ruff_cache
+/.vscode
+/.understand-anything
+/.claude
+/.github
+
+__pycache__/
+*.pyc
+*.egg-info/
+.env
