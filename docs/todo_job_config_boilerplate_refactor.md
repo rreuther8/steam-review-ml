@@ -1,7 +1,12 @@
 # TODO: Shared job-config loader for scripts/recs_job_*.py (separate branch)
 
-**Status:** planned — do not implement while mid-feature on another branch
-**Branch suggestion:** `refactor/job-config-loader`
+**Status:** partially done (2026-08-16) — `GameChunksJobConfig` / `GameChunkEmbeddingsJobConfig`
+(`src/steam_review_ml/recommender/job_config.py`) landed on `rreuther/rag-001` for the 2 RAG jobs
+only, since those two configs were already being touched on that branch. `require_str` /
+`optional_repo_path` promoted to `steam_review_ml/utils.py`; `igdb/job_config.py` now imports
+them instead of defining local copies. The other **11** job scripts listed below are still
+**planned, not done** — do not implement those while mid-feature on another branch.
+**Branch suggestion (remaining 11):** `refactor/job-config-loader`
 **Motivation:** every `scripts/recs_job_*.py` repeats the same four lines to go
 from a JSON config path to typed, repo-root-resolved values. Noticed again
 while writing `scripts/recs_job_game_chunks.py` for the RAG extension
@@ -22,7 +27,8 @@ some_param = int(cfg.get("some_param", DEFAULT))
 
 Confirmed present (independently, with copy-pasted variations) in:
 
-`recs_job_game_chunks.py`, `recs_job_game_chunk_embeddings.py`,
+~~`recs_job_game_chunks.py`, `recs_job_game_chunk_embeddings.py`~~ (**done** —
+now use `GameChunksJobConfig`/`GameChunkEmbeddingsJobConfig`),
 `recs_job_game_profiles.py`, `recs_job_game_embeddings.py`,
 `recs_job_eval_offline.py`, `recs_job_eval_ranking.py`, `recs_job_build_example_cohort.py`,
 `recs_job_export_retrieval_pools.py`, `recs_job_train_two_tower.py`,

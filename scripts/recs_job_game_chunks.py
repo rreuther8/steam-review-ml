@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from steam_review_ml.recommender.job_config import GameChunksJobConfig
 from steam_review_ml.utils import load_config
 
 REVIEW_COLS = ["app_id", "app_name", "review_id", "review", "votes_helpful", "recommended"]
@@ -121,37 +122,32 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
     repo_root = Path(__file__).resolve().parents[1]
-    train_input_path = repo_root / cfg["train_input_path"]
-    igdb_input_path = repo_root / cfg["igdb_input_path"]
-    output_path = repo_root / cfg["output_path"]
-    max_reviews_per_game = int(cfg.get("max_reviews_per_game", 50))
-    min_review_chars = int(cfg.get("min_review_chars", 30))
+    cfg = GameChunksJobConfig.from_json(repo_root, load_config(args.config))
 
-    if not train_input_path.is_file():
-        raise FileNotFoundError(f"Missing required input parquet: {train_input_path}")
-    if not igdb_input_path.is_file():
-        raise FileNotFoundError(f"Missing required IGDB enriched parquet: {igdb_input_path}")
+    if not cfg.train_input_path.is_file():
+        raise FileNotFoundError(f"Missing required input parquet: {cfg.train_input_path}")
+    if not cfg.igdb_input_path.is_file():
+        raise FileNotFoundError(f"Missing required IGDB enriched parquet: {cfg.igdb_input_path}")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Input train parquet: {train_input_path}")
-    print(f"Input IGDB enriched parquet: {igdb_input_path}")
-    print(f"Output chunk rows: {output_path}")
+    print(f"Input train parquet: {cfg.train_input_path}")
+    print(f"Input IGDB enriched parquet: {cfg.igdb_input_path}")
+    print(f"Output chunk rows: {cfg.output_path}")
     print(
-        f"Params: max_reviews_per_game={max_reviews_per_game} "
-        f"min_review_chars={min_review_chars}"
+        f"Params: max_reviews_per_game={cfg.max_reviews_per_game} "
+        f"min_review_chars={cfg.min_review_chars}"
     )
 
     n_rows, n_games = _build_and_write_game_chunks(
-        train_input_path=train_input_path,
-        igdb_input_path=igdb_input_path,
-        output_path=output_path,
-        max_reviews_per_game=max_reviews_per_game,
-        min_review_chars=min_review_chars,
+        train_input_path=cfg.train_input_path,
+        igdb_input_path=cfg.igdb_input_path,
+        output_path=cfg.output_path,
+        max_reviews_per_game=cfg.max_reviews_per_game,
+        min_review_chars=cfg.min_review_chars,
     )
-    print(f"Wrote {output_path} rows={n_rows:,} games={n_games:,}")
+    print(f"Wrote {cfg.output_path} rows={n_rows:,} games={n_games:,}")
 
 
 if __name__ == "__main__":

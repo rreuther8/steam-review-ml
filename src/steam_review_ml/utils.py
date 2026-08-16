@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -13,6 +13,21 @@ def load_config(config_path: str | Path) -> dict:
         raise FileNotFoundError(f"Config not found: {path}")
     with open(path) as f:
         return json.load(f)
+
+
+def require_str(cfg: dict[str, Any], key: str) -> str:
+    """Return ``cfg[key]`` as a non-empty stripped string, or raise a config-named error."""
+    value = cfg.get(key)
+    if value is None or not str(value).strip():
+        raise ValueError(f"Config must include non-empty '{key}'.")
+    return str(value).strip()
+
+
+def optional_repo_path(repo_root: Path, rel: str | None) -> Path | None:
+    """Resolve an optional repo-root-relative config path, or ``None`` if unset."""
+    if rel is None or not str(rel).strip():
+        return None
+    return repo_root / str(rel).strip()
 
 
 class _TqdmLoggingHandler(logging.Handler):

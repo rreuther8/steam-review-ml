@@ -15,19 +15,8 @@ from steam_review_ml.igdb.constants import (
     TAXONOMY_RESOLVE_FIELDS,
     resolve_game_fields,
 )
-
-
-def _require_str(cfg: dict[str, Any], key: str) -> str:
-    value = cfg.get(key)
-    if value is None or not str(value).strip():
-        raise ValueError(f"Config must include non-empty '{key}'.")
-    return str(value).strip()
-
-
-def _optional_repo_path(repo_root: Path, rel: str | None) -> Path | None:
-    if rel is None or not str(rel).strip():
-        return None
-    return repo_root / str(rel).strip()
+from steam_review_ml.utils import optional_repo_path as _optional_repo_path
+from steam_review_ml.utils import require_str as _require_str
 
 
 def _parse_str_list(raw: Any, *, key: str) -> tuple[str, ...]:

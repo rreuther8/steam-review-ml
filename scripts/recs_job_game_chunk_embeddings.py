@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from chromadb.api import ClientAPI
 
+from steam_review_ml.recommender.job_config import GameChunkEmbeddingsJobConfig
 from steam_review_ml.recommender.math_utils import l2_normalize
 from steam_review_ml.utils import load_config
 
@@ -209,49 +210,41 @@ def main() -> None:
     parser.add_argument("config", type=str, help="Path to JSON config for game-chunk-embeddings job.")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
     repo_root = Path(__file__).resolve().parents[1]
-    input_path = repo_root / cfg["input_path"]
-    chroma_persist_dir = repo_root / cfg["chroma_persist_dir"]
-    review_chunks_collection = str(cfg.get("review_chunks_collection", "game_review_chunks"))
-    game_profiles_collection = str(cfg.get("game_profiles_collection", "game_profiles"))
-    tfhub_url = str(cfg.get("tfhub_url", "https://tfhub.dev/google/universal-sentence-encoder/4"))
-    batch_size = int(cfg.get("batch_size", 64))
-    max_chars_per_chunk = int(cfg.get("max_chars_per_chunk", 8000))
-    description_blend_weight = float(cfg.get("description_blend_weight", 0.1))
+    cfg = GameChunkEmbeddingsJobConfig.from_json(repo_root, load_config(args.config))
 
-    if not input_path.is_file():
+    if not cfg.input_path.is_file():
         raise FileNotFoundError(
-            f"Missing required input artifact: {input_path}. "
+            f"Missing required input artifact: {cfg.input_path}. "
             "Run scripts/recs_job_game_chunks.py first."
         )
 
-    chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+    cfg.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_parquet(input_path)
+    df = pd.read_parquet(cfg.input_path)
     if len(df) == 0:
         raise RuntimeError("Input chunk parquet is empty.")
     df = df.reset_index(drop=True)
 
-    print(f"Input chunk rows: {input_path} (n={len(df):,})")
-    print(f"Chroma persist dir: {chroma_persist_dir}")
+    print(f"Input chunk rows: {cfg.input_path} (n={len(df):,})")
+    print(f"Chroma persist dir: {cfg.chroma_persist_dir}")
     print(
-        f"Params: batch_size={batch_size} max_chars_per_chunk={max_chars_per_chunk} "
-        f"description_blend_weight={description_blend_weight}"
+        f"Params: batch_size={cfg.batch_size} max_chars_per_chunk={cfg.max_chars_per_chunk} "
+        f"description_blend_weight={cfg.description_blend_weight}"
     )
 
-    embed_fn = _load_tfhub_embed_fn(tfhub_url)
+    embed_fn = _load_tfhub_embed_fn(cfg.tfhub_url)
     embeddings = _encode_texts(
-        df["text"].tolist(), embed_fn, batch_size=batch_size, max_chars=max_chars_per_chunk
+        df["text"].tolist(), embed_fn, batch_size=cfg.batch_size, max_chars=cfg.max_chars_per_chunk
     )
     print(f"Encoded {len(df):,} chunks -> dim={embeddings.shape[1]}")
 
-    client = chromadb.PersistentClient(path=str(chroma_persist_dir))
+    client = chromadb.PersistentClient(path=str(cfg.chroma_persist_dir))
 
     n_chunk_rows = _write_review_chunks_collection(
-        client, collection_name=review_chunks_collection, df=df, embeddings=embeddings
+        client, collection_name=cfg.review_chunks_collection, df=df, embeddings=embeddings
     )
-    print(f"Wrote {review_chunks_collection}: rows={n_chunk_rows:,}")
+    print(f"Wrote {cfg.review_chunks_collection}: rows={n_chunk_rows:,}")
 
     review_df = df[df["chunk_type"] == "review"].reset_index(drop=True)
     review_embeddings = embeddings[df["chunk_type"].to_numpy() == "review"]
@@ -264,13 +257,13 @@ def main() -> None:
 
     n_profile_rows, skipped_per_variant = _write_game_profiles_collection(
         client,
-        collection_name=game_profiles_collection,
+        collection_name=cfg.game_profiles_collection,
         review_df=review_df,
         review_embeddings=review_embeddings,
         description_vectors=description_vectors,
-        blend_weight=description_blend_weight,
+        blend_weight=cfg.description_blend_weight,
     )
-    print(f"Wrote {game_profiles_collection}: rows={n_profile_rows:,}")
+    print(f"Wrote {cfg.game_profiles_collection}: rows={n_profile_rows:,}")
     for variant, n_skipped in skipped_per_variant.items():
         if n_skipped:
             print(f"  variant={variant}: skipped {n_skipped} app_id(s) with zero eligible reviews")
