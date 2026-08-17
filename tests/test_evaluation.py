@@ -271,3 +271,17 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     assert has_all_prefixes(tables.ranking_by_support_bucket)
     assert has_all_prefixes(tables.ranking_by_pop_decile)
     assert has_all_prefixes(tables.ranking_pop_delta_vs_popularity)
+
+
+def test_build_method_registry_omits_rag_chunk_methods_when_persist_dir_unset() -> None:
+    registry = evaluation._build_method_registry(
+        retriever=object(),  # type: ignore[arg-type]
+        X=np.eye(3, dtype=np.float32),
+        pop_row=np.array([1.0, 2.0, 3.0], dtype=np.float32),
+        app_to_row={1: 0, 2: 1, 3: 2},
+        multi_max_reviews=5,
+        rng=np.random.default_rng(0),
+        mask_query_app=True,
+    )
+    assert evaluation.METHOD_RAG_CHUNK_RAW_QUERY not in registry
+    assert evaluation.METHOD_RAG_CHUNK_QUERY_PLUS_DESC not in registry

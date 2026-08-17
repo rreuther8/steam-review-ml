@@ -56,6 +56,17 @@ Extending `steam-review-ml` with a RAG-based recommendation feature. This is **t
   - **`game_profiles`** — coarse-grain, one row per `app_id` × variant, `embedding = blend(pooled_review_vector, description_vector)` (weighted mean pool per decision #8/#9), metadata: `variant`, `recommended_rate`, `n_reviews_pooled`. This is the collection Stage 3 actually queries.
 - Add `chromadb` as a new optional extra in `pyproject.toml` (e.g. `rag = ["chromadb>=1.5"]`), matching the existing per-capability extras pattern.
 
+**Verified counts** (`recs_022_eda_chroma_game_profiles.ipynb`): 16,010 `game_review_chunks` rows (15,695 review + 315 description, 315 games) produce the 4 `game_profiles` pooling variants below.
+
+| Variant | Polarity | Weighting | Pooling formula | Rows |
+|---|---|---|---|---|
+| `any_polarity__flat` | all reviews | uniform mean | `mean(review_vecs)` | 315 |
+| `any_polarity__log_weighted` | all reviews | `log1p(votes_helpful)` | `sum(w * review_vecs)`, `w ~ log1p(votes_helpful)` | 315 |
+| `recommended_only__flat` | `recommended==1` only | uniform mean | `mean(review_vecs)` on filtered subset | 314 |
+| `recommended_only__log_weighted` | `recommended==1` only | `log1p(votes_helpful)` | `sum(w * review_vecs)` on filtered subset | 314 |
+
+Each pooled vector is then blended with the game's IGDB description vector (`(1-w)*pooled + w*description`, `description_blend_weight`, default 0.1) and L2-normalized. The 1-row shortfall on both `recommended_only__*` variants is the same game (`app_id` 285190) skipped for zero eligible (`recommended==1`) reviews.
+
 ### Stage 3 — Retrieval (query-time), new retrieval variant
 **Depends on:** Stage 2 index.
 

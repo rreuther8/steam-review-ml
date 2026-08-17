@@ -42,6 +42,8 @@ from steam_review_ml.recommender.two_tower_score import load_two_tower_model, ma
 from steam_review_ml.recommender.two_tower_train import load_hub_settings
 
 METHOD_TWO_TOWER_V1 = "two_tower_v1"
+METHOD_RAG_CHUNK_RAW_QUERY = "rag_chunk_v1_raw_query"
+METHOD_RAG_CHUNK_QUERY_PLUS_DESC = "rag_chunk_v1_query_plus_desc"
 
 METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
 ORACLE_RANKING_METRIC_COLS = ["OracleHit@K", "OracleNDCG@K"]
@@ -230,6 +232,8 @@ def _build_method_registry(
     mask_query_app: bool,
     two_tower_model_path: Path | None = None,
     two_tower_catalog_item_batch: int = 256,
+    rag_chroma_persist_dir: Path | None = None,
+    rag_variant: str = "any_polarity__flat",
 ) -> dict[str, Callable[[dict], np.ndarray]]:
     """Build all scoring methods available for offline retrieval evaluation."""
     def score_raw(ex: dict) -> np.ndarray:
@@ -293,6 +297,32 @@ def _build_method_registry(
             catalog_item_batch=int(two_tower_catalog_item_batch),
             mask_query_app=mask_query_app,
         )
+    if rag_chroma_persist_dir is not None:
+        from steam_review_ml.recommender.chroma_retrieve import ChromaGameProfileRetriever
+
+        rag_retriever = ChromaGameProfileRetriever(
+            variant=rag_variant, chroma_persist_dir=rag_chroma_persist_dir
+        )
+        description_by_app_id = rag_retriever.load_all_description_texts()
+        catalog_app_ids = retriever.app_ids
+
+        def score_rag_chunk_raw_query(ex: dict) -> np.ndarray:
+            q = rag_retriever.embed_text(ex["query_text"])
+            return rag_retriever.score_against_catalog(
+                q, query_app_id=int(ex["query_app_id"]), app_ids=catalog_app_ids
+            )
+
+        def score_rag_chunk_query_plus_desc(ex: dict) -> np.ndarray:
+            query_app_id = int(ex["query_app_id"])
+            description = description_by_app_id.get(query_app_id, "")
+            text = ex["query_text"] if not description else f"{ex['query_text']}\n\n{description}"
+            q = rag_retriever.embed_text(text)
+            return rag_retriever.score_against_catalog(
+                q, query_app_id=query_app_id, app_ids=catalog_app_ids
+            )
+
+        registry[METHOD_RAG_CHUNK_RAW_QUERY] = score_rag_chunk_raw_query
+        registry[METHOD_RAG_CHUNK_QUERY_PLUS_DESC] = score_rag_chunk_query_plus_desc
     return registry
 
 
@@ -1260,6 +1290,8 @@ def run_retrieval_eval(
     examples_parquet: Path | None = None,
     two_tower_model_path: Path | None = None,
     two_tower_catalog_item_batch: int = 256,
+    rag_chroma_persist_dir: Path | None = None,
+    rag_variant: str = "any_polarity__flat",
 ) -> EvalTables:
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
@@ -1310,6 +1342,8 @@ def run_retrieval_eval(
         mask_query_app=True,
         two_tower_model_path=two_tower_model_path,
         two_tower_catalog_item_batch=two_tower_catalog_item_batch,
+        rag_chroma_persist_dir=rag_chroma_persist_dir,
+        rag_variant=rag_variant,
     )
     rerank_specs = pool_rerank_registry()
     rerank_methods = [m for m in methods if m in rerank_specs]

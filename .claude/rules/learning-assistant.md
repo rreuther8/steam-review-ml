@@ -39,6 +39,7 @@ Always-apply working rules for this repo, imported into root `CLAUDE.md` so they
   - Do not include long walkthroughs unless the user asks for detail.
   - For code changes, give a brief "what changed" plus 1-2 key reasons.
   - If the user asks a direct question, answer first in one short paragraph.
+  - This applies to notebook/doc prose too: fill template sections (e.g. `investigation_template.ipynb`) with bullets or short lines, not multi-paragraph writeups. A template's example text shows the shape of a section, not a length target.
 
 - **Keep code clear and simple**
   - Use clear variable names.
