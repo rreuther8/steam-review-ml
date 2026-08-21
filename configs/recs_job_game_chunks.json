@@ -1,0 +1,7 @@
+{
+  "train_input_path": "data/processed/steam_reviews_cleaned_english_train_norm.parquet",
+  "igdb_input_path": "artifacts/igdb/igdb_games__enriched.parquet",
+  "output_path": "artifacts/recs/embeddings/game_chunks/default/game_review_chunks.parquet",
+  "max_reviews_per_game": 50,
+  "min_review_chars": 30
+}

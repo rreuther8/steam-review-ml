@@ -163,6 +163,14 @@ def main() -> None:
     if two_tower_model_path is not None:
         print(f"two_tower_model_path={two_tower_model_path}")
 
+    rag_chroma_persist_dir: Path | None = None
+    if cfg.get("rag_chroma_persist_dir"):
+        p = Path(str(cfg["rag_chroma_persist_dir"]).strip())
+        rag_chroma_persist_dir = p if p.is_absolute() else repo_root / p
+    rag_variant = str(cfg.get("rag_variant", "any_polarity__flat"))
+    if rag_chroma_persist_dir is not None:
+        print(f"rag_chroma_persist_dir={rag_chroma_persist_dir} rag_variant={rag_variant}")
+
     tables = run_retrieval_eval(
         repo_root=repo_root,
         split=split,
@@ -185,6 +193,8 @@ def main() -> None:
         examples_parquet=examples_parquet,
         two_tower_model_path=two_tower_model_path,
         two_tower_catalog_item_batch=two_tower_catalog_item_batch,
+        rag_chroma_persist_dir=rag_chroma_persist_dir,
+        rag_variant=rag_variant,
     )
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"
