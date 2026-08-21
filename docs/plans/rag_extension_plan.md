@@ -1,6 +1,11 @@
 # RAG game-recommendation extension — staged plan
 
-Status: **active** — Stage 1 (chunking) and Stage 2 (embedding & indexing) built and verified. Stage 3 (retrieval) next.
+Status: **active** — Stages 1-3 (chunking, embedding & indexing, retrieval) built and evaluated.
+Result: a simple first-pass pipeline (USE embeddings, embed-then-pool, one blend ratio, one query
+construction) that trails `two_tower_v1` on primary metrics — not independently shippable per the
+build-order lattice yet. See Stage 3 below for numbers, the qualitative check, and open ablation
+levers (embedder swap, blend-weight tuning, other pooling variants, vector- vs. text-blended
+query) before deciding between iterating here or moving to Stage 4.
 Owner: Ryan Reuther
 Origin prompt: `_scrap/rag_extension.md`
 
@@ -76,6 +81,19 @@ Each pooled vector is then blended with the game's IGDB description vector (`(1-
 - Register as a new `methods` entry in `recs_job_eval_offline.py`'s config (alongside `raw`, `two_tower_v1`, …) so it flows through the existing retrieval contract (`eval_retrieval_*`) with no new eval infra. Compared primarily against `two_tower_v1` (the real shipped bar) and secondarily against `raw` (same flat-cosine mechanism).
 - Qualitative check (not just metrics): manually inspect a sample of Ablation-B arm-2 (query + description) results for the franchise/marketing over-indexing failure mode called out in the original plan.
 - **If this wins its own isolated retrieval-eval comparison, it is independently shippable** — see build-order lattice below; it does not need Stage 4 to succeed first.
+
+**Results** (`rag_v1` eval run, `configs/recs_job_eval_offline_rag_v1.json`, `variant=any_polarity__flat`; notebook: `recs_023_stage3_qualitative_check.ipynb`):
+
+| method | Hit@K (overall) | Recall@K (Slice A, primary) | Hit@K (Slice B, primary) |
+|---|---|---|---|
+| `two_tower_v1` (bar) | 0.512 | 0.460 | 0.496 |
+| `rag_chunk_v1_query_plus_desc` | 0.475 | 0.453 | 0.456 |
+| `raw` | 0.453 | 0.430 | 0.435 |
+| `rag_chunk_v1_raw_query` | 0.425 | 0.389 | 0.406 |
+
+- **Ablation B winner: query + description**, beating raw-query on every cut (+0.05 Hit@K overall) and edging out `raw`. Neither RAG arm beats `two_tower_v1` on its primary Slice A/B metrics — **not independently shippable yet** per the build-order lattice.
+- Qualitative check (5 most-divergent, franchise/company-tagged examples): the predicted franchise/marketing self-bias never appeared in either arm. But `query_plus_desc`'s genre-coherence edge isn't universal — 3/5 clear wins, 1/5 a regression (NieR:Automata drifts from action-RPG peers to strategy games), 1/5 mixed. Treat "description helps" as example-dependent, not a clean win.
+- Open ablation levers surfaced by this pass, none yet tried: swap USE for a modern sentence-embedding model (likely the largest lever on the `two_tower_v1` gap); tune `description_blend_weight` (still the placeholder 0.1 default); evaluate the other 3 pooling variants (`log_weighted`, `recommended_only__*`); blend query-side review/description as separate vectors instead of concatenated text (mirrors how `game_profiles` are already built, gives a tunable weight instead of an all-or-nothing splice).
 
 ### Stage 4 — Generation (new ranker-stage option)
 **Independent of Stages 1–3** — its primary comparison uses the *existing* frozen `two_tower_v1` @100 pools (`artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl`), which already exist today. **Build order: Stages 1–3 first**, Stage 4 after.
