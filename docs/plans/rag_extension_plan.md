@@ -14,10 +14,18 @@ that's done, treat this as "beats the current production baseline," not "wins on
 alone, supporting "genuine embedder-quality effect" over "untuned-pipeline artifact." Then found
 a bigger lever: vector-blended query construction (`recs_026`, on bge-small) beats both
 `query_plus_desc` and `two_tower_v1` outright; a catalog pooling/blend-weight grid on top of that
-(`recs_027`) pushed further to 0.532/0.517/0.514 — best result in the series, all 24 cells clear
-`two_tower_v1`. **The confound above is still open and matters more now**: the gap `two_tower_v1`
-would need to close, if retrained on a modern embedder, has grown from ~0.04 to ~0.05-0.06 on
-Slice A Recall@K. See Stage 3 below for all four ablations' numbers.
+(`recs_027`) pushed further to 0.532/0.517/0.514. **Promoted and confirmed**: Stage 2 rebuilt
+(`any_polarity__log_weighted`, `blend_weight=0.05`), vector-blend query wired into
+`chroma_retrieve.py`/`retrieval_offline_eval.py` as `rag_chunk_v1_vector_blend_query`, real
+`recs_job_eval_offline.py` run (`rag_v3`) matches the notebook prototype exactly — best RAG
+retrieval result across the whole series, beats `two_tower_v1` on all three primary cuts with the
+widest margin yet. **The confound above is still open and matters more now**: the gap
+`two_tower_v1` would need to close, if retrained on a modern embedder, has grown from ~0.04 to
+~0.06 on Slice A Recall@K. See Stage 3 below for all ablations' numbers.
+**Pausing here for now.** Headline: moved to a better sentence embedder (`bge-small-en-v1.5`),
+which now beats the shipped `two_tower_v1` baseline. Open items (the `two_tower_v1` confound, the
+personalization-phase performance follow-up, Stage 4) are recorded above/below, not blockers to
+picking this back up later.
 Owner: Ryan Reuther
 Origin prompt: `_scrap/rag_extension.md`
 
@@ -56,6 +64,44 @@ Extending `steam-review-ml` with a RAG-based recommendation feature. This is **t
 **Blend ratio** between the pooled-review vector and the description vector in `game_profiles`. Not needed to start Stage 1/2 build — can default to something simple and become its own future ablation, same role as `w_meta` in the existing v2a ranker.
 
 ## Staged plan
+
+### Architecture overview (Stages 1-3)
+
+```mermaid
+flowchart TD
+    subgraph S1["Stage 1 — Chunking"]
+        A1[Train split parquet] --> C1["recs_job_game_chunks.py"]
+        A2[IGDB enriched parquet] --> C1
+        C1 --> D1[("game_review_chunks.parquet<br/>review chunks + description chunks")]
+    end
+
+    subgraph S2["Stage 2 — Embedding &amp; Indexing"]
+        D1 --> E1["recs_job_game_chunk_embeddings.py"]
+        E1 -->|encode each chunk| E2["bge-small-en-v1.5"]
+        E2 --> F1[("Chroma: game_review_chunks<br/>fine-grain, one row per chunk")]
+        E2 --> F2["Pool reviews per variant<br/>any_polarity / recommended_only<br/>x flat / log_weighted"]
+        F2 --> F3["Blend with description vector<br/>(description_blend_weight)"]
+        F3 --> F4[("Chroma: game_profiles<br/>one row per app_id x variant")]
+    end
+
+    subgraph S3["Stage 3 — Retrieval (query-time)"]
+        G1[User review text] --> H1{"Query construction"}
+        G2[Query game's IGDB description] --> H1
+        H1 -->|raw_query| H2["embed review only"]
+        H1 -->|query_plus_desc| H3["concat text,<br/>one embed call"]
+        H1 -->|vector_blend| H4["embed separately,<br/>blend vectors"]
+        H2 --> I1["Query vector"]
+        H3 --> I1
+        H4 --> I1
+        I1 --> J1["ChromaGameProfileRetriever.score_against_catalog()"]
+        F4 --> J1
+        J1 -->|self-excluded, top-K| K1["Ranked app_ids"]
+    end
+```
+
+Best config found so far (`recs_027`, pending promotion — see Stage 3 below): `bge-small-en-v1.5`,
+`any_polarity__log_weighted` pooling, `description_blend_weight=0.05`, `vector_blend` query
+construction at `w=0.5`.
 
 ### Stage 1 — Chunking (new retrieval variant, input side)
 **Depends on:** nothing new (train split parquet + IGDB enriched parquet already exist).
@@ -207,10 +253,34 @@ vector-blend `w=0.5`. Sanity-checked against `recs_026`'s real number, exact mat
   vector-blend query — pipeline optima aren't fixed properties of the data, they interact with
   embedder and query-construction choice.
 
-**Best full config found**: `bge-small-en-v1.5` + `any_polarity__log_weighted` pooling +
-`catalog_blend_weight=0.05` + vector-blend query (`w≈0.5`). Not yet promoted into the real
-pipeline (Stage 2 rebuild + Stage 3 retriever rewired for vector-blend querying + a real
-`recs_job_eval_offline.py` run to confirm).
+**Best full config found and confirmed**: `bge-small-en-v1.5` + `any_polarity__log_weighted`
+pooling + `catalog_blend_weight=0.05` + vector-blend query (`w≈0.5`). Promoted: Stage 2 rebuilt
+(`blend_weight=0.05`), `chroma_retrieve.py`/`retrieval_offline_eval.py` wired with a new
+`rag_chunk_v1_vector_blend_query` method (`ChromaGameProfileRetriever.embed_query_vector_blend`).
+Real `recs_job_eval_offline.py` run (`rag_v3`, `artifacts/recs/offline_eval/runs/rag_v3`)
+**confirms the prototype exactly**:
+
+| method | Hit@K (overall) | Recall@K (Slice A, primary) | Hit@K (Slice B, primary) |
+|---|---|---|---|
+| `two_tower_v1` (bar) | 0.512 | 0.460 | 0.496 |
+| **`rag_chunk_v1_vector_blend_query`** | **0.532** | **0.517** | **0.514** |
+| `rag_chunk_v1_query_plus_desc` (old default) | 0.515 | -- | -- |
+| `rag_chunk_v1_raw_query` | 0.486 | -- | -- |
+
+This is now the strongest RAG retrieval result across the whole series, matching `recs_027`'s
+notebook prototype to 3 decimal places — full confidence this isn't a scoring artifact.
+
+**Performance follow-up, found while running `rag_v3`**: `_table_personalization`
+(`retrieval_offline_eval.py`) recomputes every method's score from scratch, per example, on
+every personalization round (overall + per popularity decile + per support bucket, ~17 rounds
+total) — nothing from the main scoring pass is cached or reused. `rag_chunk_v1_vector_blend_query`
+calls `embed_text()` twice per example (review + description, each an unbatched batch-of-1 model
+call) where `raw_query`/`query_plus_desc` only call it once, so this one method alone roughly
+doubles personalization-phase cost — over 12,500 examples × ~17 rounds, `rag_v3` ran
+noticeably longer than `rag_v2`. Not urgent (this run still completes, just slower), but worth
+fixing before adding more multi-embed-call RAG methods: either cache each example's
+scores/embeddings across personalization rounds instead of recomputing them ~17x, or batch the
+embed calls instead of one-at-a-time.
 
 **The `two_tower_v1` confound is still open, and now matters more.** All numbers above compare
 against the *same*, USE-trained `two_tower_v1` — the gap it needs to clear has grown from

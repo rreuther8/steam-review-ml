@@ -44,6 +44,7 @@ from steam_review_ml.recommender.two_tower_train import load_hub_settings
 METHOD_TWO_TOWER_V1 = "two_tower_v1"
 METHOD_RAG_CHUNK_RAW_QUERY = "rag_chunk_v1_raw_query"
 METHOD_RAG_CHUNK_QUERY_PLUS_DESC = "rag_chunk_v1_query_plus_desc"
+METHOD_RAG_CHUNK_VECTOR_BLEND = "rag_chunk_v1_vector_blend_query"
 
 METRIC_COLS = ["Hit@K", "Precision@K", "Recall@K", "MAP@K", "NDCG@K", "MRR"]
 ORACLE_RANKING_METRIC_COLS = ["OracleHit@K", "OracleNDCG@K"]
@@ -234,6 +235,7 @@ def _build_method_registry(
     two_tower_catalog_item_batch: int = 256,
     rag_chroma_persist_dir: Path | None = None,
     rag_variant: str = "any_polarity__flat",
+    rag_query_blend_weight: float = 0.5,
 ) -> dict[str, Callable[[dict], np.ndarray]]:
     """Build all scoring methods available for offline retrieval evaluation."""
     def score_raw(ex: dict) -> np.ndarray:
@@ -321,8 +323,19 @@ def _build_method_registry(
                 q, query_app_id=query_app_id, app_ids=catalog_app_ids
             )
 
+        def score_rag_chunk_vector_blend(ex: dict) -> np.ndarray:
+            query_app_id = int(ex["query_app_id"])
+            description = description_by_app_id.get(query_app_id, "")
+            q = rag_retriever.embed_query_vector_blend(
+                ex["query_text"], description, blend_weight=rag_query_blend_weight
+            )
+            return rag_retriever.score_against_catalog(
+                q, query_app_id=query_app_id, app_ids=catalog_app_ids
+            )
+
         registry[METHOD_RAG_CHUNK_RAW_QUERY] = score_rag_chunk_raw_query
         registry[METHOD_RAG_CHUNK_QUERY_PLUS_DESC] = score_rag_chunk_query_plus_desc
+        registry[METHOD_RAG_CHUNK_VECTOR_BLEND] = score_rag_chunk_vector_blend
     return registry
 
 
@@ -1292,6 +1305,7 @@ def run_retrieval_eval(
     two_tower_catalog_item_batch: int = 256,
     rag_chroma_persist_dir: Path | None = None,
     rag_variant: str = "any_polarity__flat",
+    rag_query_blend_weight: float = 0.5,
 ) -> EvalTables:
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
@@ -1344,6 +1358,7 @@ def run_retrieval_eval(
         two_tower_catalog_item_batch=two_tower_catalog_item_batch,
         rag_chroma_persist_dir=rag_chroma_persist_dir,
         rag_variant=rag_variant,
+        rag_query_blend_weight=rag_query_blend_weight,
     )
     rerank_specs = pool_rerank_registry()
     rerank_methods = [m for m in methods if m in rerank_specs]

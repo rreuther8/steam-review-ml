@@ -89,6 +89,20 @@ class ChromaGameProfileRetriever:
         raw_embedding = self._embed_fn([BGE_QUERY_PREFIX + cleaned])
         return l2_normalize(raw_embedding)
 
+    def embed_query_vector_blend(
+        self, review_text: str, description_text: str, *, blend_weight: float = 0.5
+    ) -> np.ndarray:
+        """Vector-blend alternative to text-concatenation (Ablation B): embed review and
+        description separately, blend the two vectors -- see docs/plans/rag_extension_plan.md
+        Stage 3, recs_026. Falls back to the review vector alone if there's no description.
+        """
+        review_vec = self.embed_text(review_text)
+        cleaned_desc = (description_text or "").strip()
+        if not cleaned_desc:
+            return review_vec
+        desc_vec = self.embed_text(description_text)
+        return l2_normalize((1.0 - blend_weight) * review_vec + blend_weight * desc_vec)
+
     # --- retrieval ---
 
     def score_against_catalog(
