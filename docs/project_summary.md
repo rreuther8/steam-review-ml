@@ -36,7 +36,7 @@ End-user flow (see [`product_vision_recommender_and_review_coaching.md`](product
 | **Interim** | Cleaned Parquet, train/val/test splits under `data/interim/` |
 | **Processed** | Normalized feature Parquets + params under `artifacts/` |
 
-**Split policy** (`configs/split_reviews.json`): hybrid **support-aware user-temporal** split — sparse users get random 70/15/15; denser users keep temporal last-N eval rows. Seed: `PROJECT_RANDOM_SEED` in `steam_review_ml.constants` (override via `STEAM_REVIEWS_RANDOM_STATE`).
+**Split policy** (`configs/split_reviews.json`): **support-aware user-temporal** split — users with exactly 1 review get a random assignment matching the global 70/20/10 ratios; users with ≥2 reviews get a per-user coin flip that picks one eval split (val or test, never both), then their most-recent `max(2, round(n·eval_ratio))` reviews all go there, with the rest going to train. Seed: `PROJECT_RANDOM_SEED` in `steam_review_ml.constants` (override via `STEAM_REVIEWS_RANDOM_STATE`).
 
 ---
 
