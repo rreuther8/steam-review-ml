@@ -1548,6 +1548,7 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
                 masking_policy_version=MASKING_POLICY_VERSION,
                 model_version=model_snap,
                 verbose=verbose,
+                include_query_text=include_query_text,
             )
         retrieval_frames.append(df_r)
         ranking_frames.append(df_k)

@@ -1,0 +1,7 @@
+{
+  "cache_root": "artifacts/recs/eval_cache",
+  "source_cache_name": "val_dev_12k_v1",
+  "cache_name": "val_llm_mini_v1",
+  "n": 200,
+  "random_seed": 2026
+}

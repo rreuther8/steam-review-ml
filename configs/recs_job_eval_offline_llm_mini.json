@@ -1,0 +1,26 @@
+{
+  "split": "val",
+  "methods": [
+    "raw",
+    "popularity_train",
+    "multi_mean_train",
+    "two_tower_v1"
+  ],
+  "examples_parquet": "artifacts/recs/eval_cache/val_llm_mini_v1/example_cohort.parquet",
+  "min_review_chars": 30,
+  "max_train_rows_per_user": 5,
+  "multi_max_reviews": 5,
+  "k_final": 10,
+  "k_retrieval": 100,
+  "k_personalization": 10,
+  "random_seed": 2026,
+  "verbose": true,
+  "include_random_sanity": false,
+  "enable_popularity_decile_diagnostics": true,
+  "archive_run": false,
+  "run_tag": "llm_mini",
+  "include_query_text_in_examples_jsonl": true,
+  "artifact_dir": "artifacts/recs",
+  "output_dir": "artifacts/recs/offline_eval/runs/llm_mini",
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras"
+}
