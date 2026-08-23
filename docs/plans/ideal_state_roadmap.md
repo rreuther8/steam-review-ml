@@ -1,12 +1,12 @@
 # Ideal state roadmap
 
 Status: active  
-Last updated: 2026-06-19  
+Last updated: 2026-08-23  
 Owner: Ryan
 
 **Purpose:** Close the gap between a strong applied ML portfolio and a project that clearly signals **Applied Scientist / ML Engineer / Applied ML Engineer** readiness on recommendations/personalization teams.
 
-**Related:** [`applied_ai_hiring_readiness_note.md`](../applied_ai_hiring_readiness_note.md) (honest assessment), [`recommender_v2_plan.md`](../recommender_v2_plan.md) (active v2 work), [`project_todo_plan.md`](../project_todo_plan.md) (repo checklist), [`recommender_v1_wrap_up.md`](../recommender_v1_wrap_up.md) (shipped v1 scope).
+**Related:** [`applied_ai_hiring_readiness_note.md`](../applied_ai_hiring_readiness_note.md) (honest assessment), [`recommender_v2_plan.md`](../recommender_v2_plan.md) (active v2 work), [`project_todo_plan.md`](../project_todo_plan.md) (repo checklist), [`recommender_v1_wrap_up.md`](../recommender_v1_wrap_up.md) (shipped v1 scope), [`rag_extension_plan.md`](rag_extension_plan.md) (active RAG/LLM extension — Stage 4 generation is where 2.5/2.6 below apply).
 
 ---
 
@@ -91,6 +91,27 @@ Per [`recommender_v2_plan.md`](../recommender_v2_plan.md): rank-only on frozen `
 - [ ] Eval runs tagged: git commit, config hash, cohort path, index version
 - [ ] One-command reproducible path: data → artifacts → eval report (document in [`usage_pipeline.md`](../usage_pipeline.md))
 
+### 2.5 RAG generation-quality eval (once Stage 4 exists)
+
+LLM orchestration is now in scope — see [`rag_extension_plan.md`](rag_extension_plan.md) Stage 4.
+Retrieval metrics (Hit@K/Recall@K) don't tell you if a *generated* answer is any good; this needs
+its own metric family, evaluated with the same rigor as the retrieval-side ablation series.
+
+- [ ] Faithfulness/groundedness: does the generated output actually reflect the retrieved context, or hallucinate beyond it
+- [ ] Answer relevance: does it address the query, independent of faithfulness
+- [ ] Small human-eval or LLM-as-judge pass, calibrated against a hand-labeled sample before trusting it at scale
+- [ ] Wire into the existing eval contract pattern — own frozen baseline, own regression test, not ad hoc
+
+### 2.6 RAG safety / guardrails
+
+Reviews are user-generated text — profanity, toxicity, and potentially adversarial content
+(prompt-injection-style instructions embedded in review text) all flow into whatever a Stage 4
+model reads and acts on. Nothing in the pipeline today filters or sanitizes this.
+
+- [ ] Content filtering on retrieved review text before it reaches a generation model
+- [ ] Basic prompt-injection awareness: treat retrieved review text as untrusted input, not instructions
+- [ ] Output filtering before anything reaches an end user
+
 ---
 
 ## Tier 3 — Optional depth
@@ -115,14 +136,21 @@ Examples already in repo to sharpen and headline:
 
 Honest extension: ANN at scale, batch embedding jobs, feature store sketch, online/offline parity risks.
 
+### 3.5 Human-in-the-loop feedback
+
+- [ ] Mechanism to capture real usage signal (clicked, dismissed, overridden) once a demo/serving
+      path exists
+- [ ] Feed that signal back into training/eval data rather than relying only on offline metrics
+
 ---
 
-## Explicitly out of scope (for recsys roles)
+## Explicitly out of scope
 
-- LLM orchestration stack (unless targeting LLM product roles)
 - Full K8s/Terraform (unless applying to platform teams)
 - Expanding tabular modeling lane
 - Notebook sprawl without eval-job wiring
+
+**No longer out of scope**: LLM orchestration (RAG generation, Stage 4) — see 2.5/2.6/3.5 above and [`rag_extension_plan.md`](rag_extension_plan.md).
 
 ---
 
@@ -152,6 +180,9 @@ Honest extension: ANN at scale, batch embedding jobs, feature store sketch, onli
 | ⬜ | ANN/latency benchmark |
 | ⬜ | CI regression gate |
 | ⬜ | One-liner insight for README / interviews |
+| ⬜ | RAG generation-quality eval (faithfulness, answer relevance) |
+| ⬜ | RAG safety/guardrails (content filtering, prompt-injection awareness) |
+| ⬜ | Human-in-the-loop feedback capture |
 
 ---
 

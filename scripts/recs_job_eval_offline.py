@@ -168,8 +168,12 @@ def main() -> None:
         p = Path(str(cfg["rag_chroma_persist_dir"]).strip())
         rag_chroma_persist_dir = p if p.is_absolute() else repo_root / p
     rag_variant = str(cfg.get("rag_variant", "any_polarity__flat"))
+    rag_query_blend_weight = float(cfg.get("rag_query_blend_weight", 0.5))
     if rag_chroma_persist_dir is not None:
-        print(f"rag_chroma_persist_dir={rag_chroma_persist_dir} rag_variant={rag_variant}")
+        print(
+            f"rag_chroma_persist_dir={rag_chroma_persist_dir} rag_variant={rag_variant} "
+            f"rag_query_blend_weight={rag_query_blend_weight}"
+        )
 
     tables = run_retrieval_eval(
         repo_root=repo_root,
@@ -195,6 +199,7 @@ def main() -> None:
         two_tower_catalog_item_batch=two_tower_catalog_item_batch,
         rag_chroma_persist_dir=rag_chroma_persist_dir,
         rag_variant=rag_variant,
+        rag_query_blend_weight=rag_query_blend_weight,
     )
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"

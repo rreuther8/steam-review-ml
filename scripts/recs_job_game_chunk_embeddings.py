@@ -2,7 +2,8 @@
 
 This is the Stage 2 job of docs/plans/rag_extension_plan.md:
   - read game_review_chunks.parquet (Stage 1 output)
-  - encode every chunk's text once with TF Hub USE (the one embedding pass)
+  - encode every chunk's text once with a sentence-transformers model (the one embedding pass;
+    BAAI/bge-small-en-v1.5 by default -- see docs/plans/rag_extension_plan.md decision #4)
   - write the fine-grain `game_review_chunks` Chroma collection (one row per chunk)
   - compute 4 pooling variants (any_polarity/recommended_only x flat/log1p_weighted)
     from those same chunk embeddings -- cheap re-aggregation, not re-embedding --
@@ -190,17 +191,11 @@ def _write_game_profiles_collection(
     return len(ids), skipped_per_variant
 
 
-def _load_tfhub_embed_fn(tfhub_url: str):
-    import tensorflow as tf
-    import tensorflow_hub as hub
+def _load_st_embed_fn(model_name: str):
+    from sentence_transformers import SentenceTransformer
 
-    gpus = tf.config.list_physical_devices("GPU")
-    for gpu in gpus:
-        try:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        except Exception:
-            pass
-    return hub.load(tfhub_url)
+    model = SentenceTransformer(model_name)
+    return model.encode
 
 
 def main() -> None:
@@ -232,8 +227,9 @@ def main() -> None:
         f"Params: batch_size={cfg.batch_size} max_chars_per_chunk={cfg.max_chars_per_chunk} "
         f"description_blend_weight={cfg.description_blend_weight}"
     )
+    print(f"Embedding model: {cfg.embedding_model_name}")
 
-    embed_fn = _load_tfhub_embed_fn(cfg.tfhub_url)
+    embed_fn = _load_st_embed_fn(cfg.embedding_model_name)
     embeddings = _encode_texts(
         df["text"].tolist(), embed_fn, batch_size=cfg.batch_size, max_chars=cfg.max_chars_per_chunk
     )

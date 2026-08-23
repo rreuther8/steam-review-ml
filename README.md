@@ -14,6 +14,10 @@ and integration from modeling notebooks to API behavior.
 - Iterative model decisions documented with experiment notebooks and decision logs.
 - API integration via FastAPI for end-to-end recommendation usage.
 
+## Why this repo is notebook-heavy
+
+Each candidate idea (a retrieval recipe, a reranker architecture) is built and ablation-tested inside a notebook against the same frozen validation cohort. If it beats the current shipped baseline on the primary metric (`NDCG@10`) and doesn't regress on the harder multi-positive slice — with hyperparameters tuned only on a separate train-side pool, never touched on val — it gets merged into the pipeline (`scripts/` + `src/steam_review_ml/`) as the new shipped configuration. If it loses, the notebook stays as a record of the attempt, but nothing changes in the shipped code — which is why the notebook count is high: every idea that lost still has a notebook, not just the ones that shipped. See [`docs/retrieval_decision_log.md`](docs/retrieval_decision_log.md) and [`docs/ranking_decision_log.md`](docs/ranking_decision_log.md) for the promotion history.
+
 ## Current results snapshot
 
 ### Ranking stage (primary gate) — `latest_ranking`
@@ -106,7 +110,7 @@ two_tower_v1 @100  →  two_tower_v1_v2a_embed_query_logpop_blend @10
 ## Reproducibility and usage
 
 - **Random seed:** the project-wide default is [`PROJECT_RANDOM_SEED`](src/steam_review_ml/constants.py) in `steam_review_ml.constants` (used for recommender eval subsampling, tabular `random_state`, and synthetic baseline RNG streams). Train/val/test splitting reads the same value from that module unless you override with **`STEAM_REVIEWS_RANDOM_STATE`** (see [`docs/usage_pipeline.md`](docs/usage_pipeline.md)).
-- **Split policy:** current pipeline config uses a hybrid mode in [`configs/split_reviews.json`](configs/split_reviews.json): sparse users (`<3` interactions) use deterministic random 70/15/15, while denser users (`>=3`) use per-user temporal last-N assignment. Report key retrieval metrics by cohort (`<3`, `>=3`, overall weighted) to avoid hiding cold-start behavior.
+- **Split policy:** current pipeline config uses `support_aware_user_temporal` mode in [`configs/split_reviews.json`](configs/split_reviews.json): users with exactly 1 review get a random assignment matching the global 70/20/10 train/val/test ratios; users with ≥2 reviews get a per-user coin flip that picks one eval split (val or test, never both), then their most-recent `max(2, round(n·eval_ratio))` reviews (floor of 2, growing with review count) all go there, with the rest going to train. Report key retrieval metrics by slice (`n_eval_targets` bucket) and train-support bucket to avoid hiding cold-start behavior.
 - **Docs map:** [`docs/README.md`](docs/README.md) — index of all `docs/` (reduces sprawl).
 - Pipeline run order and command references: [`docs/usage_pipeline.md`](docs/usage_pipeline.md)
 - Retrieval decision log (current default + rationale): [`docs/retrieval_decision_log.md`](docs/retrieval_decision_log.md)
