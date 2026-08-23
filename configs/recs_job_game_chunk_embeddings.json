@@ -3,7 +3,7 @@
   "chroma_persist_dir": "artifacts/recs/embeddings/game_chunks/chroma",
   "review_chunks_collection": "game_review_chunks",
   "game_profiles_collection": "game_profiles",
-  "tfhub_url": "https://tfhub.dev/google/universal-sentence-encoder/4",
+  "embedding_model_name": "BAAI/bge-small-en-v1.5",
   "batch_size": 64,
   "max_chars_per_chunk": 8000,
   "description_blend_weight": 0.1

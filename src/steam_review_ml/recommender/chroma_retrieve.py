@@ -2,8 +2,9 @@
 
 Analogous to ``ContentRetriever`` (retrieve.py), but queries the ``game_profiles``
 Chroma collection built by Stage 2 instead of a static ``.npz`` cosine-sim matrix.
-Chroma stores the vectors; this class still owns query-text embedding (same TF Hub
-USE model), same as ``ContentRetriever`` owns it for the static-matrix path.
+Chroma stores the vectors; this class still owns query-text embedding (same
+sentence-transformers model used to build the index), same as ``ContentRetriever``
+owns it for the static-matrix path.
 """
 
 from __future__ import annotations
@@ -21,7 +22,11 @@ from steam_review_ml.recommender.retrieve import default_repo_root
 DEFAULT_CHROMA_PERSIST_DIR = "artifacts/recs/embeddings/game_chunks/chroma"
 DEFAULT_GAME_PROFILES_COLLECTION = "game_profiles"
 DEFAULT_REVIEW_CHUNKS_COLLECTION = "game_review_chunks"
-DEFAULT_TFHUB_URL = "https://tfhub.dev/google/universal-sentence-encoder/4"
+DEFAULT_EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+
+# BGE's own convention: prepend this instruction to the query side only (not
+# passages/chunks) -- see docs/plans/rag_extension_plan.md decision #4.
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # Sentinel for a catalog row Chroma didn't return for this variant (the query's own
 # app, or a game skipped from this variant during Stage 2 pooling) -- never ranked.
@@ -38,7 +43,7 @@ class ChromaGameProfileRetriever:
         chroma_persist_dir: Path | None = None,
         collection_name: str = DEFAULT_GAME_PROFILES_COLLECTION,
         review_chunks_collection_name: str = DEFAULT_REVIEW_CHUNKS_COLLECTION,
-        tfhub_url: str = DEFAULT_TFHUB_URL,
+        embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
         repo_root: Path | None = None,
     ) -> None:
         root = repo_root or default_repo_root()
@@ -49,7 +54,7 @@ class ChromaGameProfileRetriever:
                 "Run scripts/recs_job_game_chunk_embeddings.py first."
             )
         self._variant = variant
-        self._tfhub_url = tfhub_url
+        self._embedding_model_name = embedding_model_name
         self._embed_fn = None
 
         client: ClientAPI = chromadb.PersistentClient(path=str(self._persist_dir))
@@ -62,34 +67,26 @@ class ChromaGameProfileRetriever:
         if not sample["ids"]:
             raise ValueError(f"No rows found for variant={variant!r} in '{collection_name}'.")
 
-    # --- embedding (mirrors ContentRetriever's lazy TF Hub load) ---
+    # --- embedding (mirrors ContentRetriever's lazy model load) ---
 
     def _ensure_embedder(self) -> None:
         if self._embed_fn is not None:
             return
         try:
-            import os
-
-            os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-            import tensorflow as tf
-            import tensorflow_hub as hub
+            from sentence_transformers import SentenceTransformer
         except ImportError as e:
             raise ImportError(
-                "TensorFlow Hub is required for retrieval. Install TF + Hub (conda-forge recommended), "
-                "or pip install -e '.[recs-pip]' in a pip-only env."
+                "sentence-transformers is required for retrieval. "
+                "Install it via the 'rag' extra: pip install -e '.[rag]'"
             ) from e
-        for gpu in tf.config.list_physical_devices("GPU"):
-            try:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            except Exception:
-                pass
-        self._embed_fn = hub.load(self._tfhub_url)
+        model = SentenceTransformer(self._embedding_model_name)
+        self._embed_fn = model.encode
 
     def embed_text(self, text: str) -> np.ndarray:
-        """Run the same Hub model as the rest of the pipeline; return an L2-normalized vector."""
+        """Run the same embedding model as the rest of the pipeline; return an L2-normalized vector."""
         self._ensure_embedder()
         cleaned = (text or "").strip()
-        raw_embedding = self._embed_fn([cleaned])
+        raw_embedding = self._embed_fn([BGE_QUERY_PREFIX + cleaned])
         return l2_normalize(raw_embedding)
 
     # --- retrieval ---

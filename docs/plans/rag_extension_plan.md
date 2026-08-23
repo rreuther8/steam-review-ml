@@ -1,11 +1,20 @@
 # RAG game-recommendation extension — staged plan
 
 Status: **active** — Stages 1-3 (chunking, embedding & indexing, retrieval) built and evaluated.
-Result: a simple first-pass pipeline (USE embeddings, embed-then-pool, one blend ratio, one query
-construction) that trails `two_tower_v1` on primary metrics — not independently shippable per the
-build-order lattice yet. See Stage 3 below for numbers, the qualitative check, and open ablation
-levers (embedder swap, blend-weight tuning, other pooling variants, vector- vs. text-blended
-query) before deciding between iterating here or moving to Stage 4.
+Result: the embedder-swap ablation (`bge-small-en-v1.5`, see decision #4) beats the *currently
+shipped* `two_tower_v1` on all three primary Stage 3 metrics, confirmed via the full
+contract-conformant `rag_v2` eval run. **Caveat, important:** this is not evidence that RAG
+retrieval is architecturally better than the two-tower approach — `two_tower_v1` fine-tunes USE
+end-to-end (`hub.KerasLayer(..., trainable=True)`) and has never been retrained on bge-small, so
+the comparison confounds "better architecture" with "one side got a free embedder upgrade and the
+other didn't." Retraining `two_tower_v1` on bge-small isn't a cheap re-score like it was for RAG
+(sentence-transformers is PyTorch, the training loop is TF/Keras) — no drop-in swap exists. Until
+that's done, treat this as "beats the current production baseline," not "wins on architecture."
+**Update**: ran that USE-controlled ablation (`recs_025_stage3_use_controlled_ablation.ipynb`,
+blend-weight tuning x all 4 pooling variants, embedder held fixed at USE) — none of the 24 cells
+close the gap to `two_tower_v1`. This is evidence (not proof) that the embedder swap is a genuine
+quality effect, not an artifact of comparing a tuned pipeline against an untuned one — see Stage
+3 below for both ablations' numbers.
 Owner: Ryan Reuther
 Origin prompt: `_scrap/rag_extension.md`
 
@@ -31,7 +40,7 @@ Extending `steam-review-ml` with a RAG-based recommendation feature. This is **t
 2. **Ablation A2** (review polarity, Stage 1): recommended-only top-50-by-helpfulness vs. any-polarity top-50-by-helpfulness. Needed because a meaningful aggregate "recommended rate" requires negative reviews to be eligible for the top-50 — runs alongside Ablation A (flat vs. log-weighted aggregation), so Stage 1 has **4 chunking variants** to build and compare.
    - **Cap = 50**: the original 20 was sized for concatenate-then-embed (avoid an overlong text blob), a constraint that no longer applies under embed-then-pool. 50 is fixed **across both Ablation A arms** so the ablation isolates "does log-weighting help," not "does a different review-set size help" — the flat arm still needs *some* cap as its only defense against a long tail of low-helpfulness noise, since it weights every included review equally.
 3. **Game description source**: IGDB `summary`/`storyline`, already fetched/joined — confirmed.
-4. **Stage 2 embedding model**: reuse USE (TF Hub) now, consistent with the rest of the pipeline. A dedicated sentence-transformers model is a deferred future ablation, not urgent.
+4. **Stage 2 embedding model**: originally USE (TF Hub), consistent with the rest of the pipeline. **Superseded**: an embedder-swap ablation (`recs_024_stage3_embedder_ablation.ipynb`) found `BAAI/bge-small-en-v1.5` (sentence-transformers, retrieval-tuned asymmetric query/passage encoder, 384-dim) beats both USE and the general-purpose `all-mpnet-base-v2` on Hit@K/Recall@K, and clears the `two_tower_v1` bar on all three primary cuts in a fast prototype. Promoted into Stage 2/3 for real: `scripts/recs_job_game_chunk_embeddings.py` and `ChromaGameProfileRetriever` (`chroma_retrieve.py`) now default to `bge-small-en-v1.5`; queries get BGE's own instruction prefix (`BGE_QUERY_PREFIX`), passages/chunks do not. Chroma rebuilt from scratch (384-dim can't share a collection with USE's 512-dim). Full contract-conformant eval rerun (`rag_v2`) in progress to confirm the prototype numbers — see Stage 3 below.
 5. **LLM eval scale**: build a small frozen `eval_cache` subset (~100–300 examples) via the existing cache mechanism for all LLM-based methods. Keep **full 100-candidate pools per example** — truncating candidates-per-example was considered and rejected: it breaks the `Oracle@K` fairness contract (positives outside the truncated slice become structurally unreachable) and doesn't meaningfully reduce cost anyway, since cost scales with cohort size, not candidates-per-call.
 6. **Stage 4 LLM backend**: **local-first, via llama.cpp**. The call is designed behind a swappable-backend interface (mirroring the `pool_rerank_registry()` pattern) so a hosted Anthropic API backend (credential pattern already exists in `.github/scripts/review_pr.py`) can be added later as a **local-vs-hosted quality/cost ablation**. HF transformers + bitsandbytes is a **later note only**, using an official base model (e.g. `Qwen/Qwen2.5-7B-Instruct` or `meta-llama/Llama-3.1-8B-Instruct`) — explicitly **not** a community "Claude-Opus-distilled" upload considered earlier, which trains on scraped Claude API outputs (likely a ToS violation for that source data) with no independent benchmark validation.
 7. **Blend-hyperparameter retuning** (`w_meta`): not needed for the Stage 5 "new retrieval + new generation" combo. **Does become relevant** for the "new retrieval + existing v2a ranker" combo in the build-order lattice below, if that combo ever ships — flagged there, not solved yet.
@@ -93,7 +102,76 @@ Each pooled vector is then blended with the game's IGDB description vector (`(1-
 
 - **Ablation B winner: query + description**, beating raw-query on every cut (+0.05 Hit@K overall) and edging out `raw`. Neither RAG arm beats `two_tower_v1` on its primary Slice A/B metrics — **not independently shippable yet** per the build-order lattice.
 - Qualitative check (5 most-divergent, franchise/company-tagged examples): the predicted franchise/marketing self-bias never appeared in either arm. But `query_plus_desc`'s genre-coherence edge isn't universal — 3/5 clear wins, 1/5 a regression (NieR:Automata drifts from action-RPG peers to strategy games), 1/5 mixed. Treat "description helps" as example-dependent, not a clean win.
-- Open ablation levers surfaced by this pass, none yet tried: swap USE for a modern sentence-embedding model (likely the largest lever on the `two_tower_v1` gap); tune `description_blend_weight` (still the placeholder 0.1 default); evaluate the other 3 pooling variants (`log_weighted`, `recommended_only__*`); blend query-side review/description as separate vectors instead of concatenated text (mirrors how `game_profiles` are already built, gives a tunable weight instead of an all-or-nothing splice).
+- Open ablation levers surfaced by this pass: ~~swap USE for a modern sentence-embedding model~~ **done, see below**; tune `description_blend_weight` (still the placeholder 0.1 default); evaluate the other 3 pooling variants (`log_weighted`, `recommended_only__*`); blend query-side review/description as separate vectors instead of concatenated text (mirrors how `game_profiles` are already built, gives a tunable weight instead of an all-or-nothing splice).
+
+**Embedder-swap ablation** (`recs_024_stage3_embedder_ablation.ipynb`; fast in-notebook prototype — flat cosine over the 315-game RAG catalog, same cohort/positives as `rag_v1`, not yet run through the real eval job at the time these numbers were produced):
+
+| embedder | Hit@K (overall) | Recall@K (Slice A, primary) | Hit@K (Slice B, primary) |
+|---|---|---|---|
+| `two_tower_v1` (bar) | 0.512 | 0.460 | 0.496 |
+| `current` (USE) | 0.475 | 0.453 | 0.456 |
+| `all-mpnet-base-v2` | 0.448 | 0.425 | 0.429 |
+| **`bge-small-en-v1.5`** | **0.516** | **0.485** | **0.499** |
+
+- `bge-small-en-v1.5` clears `two_tower_v1` on all three cuts; `all-mpnet-base-v2` regresses vs. current USE — model size/generality alone didn't help, retrieval-specific (asymmetric query/passage) training looks like the real lever.
+- **Promoted**: Stage 2 (`recs_job_game_chunk_embeddings.py`) and Stage 3 (`ChromaGameProfileRetriever`) now default to `bge-small-en-v1.5`; Chroma rebuilt from scratch (384-dim).
+
+**Confirmed via full contract-conformant eval** (`configs/recs_job_eval_offline_rag_v2.json`, `artifacts/recs/offline_eval/runs/rag_v2`, real `recs_job_eval_offline.py` run, not the notebook prototype):
+
+| method | Hit@K (overall) | Recall@K (Slice A, primary) | Hit@K (Slice B, primary) |
+|---|---|---|---|
+| `two_tower_v1` (bar) | 0.512 | 0.460 | 0.496 |
+| **`rag_chunk_v1_query_plus_desc`** (bge-small) | **0.516** | **0.485** | **0.499** |
+| `rag_chunk_v1_raw_query` (bge-small) | 0.483 | 0.439 | 0.467 |
+| `raw` | 0.453 | 0.430 | 0.435 |
+
+Matches the notebook prototype almost exactly (0.516/0.485/0.499 vs. 0.516/0.485/0.499) — the
+prototype's flat-cosine simplification was valid. **`rag_chunk_v1_query_plus_desc` +
+`bge-small-en-v1.5` beats the *currently shipped* `two_tower_v1` on all three primary cuts** —
+this is the first RAG arm to clear that bar. **Not yet "independently shippable" on architectural
+merit**: `two_tower_v1` fine-tunes USE end-to-end and has never been retrained on bge-small, so
+this result confounds "RAG is a better approach" with "RAG got a free embedder upgrade and
+`two_tower_v1` didn't." It's a valid answer to "does this beat production today" (which is what
+the build-order lattice's shipping decision actually asks); it is not yet a valid answer to "is
+RAG architecturally better than two-tower." Next: hold the embedder fixed at USE (the same one
+`two_tower_v1` uses) and test the other RAG levers to see if pipeline choices alone can close the
+gap without an embedder confound — see below.
+
+**USE-controlled ablation** (`recs_025_stage3_use_controlled_ablation.ipynb`; embedder held fixed
+at USE — the same one `two_tower_v1` uses — specifically to test whether pipeline tuning alone,
+with no embedder confound, can close the gap. Tests both `description_blend_weight` (`{0.0, 0.05,
+0.1, 0.2, 0.3, 0.5}`) and all 4 pooling variants, 24 cells total; sanity-checked against `rag_v1`'s
+real numbers, exact match):
+
+| pooling_variant | blend_weight | Hit@K (overall) | Recall@K (Slice A) | Hit@K (Slice B) |
+|---|---|---|---|---|
+| `two_tower_v1` (bar) | -- | 0.512 | 0.460 | 0.496 |
+| `any_polarity__flat` (best) | 0.2-0.3 | 0.476 | 0.456-0.457 | 0.458 |
+| `any_polarity__flat` (untuned default) | 0.1 | 0.475 | 0.453 | 0.456 |
+| `any_polarity__log_weighted` (best) | 0.3 | 0.474 | 0.453 | 0.456 |
+| `recommended_only__flat` (best) | 0.3 | 0.471 | 0.448 | 0.454 |
+| `recommended_only__log_weighted` (best) | 0.3 | 0.471 | 0.445 | 0.454 |
+
+- **Zero of the 24 cells beat `two_tower_v1` on all three primary cuts.** Blend-weight tuning is a
+  real but tiny lever (shallow optimum at 0.2-0.3, worth +0.001 to +0.004 vs. the untuned 0.1).
+  `log_weighted` and `recommended_only` both **underperformed** plain `any_polarity__flat` across
+  every blend weight — the opposite of what was predicted; weighting by helpfulness or dropping
+  negative reviews didn't clean up the signal, it shrank the pool and added noise.
+- **The Slice B Hit@K gap barely moves**: best USE cell tops out at 0.458 vs. `two_tower_v1`'s
+  0.496 — a ~0.04 gap unaffected by either lever tested.
+- **Answers the confound question, as much as a notebook can**: pipeline tuning alone (no
+  embedder change) cannot close the gap. This is evidence — not proof, since `two_tower_v1` still
+  hasn't been retrained on bge-small — that the embedder-swap result in `recs_024`/`rag_v2` is a
+  genuine embedder-quality effect, not an artifact of an untuned pipeline being compared against
+  a tuned one.
+
+Not yet done: re-tuning `w_meta` for this cell of the lattice (decision #7, if pairing with the
+existing v2a ranker); re-checking whether the NieR:Automata-style genre-drift regression from
+the qualitative check (`recs_023`) persists with the new embedder; revisiting `recs_024` to
+compare bge-small against the *winning* USE config (`any_polarity__flat`, `blend_weight≈0.2-0.3`)
+found here instead of the original untuned 0.1 default (expected to barely move `recs_024`'s
+conclusion given how flat this grid was, but not yet checked); vector- vs. text-blended query
+construction (the 4th lever) remains untried, lower priority given how flat this grid was.
 
 ### Stage 4 — Generation (new ranker-stage option)
 **Independent of Stages 1–3** — its primary comparison uses the *existing* frozen `two_tower_v1` @100 pools (`artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl`), which already exist today. **Build order: Stages 1–3 first**, Stage 4 after.

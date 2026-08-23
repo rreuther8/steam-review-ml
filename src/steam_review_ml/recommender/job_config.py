@@ -41,7 +41,7 @@ class GameChunkEmbeddingsJobConfig:
     chroma_persist_dir: Path
     review_chunks_collection: str = "game_review_chunks"
     game_profiles_collection: str = "game_profiles"
-    tfhub_url: str = "https://tfhub.dev/google/universal-sentence-encoder/4"
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
     batch_size: int = 64
     max_chars_per_chunk: int = 8000
     description_blend_weight: float = 0.1
@@ -56,8 +56,8 @@ class GameChunkEmbeddingsJobConfig:
                 cfg.get("review_chunks_collection", "game_review_chunks")
             ),
             game_profiles_collection=str(cfg.get("game_profiles_collection", "game_profiles")),
-            tfhub_url=str(
-                cfg.get("tfhub_url", "https://tfhub.dev/google/universal-sentence-encoder/4")
+            embedding_model_name=str(
+                cfg.get("embedding_model_name", "BAAI/bge-small-en-v1.5")
             ),
             batch_size=int(cfg.get("batch_size", 64)),
             max_chars_per_chunk=int(cfg.get("max_chars_per_chunk", 8000)),
