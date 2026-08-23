@@ -10,11 +10,14 @@ the comparison confounds "better architecture" with "one side got a free embedde
 other didn't." Retraining `two_tower_v1` on bge-small isn't a cheap re-score like it was for RAG
 (sentence-transformers is PyTorch, the training loop is TF/Keras) — no drop-in swap exists. Until
 that's done, treat this as "beats the current production baseline," not "wins on architecture."
-**Update**: ran that USE-controlled ablation (`recs_025_stage3_use_controlled_ablation.ipynb`,
-blend-weight tuning x all 4 pooling variants, embedder held fixed at USE) — none of the 24 cells
-close the gap to `two_tower_v1`. This is evidence (not proof) that the embedder swap is a genuine
-quality effect, not an artifact of comparing a tuned pipeline against an untuned one — see Stage
-3 below for both ablations' numbers.
+**Update**: ran the USE-controlled ablation (`recs_025`) — none of 24 cells close the gap on USE
+alone, supporting "genuine embedder-quality effect" over "untuned-pipeline artifact." Then found
+a bigger lever: vector-blended query construction (`recs_026`, on bge-small) beats both
+`query_plus_desc` and `two_tower_v1` outright; a catalog pooling/blend-weight grid on top of that
+(`recs_027`) pushed further to 0.532/0.517/0.514 — best result in the series, all 24 cells clear
+`two_tower_v1`. **The confound above is still open and matters more now**: the gap `two_tower_v1`
+would need to close, if retrained on a modern embedder, has grown from ~0.04 to ~0.05-0.06 on
+Slice A Recall@K. See Stage 3 below for all four ablations' numbers.
 Owner: Ryan Reuther
 Origin prompt: `_scrap/rag_extension.md`
 
@@ -146,17 +149,19 @@ real numbers, exact match):
 | pooling_variant | blend_weight | Hit@K (overall) | Recall@K (Slice A) | Hit@K (Slice B) |
 |---|---|---|---|---|
 | `two_tower_v1` (bar) | -- | 0.512 | 0.460 | 0.496 |
-| `any_polarity__flat` (best) | 0.2-0.3 | 0.476 | 0.456-0.457 | 0.458 |
+| **`any_polarity__flat` (best config)** | **0.3** | **0.476** | **0.457** | **0.458** |
 | `any_polarity__flat` (untuned default) | 0.1 | 0.475 | 0.453 | 0.456 |
 | `any_polarity__log_weighted` (best) | 0.3 | 0.474 | 0.453 | 0.456 |
 | `recommended_only__flat` (best) | 0.3 | 0.471 | 0.448 | 0.454 |
 | `recommended_only__log_weighted` (best) | 0.3 | 0.471 | 0.445 | 0.454 |
 
-- **Zero of the 24 cells beat `two_tower_v1` on all three primary cuts.** Blend-weight tuning is a
-  real but tiny lever (shallow optimum at 0.2-0.3, worth +0.001 to +0.004 vs. the untuned 0.1).
-  `log_weighted` and `recommended_only` both **underperformed** plain `any_polarity__flat` across
-  every blend weight — the opposite of what was predicted; weighting by helpfulness or dropping
-  negative reviews didn't clean up the signal, it shrank the pool and added noise.
+- **Best config found: `any_polarity__flat`, `blend_weight=0.3`** — wins on Slice A Recall@K
+  (the tiebreaker) vs. `0.2`, tied on the other two cuts. Zero of the 24 cells beat `two_tower_v1`
+  on all three primary cuts. Blend-weight tuning is a real but tiny lever (shallow optimum at
+  0.2-0.3, worth +0.001 to +0.004 vs. the untuned 0.1). `log_weighted` and `recommended_only`
+  both **underperformed** plain `any_polarity__flat` across every blend weight — the opposite of
+  what was predicted; weighting by helpfulness or dropping negative reviews didn't clean up the
+  signal, it shrank the pool and added noise.
 - **The Slice B Hit@K gap barely moves**: best USE cell tops out at 0.458 vs. `two_tower_v1`'s
   0.496 — a ~0.04 gap unaffected by either lever tested.
 - **Answers the confound question, as much as a notebook can**: pipeline tuning alone (no
@@ -165,13 +170,67 @@ real numbers, exact match):
   genuine embedder-quality effect, not an artifact of an untuned pipeline being compared against
   a tuned one.
 
+**Vector-blended query construction** (`recs_026_stage3_vector_blend_query.ipynb`; the 4th lever,
+tested on `bge-small-en-v1.5` — the shipped embedder — not USE, since this is a shipping-config
+question, not a confound-control one. `query_plus_desc` concatenates review + description text
+before one embed call; the alternative embeds them separately and blends the two *vectors*,
+`normalize((1-w)*review_vec + w*description_vec)`, `w` swept `{0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7,
+0.9, 1.0}`. Sanity-checked against `rag_v2`'s real numbers, exact match):
+
+| mode | weight | Hit@K (overall) | Recall@K (Slice A) | Hit@K (Slice B) |
+|---|---|---|---|---|
+| `two_tower_v1` (bar) | -- | 0.512 | 0.460 | 0.496 |
+| `query_plus_desc` (text-concat, shipped) | -- | 0.516 | 0.485 | 0.499 |
+| **vector-blend (peak)** | **0.5-0.7** | **0.530-0.532** | **0.508-0.509** | **0.513-0.514** |
+| vector-blend | 1.0 (pure description) | 0.518 | 0.483 | 0.500 |
+
+- **Biggest lever found in the whole ablation series.** Crossover vs. text-concat is between
+  `w=0.2` and `w=0.3`; every weight from `0.3` to `1.0` beats `two_tower_v1` outright.
+- **Surprise**: pure description with zero review signal (`w=1.0`) nearly ties `query_plus_desc`
+  — unexplained, flagged for a qualitative follow-up.
+
+**Catalog pooling × blend-weight grid on bge-small + vector-blend query**
+(`recs_027_stage3_bge_pooling_blend_grid.ipynb`; reruns `recs_025`'s grid, but on the actual
+shipped/winning pipeline instead of the stale USE + text-concat combination. Query fixed at
+vector-blend `w=0.5`. Sanity-checked against `recs_026`'s real number, exact match):
+
+| pooling_variant | catalog_blend_weight | Hit@K (overall) | Recall@K (Slice A) | Hit@K (Slice B) |
+|---|---|---|---|---|
+| `two_tower_v1` (bar) | -- | 0.512 | 0.460 | 0.496 |
+| `recs_026` baseline (untuned catalog) | 0.1 | 0.530 | 0.509 | 0.513 |
+| **best: `any_polarity__log_weighted`** | **0.05** | **0.532** | **0.517** | **0.514** |
+
+- **All 24 cells beat `two_tower_v1`** (vs. 0/24 in `recs_025`'s USE grid) — the vector-blend
+  query switch alone clears the bar regardless of catalog config; catalog tuning adds a further
+  real gain on top (+0.008 Recall@K Slice A, roughly double `recs_025`'s USE-side effect).
+- **`log_weighted` reverses from `recs_025`**: lost to `flat` under USE, wins under bge-small +
+  vector-blend query — pipeline optima aren't fixed properties of the data, they interact with
+  embedder and query-construction choice.
+
+**Best full config found**: `bge-small-en-v1.5` + `any_polarity__log_weighted` pooling +
+`catalog_blend_weight=0.05` + vector-blend query (`w≈0.5`). Not yet promoted into the real
+pipeline (Stage 2 rebuild + Stage 3 retriever rewired for vector-blend querying + a real
+`recs_job_eval_offline.py` run to confirm).
+
+**The `two_tower_v1` confound is still open, and now matters more.** All numbers above compare
+against the *same*, USE-trained `two_tower_v1` — the gap it needs to clear has grown from
+0.516/0.485/0.499 (`recs_024`) to 0.532/0.517/0.514 (`recs_027`), but `two_tower_v1` itself has
+never been retrained on bge-small (or any modern embedder). Every ablation in this series has
+made the *RAG side* better; none has touched whether `two_tower_v1` would also improve with a
+better sentence embedder as its (fine-tuned) input encoder. That remains unmeasured — a real
+retraining job (`two_tower_train.py`, TF/Keras, `hub.KerasLayer(..., trainable=True)`), not
+something re-scorable in a notebook — no drop-in swap exists since bge-small is a PyTorch/
+sentence-transformers model. Two options if pursued: (a) freeze bge-small's embeddings as fixed
+input features and train a new projection/tower on top (cheaper, closer to today's architecture),
+or (b) reimplement tower training in PyTorch so bge-small can be fine-tuned end-to-end like USE
+is today (more faithful comparison, more engineering work). **Deliberately held off for now** —
+until that's run, "beats `two_tower_v1`" means "beats the current production model," not "RAG
+retrieval is architecturally better than two-tower."
+
 Not yet done: re-tuning `w_meta` for this cell of the lattice (decision #7, if pairing with the
 existing v2a ranker); re-checking whether the NieR:Automata-style genre-drift regression from
-the qualitative check (`recs_023`) persists with the new embedder; revisiting `recs_024` to
-compare bge-small against the *winning* USE config (`any_polarity__flat`, `blend_weight≈0.2-0.3`)
-found here instead of the original untuned 0.1 default (expected to barely move `recs_024`'s
-conclusion given how flat this grid was, but not yet checked); vector- vs. text-blended query
-construction (the 4th lever) remains untried, lower priority given how flat this grid was.
+the qualitative check (`recs_023`) persists with the new config; promoting the `recs_027` winning
+config into the real Stage 2/3 pipeline; the `two_tower_v1`-on-a-modern-embedder question above.
 
 ### Stage 4 — Generation (new ranker-stage option)
 **Independent of Stages 1–3** — its primary comparison uses the *existing* frozen `two_tower_v1` @100 pools (`artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl`), which already exist today. **Build order: Stages 1–3 first**, Stage 4 after.
