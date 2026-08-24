@@ -1,6 +1,13 @@
 # Stage 4 (RAG extension) — foundational slice: local-LLM ranker plumbing
 
-Status: **planned, not started**. Persisted copy of an approved Claude Code plan
+Status: **done, killed on results (2026-08-24)**. This plan was executed as written through the
+real 200-example eval; the LLM reranker lost decisively to v2a (NDCG@10 0.033 vs 0.097) and was
+not promoted. Full decision + evidence: `docs/ranking_decision_log.md` § 2026-08-24. Stage 4
+pivoted to a different application (`LlamaCppBackend.generate_explanation()`) — see
+`rag_extension_plan.md`'s Stage 4 section for the current state. This file is kept as the
+as-executed record of the ranker plumbing, not a forward-looking plan anymore.
+
+Originally: persisted copy of an approved Claude Code plan
 (`~/.claude/plans/let-s-start-building-the-humming-swing.md`), saved here so it survives a branch
 switch. Parent doc: [`rag_extension_plan.md`](rag_extension_plan.md) (Stage 4 section).
 
