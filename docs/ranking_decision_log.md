@@ -4,6 +4,39 @@
 > Retrieval-side decisions live in [`retrieval_decision_log.md`](retrieval_decision_log.md).
 > Working context and fill-in questionnaire: [`ranker_exploration_plan.md`](ranker_exploration_plan.md).
 
+## 2026-08-24: LLM local reranker (`ranker_llm_local.py`) — killed; Stage 4 pivots to explanation generation
+
+Decision:
+
+- **Kill** `ranker_llm_local.py` (Stage 4 spike, RAG extension plan) for reranking — do not wire into `pool_rerank_registry()`.
+- **Pivot** Stage 4's generation piece to a different application: LLM-generated natural-language explanations for the top-1 recommendation from the existing (unchanged) `two_tower_v1` → v2a stack, rather than reranking with the LLM. See `generate_explanation()` on `LlamaCppBackend`.
+
+Why:
+
+- **Promotion bar not met**, decisively. On `val_llm_mini_v1` (200-example deterministic subset of `val_dev_12k_v1`, not an independent resample — see `docs/plans/rag_stage4_llm_ranker_plan.md`), v2a recomputed fresh on this exact cohort: NDCG@10 **0.097**, Hit@10 **0.205**, MRR **0.068**. `ranker_llm_local.py` (Llama-3.1-8B-Instruct-Q4_K_M via `llama-cpp-python`, CUDA, minimal top-10-pick prompt — Ablation C arm 1): NDCG@10 **0.033**, Hit@10 **0.065**, MRR **0.024** — roughly **1/3 of v2a** across all three metrics. Parse-failure rate 14% (28/200), falling back to unchanged retrieval scores for those examples.
+- **Root cause is a capability mismatch, not an engineering bug.** v2a/`two_tower_v1` use embeddings trained end-to-end on this catalog's actual review/co-engagement data — a learned collaborative-filtering signal. The LLM does zero-shot text reasoning over truncated (300-char) IGDB descriptions — a fundamentally weaker basis for predicting real user engagement. Consistent with prior pattern: this is the fifth learned/generative ranker (after D2–D5) to lose to the same heuristic v2a baseline.
+- **Full-100-candidate ranking was additionally unreliable as a structured-output task**: 0/3 real examples parsed cleanly when asked to rank the entire ~100-item pool in one shot. Redesigning the prompt to ask for only the top-10 picks (the eval only ever looks at the top `k_final` anyway) fixed the reliability problem (14% failure rate) but not the underlying quality gap.
+
+Evidence:
+
+- Notebook: `notebooks/ranking/recs_028_stage4_llm_ranker_spike.ipynb`.
+- Frozen cohort: `artifacts/recs/eval_cache/val_llm_mini_v1/` (subsample of `val_dev_12k_v1`, script: `scripts/recs_job_subsample_eval_cohort.py`).
+- Pool jsonl: `artifacts/recs/offline_eval/runs/llm_mini/eval_offline_examples.jsonl`.
+- Library (preserved as a spike, not deleted): `src/steam_review_ml/recommender/llm_backends.py` (`LLMRankerBackend` ABC, `LlamaCppBackend`), `src/steam_review_ml/recommender/ranker_llm_local.py`.
+
+Engineering notes (real, not part of the quality verdict):
+
+- Getting `llama-cpp-python` compiled with CUDA support on this machine (RTX 5070, Blackwell/`sm_120`) required a non-default host compiler (`gcc-12`, not the system default `gcc-13`), an extra conda package (`cuda-cudart-dev`) for dev headers, and a manual symlink working around a conda-forge/`nvcc` path-layout mismatch for `cicc`. Full writeup: `_scrap/llama_cpp_cuda_install_notes.md` (gitignored, local only).
+- Local-model structured-output reliability is a real, measurable risk (as the original plan doc anticipated) — greedy decoding (`temperature=0.0`) with no `repeat_penalty` got stuck in token-repetition loops; fixed with `repeat_penalty=1.1`.
+
+Product / eval implications:
+
+- **Shipped stack unchanged**: `two_tower_v1` retrieve @100 → `two_tower_v1_v2a_embed_query_logpop_blend` rerank @10.
+- **New, separate capability**: `LlamaCppBackend.generate_explanation()` — not a ranker, not gated by the promotion bar above; generates grounded natural-language explanations for existing recommendations. Validated against real `StackedRecommender` output in `notebooks/ranking/recs_029_stage4_llm_explanation_spike.ipynb`. See `docs/plans/rag_extension_plan.md` Stage 4 section for the updated plan.
+- Deferred, not pursued given the size of the gap: Ablation C arm 2 (chain-of-thought reasoning-then-rank).
+
+---
+
 ## 2026-06-22: **Winning ranker — ship `two_tower_v1_v2a_embed_query_logpop_blend`**
 
 Decision:

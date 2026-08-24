@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from steam_review_ml.constants import PROJECT_RANDOM_SEED
 
 COHORT_PARQUET_NAME = "example_cohort.parquet"
 LEGACY_COHORT_PARQUET_NAME = "eval_examples.parquet"
@@ -29,6 +32,39 @@ def cohort_parquet_path(cache_dir: Path) -> Path:
 
 def resolve_reference_cohort_parquet(*, cache_root: Path, cache_name: str) -> Path:
     return cohort_parquet_path(cache_root / cache_name)
+
+
+@dataclass(frozen=True, kw_only=True)
+class SubsampleEvalCohortConfig:
+    """Inputs for drawing a smaller frozen cohort from an existing frozen cohort."""
+
+    cache_root: Path
+    source_cache_name: str
+    cache_name: str
+    n: int
+    random_seed: int = PROJECT_RANDOM_SEED
+
+    @classmethod
+    def from_job_config(cls, cfg: dict, *, repo_root: Path) -> "SubsampleEvalCohortConfig":
+        return cls(
+            cache_root=repo_root / str(cfg.get("cache_root", "artifacts/recs/eval_cache")),
+            source_cache_name=str(cfg["source_cache_name"]),
+            cache_name=str(cfg["cache_name"]),
+            n=int(cfg["n"]),
+            random_seed=int(cfg.get("random_seed", PROJECT_RANDOM_SEED)),
+        )
+
+    @property
+    def output_dir(self) -> Path:
+        return self.cache_root / self.cache_name
+
+    @property
+    def output_path(self) -> Path:
+        return self.output_dir / COHORT_PARQUET_NAME
+
+    @property
+    def meta_path(self) -> Path:
+        return self.output_dir / "example_cohort_meta.json"
 
 
 def assert_cohort_disjoint(

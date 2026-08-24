@@ -33,9 +33,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from steam_review_ml.constants import PROJECT_RANDOM_SEED
 from steam_review_ml.evaluation.eval_baseline import write_offline_baseline_dual
-from steam_review_ml.evaluation.retrieval_offline_eval import REQUIRED_PHASE1_METHODS, run_retrieval_eval
+from steam_review_ml.evaluation.retrieval_offline_eval import (
+    REQUIRED_PHASE1_METHODS,
+    RetrievalEvalConfig,
+    run_retrieval_eval,
+)
 from steam_review_ml.utils import load_config
 
 
@@ -96,111 +99,52 @@ def main() -> None:
     cfg = load_config(args.config)
     repo_root = Path(__file__).resolve().parents[1]
 
-    split = str(cfg.get("split", "val"))
     methods = [str(m) for m in cfg.get("methods", [])]
-    if not methods:
-        raise ValueError("Config must include non-empty 'methods' list.")
-
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
             f"'methods' must include required baselines {sorted(REQUIRED_PHASE1_METHODS)}; "
             f"got {sorted(set(methods))}"
         )
 
-    active_cohort = str(cfg.get("active_cohort", "all"))
-    max_examples = int(cfg.get("max_examples", 12_500))
-    support_app_filter_mode = str(cfg.get("support_app_filter_mode", "strict"))
-    min_review_chars = int(cfg.get("min_review_chars", 30))
-    max_train_rows_per_user = int(cfg.get("max_train_rows_per_user", 5))
-    multi_max_reviews = int(cfg.get("multi_max_reviews", 5))
-    k_final = int(cfg.get("k_final", 10))
-    k_retrieval = cfg.get("k_retrieval")
-    k_retrieval_arg = None if k_retrieval is None else int(k_retrieval)
-    k_personalization = int(cfg.get("k_personalization", 10))
-    include_random_sanity = bool(cfg.get("include_random_sanity", False))
-    verbose = bool(cfg.get("verbose", True))
-    enable_popularity_decile_diagnostics = bool(
-        cfg.get("enable_popularity_decile_diagnostics", True)
-    )
-    random_seed = int(cfg.get("random_seed", PROJECT_RANDOM_SEED))
-
-    artifact_dir_rel = cfg.get("artifact_dir", "artifacts/recs")
-    artifact_dir = repo_root / str(artifact_dir_rel)
     output_dir_rel = cfg.get("output_dir", "artifacts/recs/offline_eval/runs/latest")
     output_dir = repo_root / str(output_dir_rel)
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_run = bool(cfg.get("archive_run", False))
     run_tag = str(cfg.get("run_tag", "eval"))
 
-    cohort_sizing = _parse_cohort_sizing(cfg.get("cohort_sizing"))
-
-    examples_parquet: Path | None = None
-    if args.examples_parquet:
-        p = Path(args.examples_parquet)
-        examples_parquet = p if p.is_absolute() else repo_root / p
-    elif cfg.get("examples_parquet"):
-        p = Path(str(cfg["examples_parquet"]).strip())
-        examples_parquet = p if p.is_absolute() else repo_root / p
+    config = RetrievalEvalConfig.from_job_config(
+        cfg,
+        repo_root=repo_root,
+        cohort_sizing=_parse_cohort_sizing(cfg.get("cohort_sizing")),
+        examples_parquet_override=args.examples_parquet,
+    )
 
     print("Running offline eval job")
-    kr_display = k_retrieval_arg if k_retrieval_arg is not None else k_final
+    kr_display = config.k_retrieval if config.k_retrieval is not None else config.k_final
     print(
-        f"split={split} methods={methods} max_examples={max_examples} "
-        f"k_retrieval={kr_display} k_final={k_final} k_personalization={k_personalization}"
+        f"split={config.split} methods={config.methods} max_examples={config.max_examples} "
+        f"k_retrieval={kr_display} k_final={config.k_final} k_personalization={config.k_personalization}"
     )
     print(
-        f"active_cohort={active_cohort} support_mode={support_app_filter_mode} "
-        f"artifact_dir={artifact_dir} output_dir={output_dir}"
+        f"active_cohort={config.active_cohort} support_mode={config.support_app_filter_mode} "
+        f"artifact_dir={config.artifact_dir} output_dir={output_dir}"
     )
-    if examples_parquet is not None:
-        print(f"examples_parquet={examples_parquet} (cached cohort; max_examples/cohort_sizing unused for sampling)")
-
-    two_tower_model_path: Path | None = None
-    if cfg.get("two_tower_model_path"):
-        p = Path(str(cfg["two_tower_model_path"]).strip())
-        two_tower_model_path = p if p.is_absolute() else repo_root / p
-    two_tower_catalog_item_batch = int(cfg.get("two_tower_catalog_item_batch", 256))
-    if two_tower_model_path is not None:
-        print(f"two_tower_model_path={two_tower_model_path}")
-
-    rag_chroma_persist_dir: Path | None = None
-    if cfg.get("rag_chroma_persist_dir"):
-        p = Path(str(cfg["rag_chroma_persist_dir"]).strip())
-        rag_chroma_persist_dir = p if p.is_absolute() else repo_root / p
-    rag_variant = str(cfg.get("rag_variant", "any_polarity__flat"))
-    rag_query_blend_weight = float(cfg.get("rag_query_blend_weight", 0.5))
-    if rag_chroma_persist_dir is not None:
+    if config.examples_parquet is not None:
         print(
-            f"rag_chroma_persist_dir={rag_chroma_persist_dir} rag_variant={rag_variant} "
-            f"rag_query_blend_weight={rag_query_blend_weight}"
+            f"examples_parquet={config.examples_parquet} "
+            "(cached cohort; max_examples/cohort_sizing unused for sampling)"
         )
+    if config.two_tower_model_path is not None:
+        print(f"two_tower_model_path={config.two_tower_model_path}")
+    if config.rag_chroma_persist_dir is not None:
+        print(
+            f"rag_chroma_persist_dir={config.rag_chroma_persist_dir} rag_variant={config.rag_variant} "
+            f"rag_query_blend_weight={config.rag_query_blend_weight}"
+        )
+    if config.include_query_text:
+        print("include_query_text_in_examples_jsonl=True")
 
-    tables = run_retrieval_eval(
-        repo_root=repo_root,
-        split=split,
-        methods=methods,
-        active_cohort=active_cohort,
-        max_examples=max_examples,
-        support_app_filter_mode=support_app_filter_mode,
-        cohort_sizing=cohort_sizing,
-        min_review_chars=min_review_chars,
-        max_train_rows_per_user=max_train_rows_per_user,
-        multi_max_reviews=multi_max_reviews,
-        k_final=k_final,
-        k_retrieval=k_retrieval_arg,
-        k_personalization=k_personalization,
-        enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
-        include_random_sanity=include_random_sanity,
-        random_seed=random_seed,
-        artifact_dir=artifact_dir,
-        verbose=verbose,
-        examples_parquet=examples_parquet,
-        two_tower_model_path=two_tower_model_path,
-        two_tower_catalog_item_batch=two_tower_catalog_item_batch,
-        rag_chroma_persist_dir=rag_chroma_persist_dir,
-        rag_variant=rag_variant,
-        rag_query_blend_weight=rag_query_blend_weight,
-    )
+    tables = run_retrieval_eval(config)
 
     retr_overall_path = output_dir / "eval_retrieval_overall.csv"
     retr_slice_path = output_dir / "eval_retrieval_by_slice.csv"

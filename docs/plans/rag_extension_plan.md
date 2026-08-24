@@ -303,16 +303,37 @@ the qualitative check (`recs_023`) persists with the new config; promoting the `
 config into the real Stage 2/3 pipeline; the `two_tower_v1`-on-a-modern-embedder question above.
 
 ### Stage 4 — Generation (new ranker-stage option)
+
+**Status (2026-08-24): reranking killed, pivoted to explanation generation.** Full decision,
+real numbers, and evidence: `docs/ranking_decision_log.md` § 2026-08-24. Summary: real 200-example
+eval on `val_llm_mini_v1` (frozen subset of `val_dev_12k_v1`) showed `ranker_llm_local.py`
+(Llama-3.1-8B-Instruct, local via `llama-cpp-python`) losing decisively to v2a recomputed on the
+same cohort — NDCG@10 0.033 vs 0.097, roughly 1/3. Root cause: capability mismatch (zero-shot text
+reasoning over truncated descriptions vs. v2a/`two_tower_v1`'s trained collaborative-filtering
+embeddings), not an engineering bug — the fifth learned/generative ranker (after D2–D5) to lose to
+the same heuristic baseline. Engineering plumbing (below) all worked correctly and is preserved as
+a spike, not deleted.
+
+**Pivot**: `LlamaCppBackend.generate_explanation()` generates a grounded natural-language
+explanation for the top-1 recommendation from the existing, unchanged `two_tower_v1` → v2a stack,
+instead of reranking with the LLM — sidesteps the exact weakness just measured (this is
+generation, not discrimination among ~100 candidates). Validated against real
+`StackedRecommender` output. No promotion bar (quality is read, not scored). See
+`notebooks/ranking/recs_029_stage4_llm_explanation_spike.ipynb`.
+
 **Independent of Stages 1–3** — its primary comparison uses the *existing* frozen `two_tower_v1` @100 pools (`artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl`), which already exist today. **Build order: Stages 1–3 first**, Stage 4 after.
 
-- **Data gap, noted for when we get here**: `eval_offline_examples.jsonl` holds only IDs/scores — no query text, no candidate text (heuristic rerankers never needed either, since they only do `app_id`-keyed numeric lookups). An LLM ranker does. Fix: extend `recs_job_eval_offline.py`'s own output, then **rerun the job** — verified the cohort sampling is seeded (`np.random.default_rng(PROJECT_RANDOM_SEED)` in `retrieval_offline_eval.py`) and retrieval scoring is a deterministic forward pass, so rerunning with the same config reproduces the identical cohort/pool, just with more fields — no separate downstream enrichment/join script needed. Query text is close to free (already computed internally, just not currently written out); candidate text (`app_id` → title/description/genres) is genuinely new lookup logic. Add both as an **opt-in** addition (new field or sibling output file, flag-gated) rather than changing the core jsonl schema unconditionally, since that job is shared by every method's eval and its output is checked by `tests/test_retrieval_eval_regression.py`. Detail to work out when we build Stage 4, not now.
-- Build a small frozen `eval_cache` cohort (~100–300 examples) via `recs_job_build_eval_examples.py` (new config, e.g. `configs/recs_job_build_eval_examples_llm_mini.json`).
-- New isolated spike module `src/steam_review_ml/recommender/ranker_llm_local.py` (naming mirrors `ranker_d4_cross_encoder.py`), **not** wired into `pool_rerank_registry()` until it clears the promotion bar.
-- LLM call behind a swappable-backend interface (`generate_ranking(query_text, candidates) -> ranked_list`); `LlamaCppBackend` is the initial implementation. Leaves room for `AnthropicBackend` and a `TransformersBitsAndBytesBackend` later as ablations.
-- Ablation C: minimal-token ranked-list-only output vs. chain-of-thought reasoning-then-rank output — evaluate whether (b) beats (a) on ranking quality (not just explainability), using the same `eval_ranking_*` metrics as the existing rank-only eval job.
-- Promotion bar: v2a's NDCG@10 0.095 overall / 0.070 Slice A — note this is the *full 12k-cohort* number; the small-cohort LLM run needs its own heuristic-ranker baseline computed on the **same small cohort** for a fair comparison, not a direct comparison to the 12k number.
-- Register via `recs_job_eval_ranking.py`'s existing `ranker_methods` config section, pointed at the small frozen pools jsonl.
-- Open detail to resolve when we get here: regression-baseline tolerance/determinism policy for LLM output (seed/temperature pinning), since local LLM output may not be bit-identical run-to-run.
+Original plan (executed as written, then killed on results — kept here as the record of what was
+built and why, not a forward-looking TODO anymore):
+
+- **Data gap, noted for when we get here**: `eval_offline_examples.jsonl` holds only IDs/scores — no query text, no candidate text (heuristic rerankers never needed either, since they only do `app_id`-keyed numeric lookups). An LLM ranker does. Fix: extend `recs_job_eval_offline.py`'s own output, then **rerun the job** — verified the cohort sampling is seeded (`np.random.default_rng(PROJECT_RANDOM_SEED)` in `retrieval_offline_eval.py`) and retrieval scoring is a deterministic forward pass, so rerunning with the same config reproduces the identical cohort/pool, just with more fields — no separate downstream enrichment/join script needed. Query text is close to free (already computed internally, just not currently written out); candidate text (`app_id` → title/description/genres) is genuinely new lookup logic. Add both as an **opt-in** addition (new field or sibling output file, flag-gated) rather than changing the core jsonl schema unconditionally, since that job is shared by every method's eval and its output is checked by `tests/test_retrieval_eval_regression.py`. Detail to work out when we build Stage 4, not now. — **Done**: `include_query_text_in_examples_jsonl` opt-in flag, default off.
+- Build a small frozen `eval_cache` cohort (~100–300 examples) via `recs_job_build_eval_examples.py` (new config, e.g. `configs/recs_job_build_eval_examples_llm_mini.json`). — **Done, different mechanism**: `val_llm_mini_v1` is a *deterministic subset of `val_dev_12k_v1`* (`scripts/recs_job_subsample_eval_cohort.py`), not an independent resample — keeps it a true subset of the population every other ranker was measured against.
+- New isolated spike module `src/steam_review_ml/recommender/ranker_llm_local.py` (naming mirrors `ranker_d4_cross_encoder.py`), **not** wired into `pool_rerank_registry()` until it clears the promotion bar. — **Done**; not wired in (killed).
+- LLM call behind a swappable-backend interface (`generate_ranking(query_text, candidates) -> ranked_list`); `LlamaCppBackend` is the initial implementation. Leaves room for `AnthropicBackend` and a `TransformersBitsAndBytesBackend` later as ablations. — **Done**: `LLMRankerBackend` is an ABC (not `Protocol`) — deliberate, since this repo has no mypy/type-checking gate in CI, so ABC's runtime `TypeError`-on-missing-method enforcement is the only real safety net. Also required redesigning the prompt contract from "rank all ~100 candidates" (0/3 real examples parsed cleanly) to "pick your top 10" (14% failure rate, matches what `k_final` actually evaluates) — see decision log for the full story.
+- Ablation C: minimal-token ranked-list-only output vs. chain-of-thought reasoning-then-rank output — evaluate whether (b) beats (a) on ranking quality (not just explainability), using the same `eval_ranking_*` metrics as the existing rank-only eval job. — **Only arm 1 (minimal) run**; arm 2 (CoT) deferred, not worth pursuing given the size of the gap.
+- Promotion bar: v2a's NDCG@10 0.095 overall / 0.070 Slice A — note this is the *full 12k-cohort* number; the small-cohort LLM run needs its own heuristic-ranker baseline computed on the **same small cohort** for a fair comparison, not a direct comparison to the 12k number. — **Done**: v2a recomputed fresh on `val_llm_mini_v1` scored NDCG@10 0.097 — the actual bar the LLM ranker needed to clear (and didn't).
+- Register via `recs_job_eval_ranking.py`'s existing `ranker_methods` config section, pointed at the small frozen pools jsonl. — **N/A**: killed before this step; evaluated directly in the notebook instead (matches D2–D6 convention).
+- Open detail to resolve when we get here: regression-baseline tolerance/determinism policy for LLM output (seed/temperature pinning), since local LLM output may not be bit-identical run-to-run. — **N/A**: moot, not promoted.
 
 ### Stage 5 — Evaluation & integration (end-to-end combo)
 **Depends on:** Stage 3 (validated new retrieval) and Stage 4 (validated new generation) both done.

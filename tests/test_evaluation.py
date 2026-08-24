@@ -126,26 +126,63 @@ def test_run_retrieval_eval_reuses_prepared_retriever(monkeypatch: pytest.Monkey
     monkeypatch.setattr(evaluation, "_build_method_registry", fake_build_method_registry)
 
     tables = evaluation.run_retrieval_eval(
-        repo_root=Path("."),
-        split="val",
-        methods=["raw", "popularity_train", "multi_mean_train"],
-        active_cohort="all",
-        max_examples=100,
-        support_app_filter_mode="strict",
-        cohort_sizing={},
-        min_review_chars=1,
-        max_train_rows_per_user=5,
-        multi_max_reviews=5,
-        k_final=2,
-        k_personalization=2,
-        enable_popularity_decile_diagnostics=True,
-        include_random_sanity=False,
-        random_seed=1,
-        artifact_dir=None,
-        verbose=False,
+        evaluation.RetrievalEvalConfig(
+            repo_root=Path("."),
+            split="val",
+            methods=["raw", "popularity_train", "multi_mean_train"],
+            active_cohort="all",
+            max_examples=100,
+            support_app_filter_mode="strict",
+            cohort_sizing={},
+            min_review_chars=1,
+            max_train_rows_per_user=5,
+            multi_max_reviews=5,
+            k_final=2,
+            k_personalization=2,
+            enable_popularity_decile_diagnostics=True,
+            include_random_sanity=False,
+            random_seed=1,
+            artifact_dir=None,
+            verbose=False,
+        )
     )
     assert not tables.retrieval_overall.empty
     assert not tables.ranking_overall.empty
+
+
+def test_include_query_text_flag_adds_query_text_to_artifact_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_retriever = object()
+    fake_inputs = _fake_eval_inputs(fake_retriever)
+
+    monkeypatch.setattr(evaluation, "prepare_eval_inputs", lambda **kwargs: fake_inputs)
+    monkeypatch.setattr(evaluation, "_build_method_registry", lambda **kwargs: _fake_registry(fake_retriever))
+
+    tables = evaluation.run_retrieval_eval(
+        evaluation.RetrievalEvalConfig(
+            repo_root=Path("."),
+            split="val",
+            methods=["raw", "popularity_train", "multi_mean_train"],
+            active_cohort="all",
+            max_examples=100,
+            support_app_filter_mode="strict",
+            cohort_sizing={},
+            min_review_chars=1,
+            max_train_rows_per_user=5,
+            multi_max_reviews=5,
+            k_final=2,
+            k_personalization=2,
+            enable_popularity_decile_diagnostics=True,
+            include_random_sanity=False,
+            random_seed=1,
+            artifact_dir=None,
+            verbose=False,
+            include_query_text=True,
+        )
+    )
+    expected_query_text = {ex["query_app_id"]: ex["query_text"] for ex in fake_inputs.examples}
+    assert tables.artifact_rows
+    for row in tables.artifact_rows:
+        assert row["query_text"] == expected_query_text[row["query_app_id"]]
 
 
 def test_fusion_c_query_vector_fuses_session_and_weighted_behavior() -> None:
@@ -197,24 +234,26 @@ def test_ranking_overall_includes_oracle_columns(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(evaluation, "_build_method_registry", lambda **kwargs: _fake_registry(fake_retriever))
 
     tables = evaluation.run_retrieval_eval(
-        repo_root=Path("."),
-        split="val",
-        methods=["raw", "popularity_train", "multi_mean_train"],
-        active_cohort="all",
-        max_examples=100,
-        support_app_filter_mode="strict",
-        cohort_sizing={},
-        min_review_chars=1,
-        max_train_rows_per_user=5,
-        multi_max_reviews=5,
-        k_final=2,
-        k_retrieval=3,
-        k_personalization=2,
-        enable_popularity_decile_diagnostics=True,
-        include_random_sanity=False,
-        random_seed=1,
-        artifact_dir=None,
-        verbose=False,
+        evaluation.RetrievalEvalConfig(
+            repo_root=Path("."),
+            split="val",
+            methods=["raw", "popularity_train", "multi_mean_train"],
+            active_cohort="all",
+            max_examples=100,
+            support_app_filter_mode="strict",
+            cohort_sizing={},
+            min_review_chars=1,
+            max_train_rows_per_user=5,
+            multi_max_reviews=5,
+            k_final=2,
+            k_retrieval=3,
+            k_personalization=2,
+            enable_popularity_decile_diagnostics=True,
+            include_random_sanity=False,
+            random_seed=1,
+            artifact_dir=None,
+            verbose=False,
+        )
     )
 
     for col in evaluation.ORACLE_RANKING_METRIC_COLS:
@@ -231,23 +270,25 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     monkeypatch.setattr(evaluation, "_build_method_registry", lambda **kwargs: _fake_registry(fake_retriever))
 
     tables = evaluation.run_retrieval_eval(
-        repo_root=Path("."),
-        split="val",
-        methods=["raw", "popularity_train", "multi_mean_train"],
-        active_cohort="all",
-        max_examples=100,
-        support_app_filter_mode="strict",
-        cohort_sizing={},
-        min_review_chars=1,
-        max_train_rows_per_user=5,
-        multi_max_reviews=5,
-        k_final=2,
-        k_personalization=2,
-        enable_popularity_decile_diagnostics=True,
-        include_random_sanity=False,
-        random_seed=1,
-        artifact_dir=None,
-        verbose=False,
+        evaluation.RetrievalEvalConfig(
+            repo_root=Path("."),
+            split="val",
+            methods=["raw", "popularity_train", "multi_mean_train"],
+            active_cohort="all",
+            max_examples=100,
+            support_app_filter_mode="strict",
+            cohort_sizing={},
+            min_review_chars=1,
+            max_train_rows_per_user=5,
+            multi_max_reviews=5,
+            k_final=2,
+            k_personalization=2,
+            enable_popularity_decile_diagnostics=True,
+            include_random_sanity=False,
+            random_seed=1,
+            artifact_dir=None,
+            verbose=False,
+        )
     )
 
     expected_prefixes = (

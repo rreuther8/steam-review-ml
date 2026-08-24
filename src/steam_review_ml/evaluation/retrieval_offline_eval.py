@@ -617,6 +617,7 @@ def _per_example_retrieval_ranking(
     masking_policy_version: str,
     model_version: str,
     verbose: bool = False,
+    include_query_text: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
     """Score each example once; derive retrieval vs ranking metric rows and JSONL-ready artifact dicts."""
     retrieval_rows: list[dict[str, Any]] = []
@@ -720,6 +721,8 @@ def _per_example_retrieval_ranking(
                 "model_version": model_version,
             }
         )
+        if include_query_text:
+            artifact_rows[-1]["query_text"] = ex["query_text"]
 
     df_retrieval = pd.DataFrame(retrieval_rows)
     df_ranking = pd.DataFrame(ranking_rows)
@@ -1280,33 +1283,128 @@ def _slice_b_empirical_std(
     return out
 
 
-def run_retrieval_eval(
-    *,
-    repo_root: Path,
-    split: str,
-    methods: list[str],
-    active_cohort: str,
-    max_examples: int,
-    support_app_filter_mode: str,
-    cohort_sizing: dict[tuple[str, str], float],
-    min_review_chars: int,
-    max_train_rows_per_user: int,
-    multi_max_reviews: int,
-    k_final: int,
-    k_retrieval: int | None = None,
-    k_personalization: int,
-    enable_popularity_decile_diagnostics: bool,
-    include_random_sanity: bool,
-    random_seed: int = PROJECT_RANDOM_SEED,
-    artifact_dir: Path | None = None,
-    verbose: bool = False,
-    examples_parquet: Path | None = None,
-    two_tower_model_path: Path | None = None,
-    two_tower_catalog_item_batch: int = 256,
-    rag_chroma_persist_dir: Path | None = None,
-    rag_variant: str = "any_polarity__flat",
-    rag_query_blend_weight: float = 0.5,
-) -> EvalTables:
+@dataclass(frozen=True, kw_only=True)
+class RetrievalEvalConfig:
+    """All ``run_retrieval_eval`` inputs, grouped into one object instead of ~25 loose kwargs."""
+
+    repo_root: Path
+    split: str
+    methods: list[str]
+    active_cohort: str
+    max_examples: int
+    support_app_filter_mode: str
+    cohort_sizing: dict[tuple[str, str], float]
+    min_review_chars: int
+    max_train_rows_per_user: int
+    multi_max_reviews: int
+    k_final: int
+    k_personalization: int
+    enable_popularity_decile_diagnostics: bool
+    include_random_sanity: bool
+    k_retrieval: int | None = None
+    random_seed: int = PROJECT_RANDOM_SEED
+    artifact_dir: Path | None = None
+    verbose: bool = False
+    examples_parquet: Path | None = None
+    two_tower_model_path: Path | None = None
+    two_tower_catalog_item_batch: int = 256
+    rag_chroma_persist_dir: Path | None = None
+    rag_variant: str = "any_polarity__flat"
+    rag_query_blend_weight: float = 0.5
+    include_query_text: bool = False
+
+    @classmethod
+    def from_job_config(
+        cls,
+        cfg: dict,
+        *,
+        repo_root: Path,
+        cohort_sizing: dict[tuple[str, str], float],
+        examples_parquet_override: str | None = None,
+    ) -> "RetrievalEvalConfig":
+        """Build from a job JSON config dict (``scripts/recs_job_eval_offline.py`` schema).
+
+        ``examples_parquet_override`` is the CLI ``--examples-parquet`` value, if any; it wins
+        over the config's ``examples_parquet`` key, matching the script's prior CLI-overrides-config behavior.
+        """
+        methods = [str(m) for m in cfg.get("methods", [])]
+        if not methods:
+            raise ValueError("Config must include non-empty 'methods' list.")
+
+        def _resolve(raw: str | Path) -> Path:
+            p = Path(str(raw).strip())
+            return p if p.is_absolute() else repo_root / p
+
+        examples_parquet: Path | None = None
+        if examples_parquet_override:
+            examples_parquet = _resolve(examples_parquet_override)
+        elif cfg.get("examples_parquet"):
+            examples_parquet = _resolve(cfg["examples_parquet"])
+
+        two_tower_model_path = _resolve(cfg["two_tower_model_path"]) if cfg.get("two_tower_model_path") else None
+        rag_chroma_persist_dir = (
+            _resolve(cfg["rag_chroma_persist_dir"]) if cfg.get("rag_chroma_persist_dir") else None
+        )
+        k_retrieval = cfg.get("k_retrieval")
+
+        return cls(
+            repo_root=repo_root,
+            split=str(cfg.get("split", "val")),
+            methods=methods,
+            active_cohort=str(cfg.get("active_cohort", "all")),
+            max_examples=int(cfg.get("max_examples", 12_500)),
+            support_app_filter_mode=str(cfg.get("support_app_filter_mode", "strict")),
+            cohort_sizing=cohort_sizing,
+            min_review_chars=int(cfg.get("min_review_chars", 30)),
+            max_train_rows_per_user=int(cfg.get("max_train_rows_per_user", 5)),
+            multi_max_reviews=int(cfg.get("multi_max_reviews", 5)),
+            k_final=int(cfg.get("k_final", 10)),
+            k_retrieval=None if k_retrieval is None else int(k_retrieval),
+            k_personalization=int(cfg.get("k_personalization", 10)),
+            enable_popularity_decile_diagnostics=bool(
+                cfg.get("enable_popularity_decile_diagnostics", True)
+            ),
+            include_random_sanity=bool(cfg.get("include_random_sanity", False)),
+            random_seed=int(cfg.get("random_seed", PROJECT_RANDOM_SEED)),
+            artifact_dir=repo_root / str(cfg.get("artifact_dir", "artifacts/recs")),
+            verbose=bool(cfg.get("verbose", True)),
+            examples_parquet=examples_parquet,
+            two_tower_model_path=two_tower_model_path,
+            two_tower_catalog_item_batch=int(cfg.get("two_tower_catalog_item_batch", 256)),
+            rag_chroma_persist_dir=rag_chroma_persist_dir,
+            rag_variant=str(cfg.get("rag_variant", "any_polarity__flat")),
+            rag_query_blend_weight=float(cfg.get("rag_query_blend_weight", 0.5)),
+            include_query_text=bool(cfg.get("include_query_text_in_examples_jsonl", False)),
+        )
+
+
+def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
+    repo_root = config.repo_root
+    split = config.split
+    methods = config.methods
+    active_cohort = config.active_cohort
+    max_examples = config.max_examples
+    support_app_filter_mode = config.support_app_filter_mode
+    cohort_sizing = config.cohort_sizing
+    min_review_chars = config.min_review_chars
+    max_train_rows_per_user = config.max_train_rows_per_user
+    multi_max_reviews = config.multi_max_reviews
+    k_final = config.k_final
+    k_retrieval = config.k_retrieval
+    k_personalization = config.k_personalization
+    enable_popularity_decile_diagnostics = config.enable_popularity_decile_diagnostics
+    include_random_sanity = config.include_random_sanity
+    random_seed = config.random_seed
+    artifact_dir = config.artifact_dir
+    verbose = config.verbose
+    examples_parquet = config.examples_parquet
+    two_tower_model_path = config.two_tower_model_path
+    two_tower_catalog_item_batch = config.two_tower_catalog_item_batch
+    rag_chroma_persist_dir = config.rag_chroma_persist_dir
+    rag_variant = config.rag_variant
+    rag_query_blend_weight = config.rag_query_blend_weight
+    include_query_text = config.include_query_text
+
     if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
         raise ValueError(
             "methods must include required baselines "
@@ -1450,6 +1548,7 @@ def run_retrieval_eval(
                 masking_policy_version=MASKING_POLICY_VERSION,
                 model_version=model_snap,
                 verbose=verbose,
+                include_query_text=include_query_text,
             )
         retrieval_frames.append(df_r)
         ranking_frames.append(df_k)

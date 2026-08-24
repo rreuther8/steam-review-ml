@@ -17,6 +17,7 @@ recs-pip = ["tensorflow>=2.15.0", "tensorflow-hub>=0.16.0"]
 cross-encoder = ["sentence-transformers>=2.2.0"]
 api = ["fastapi>=0.100.0", "uvicorn[standard]>=0.22.0"]
 rag = ["chromadb>=1.5", "sentence-transformers>=2.2.0"]
+llm-local = ["llama-cpp-python>=0.3"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
