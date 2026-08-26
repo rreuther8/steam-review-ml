@@ -22,7 +22,7 @@ Each candidate idea (a retrieval recipe, a reranker architecture) is built and a
 
 ### Ranking stage (primary gate) — `latest_ranking`
 
-Frozen **val dev cohort** (`n_examples = 12500`, [`artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`](artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet)). **Ranking** metrics at **K = 10** from [`recs_job_eval_ranking.py`](scripts/recs_job_eval_ranking.py) → viewer [`recs_011_view_offline_ranking_eval.ipynb`](notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb). Compares **`two_tower_v1_v2a_embed_query_logpop_blend`** (shipped v2a ranker: D1 + taxonomy USE metadata) vs D1 benchmark and full-catalog **`popularity_train`**.
+Frozen **val dev cohort** (`n_examples = 12500`, [`artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet`](artifacts/recs/eval_cache/val_dev_12k_v1/eval_examples.parquet)). **Ranking** metrics at **K = 10** from [`recs_job_eval_ranking.py`](scripts/recs_job_eval_ranking.py) → viewer [`recs_011_view_offline_ranking_eval.ipynb`](notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb). Compares **`two_tower_v1_v2a_embed_query_logpop_blend`** (shipped v2a ranker: D1 + taxonomy USE metadata) vs D1 benchmark and full-catalog **`popularity_train`**.
 
 | Method | Hit@10 | NDCG@10 | MRR@10 |
 | --- | ---: | ---: | ---: |

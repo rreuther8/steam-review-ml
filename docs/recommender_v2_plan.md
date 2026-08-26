@@ -162,7 +162,7 @@ Same cohort and jobs as v1 ranking:
 | Rank job | `scripts/recs_job_eval_ranking.py` + `configs/recs_job_eval_ranking.json` |
 | Metric | `NDCG` |
 | Cutoff | `k_final=10` |
-| Viewer | `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` |
+| Viewer | `notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb` |
 
 When a v2 method is wired: add to ranking eval config → run job → export registry metrics.
 

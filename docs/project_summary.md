@@ -225,6 +225,6 @@ python scripts/recs_job_eval_offline.py configs/recs_job_eval_offline.json --wri
 2. **Two-tower retrieval** — improve pool oracle ceiling (ranker already beats popularity despite lower oracle). Runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
 3. **Eval housekeeping** — refresh baseline (`--write-baseline`), re-export experiment registry after eval runs.
 
-**Headline result (ranking gate):** `two_tower_v1_v2a_embed_query_logpop_blend` beats D1 and `popularity_train` on NDCG@10 overall and Slice A — viewer: [`recs_011_view_offline_ranking_eval.ipynb`](../notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb).
+**Headline result (ranking gate):** `two_tower_v1_v2a_embed_query_logpop_blend` beats D1 and `popularity_train` on NDCG@10 overall and Slice A — viewer: [`recs_011_view_offline_ranking_eval.ipynb`](../notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb).
 
 Parked until API leaves trusted/local use: auth, rate limits, deploy hardening.

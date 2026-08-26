@@ -258,16 +258,17 @@ def run_ranking_eval(
     if unknown:
         raise ValueError(f"Unknown ranker_methods: {unknown}. Available={sorted(rerank_specs.keys())}")
 
+    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
     catalog = load_ranking_catalog_context(
         repo_root=repo_root,
         min_review_chars=min_review_chars,
         artifact_dir=artifact_dir,
+        retriever=retriever,
     )
     app_ids = catalog.app_ids
     app_to_row = catalog.app_to_row
     pop_row = catalog.pop_row
 
-    retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=repo_root)
     X = retriever.embedding_matrix
 
     if catalog_methods is None:

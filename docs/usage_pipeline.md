@@ -230,7 +230,7 @@ python scripts/recs_job_eval_ranking.py configs/recs_job_eval_ranking.json
 
 - Writes: `artifacts/recs/offline_eval/runs/latest_ranking/eval_ranking_*.csv`
 - Reads pools jsonl **read-only**; `examples_parquet` required for personalization
-- View results: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb`
+- View results: `notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb`
 
 **Experiment registry** — join manifest to eval CSVs (after offline/ranking jobs):
 
@@ -250,7 +250,7 @@ python scripts/recs_export_experiment_registry.py
 
 **View offline eval CSVs (read-only, no re-score):**
 
-- `notebooks/retrieval/recs_011_view_offline_eval.ipynb` — set `EVAL_RUN` to `latest` or `20260526_144828__baseline_retrieval`
+- `notebooks/evaluation/recs_011_view_offline_eval.ipynb` — set `EVAL_RUN` to `latest` or `20260526_144828__baseline_retrieval`
 
 **Checkpoint fidelity (train save vs load):**
 
