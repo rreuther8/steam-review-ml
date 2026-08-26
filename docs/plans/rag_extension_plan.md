@@ -58,6 +58,7 @@ Extending `steam-review-ml` with a RAG-based recommendation feature. This is **t
 8. **Stage 1 chunk construction: embed-then-pool, confirmed.** The **chunk is the review-level embedding unit** (one embedding per review, plus one for the description) — not a concatenated per-game text blob. This is the right atomic level: reviews are already short, single-topic, self-contained opinions — the natural atomic unit in this corpus — unlike long-form documents (wiki pages, textbooks) that need artificial paragraph/hierarchical splitting because they mix many sub-topics in one text. Splitting a review further (e.g. by sentence) would fragment *below* the natural unit, not above it. Embed-then-pool also means embedding happens **once** — all 4 Ablation A × A2 variants are different weighted-pooling passes over the same underlying chunk embeddings, not 4 separate embed runs.
 9. **Description handling**: the description gets its own chunk embedding, kept **separate** from the reviews' weighted average, then **blended** with the pooled-review vector to form the game profile vector. Blend ratio is an open tunable (see below), not an architecture decision.
 10. **Chroma schema — two collections, different grain**: `game_review_chunks` (fine-grain — one row per `app_id`+`review_id`, plus one per-game row for the description; built once, covers the any-polarity superset so both Ablation A2 arms just filter this same table; retained specifically to keep the door open for future multi-turn-chat citation/explainability) and `game_profiles` (coarse-grain — one row per `app_id` × variant; `embedding = blend(pooled_review_vector, description_vector)`; this is the actual Stage 3 retrieval index).
+11. **Stage 5 eval, post-pivot**: since Stage 4 no longer ranks anything (§ 2026-08-24 pivot, `ranking_decision_log.md`), Stage 5 splits into two independent eval tracks instead of one combo — see Stage 5 section below. The explanation LLM-judge gets a **hard promotion bar** (mean ≥4.0/5 on groundedness and relevance, zero hallucinations), superseding the earlier "read, not scored" framing now that explanation output feeds a real gate. Judge backend: hosted Anthropic API, not the local Llama-3.1 generator, to avoid self-judging bias.
 
 ## Open — not yet decided
 
@@ -335,11 +336,25 @@ built and why, not a forward-looking TODO anymore):
 - Register via `recs_job_eval_ranking.py`'s existing `ranker_methods` config section, pointed at the small frozen pools jsonl. — **N/A**: killed before this step; evaluated directly in the notebook instead (matches D2–D6 convention).
 - Open detail to resolve when we get here: regression-baseline tolerance/determinism policy for LLM output (seed/temperature pinning), since local LLM output may not be bit-identical run-to-run. — **N/A**: moot, not promoted.
 
-### Stage 5 — Evaluation & integration (end-to-end combo)
-**Depends on:** Stage 3 (validated new retrieval) and Stage 4 (validated new generation) both done.
+### Stage 5 — Evaluation & integration (post-pivot: two independent tracks, not one combo)
 
-- Combine Stage 3 retrieval + Stage 4 generation into a new end-to-end pipeline option, registered as a new ranker-stage alongside the current heuristic ranker in `recs_job_eval_offline.py`, following the same "isolated spike → wire in only if it clears the bar" convention.
-- Reuses all existing eval tables/contract/regression pattern — no new evaluation infrastructure.
+**Superseded framing:** the original "Stage 3 retrieval + Stage 4 generation, combined and run through the existing rank contract" no longer applies — Stage 4 doesn't rank anything anymore (§ 2026-08-24 pivot). It narrates whatever the retrieval+ranking stack already picked. That decouples Stage 5 into two tracks with different depends-on, different metrics, and different infra:
+
+**Track A — retrieval/ranking (quantitative, existing contract, no new infra).**
+**Depends on:** Stage 3 only.
+
+- Is Stage 3 retrieval + the *existing* v2a ranker better than `two_tower_v1` + v2a? This is the "new retrieval + existing ranker" build-order lattice cell, gated only on Stage 3 winning its own retrieval-eval — never depended on Stage 4.
+- Re-tune `w_meta` against Stage 3's score distribution (decision #7), then run through the existing `eval_retrieval_*`/`eval_ranking_*` contract with `--write-baseline` for the regression guard, mirroring `tests/test_retrieval_eval_regression.py`.
+
+**Track B — explanation quality (qualitative, new axis, LLM-judge harness).**
+**Depends on:** Stage 4's `generate_explanation()` (already built) + whichever pipeline wins Track A (or the currently shipped stack, if Stage 3 doesn't win).
+
+- Rank metrics (Hit@K, Recall@K, NDCG@10) don't apply to freeform text — this needs its own harness, new but small:
+  - **Judge backend**: hosted Anthropic API, not the local Llama-3.1 generator — different model family avoids self-judging bias; credential pattern reused from `.github/scripts/review_pr.py`.
+  - **Cohort**: `val_llm_mini_v1` (same 200-example frozen subset already used for the Stage 4 reranker eval and the `recs_029` explanation spike) — no new sampling.
+  - **Rubric**: two dimensions, 1-5 Likert — *groundedness* (no claim beyond what's in the candidate's actual IGDB `summary`/`storyline` text) and *relevance* (ties back to the query text's specific interests, not generic praise).
+  - **Promotion bar** (decision #11): mean ≥4.0/5 on both dimensions across the cohort, and zero examples scoring 1/5 on groundedness — a hallucination is a harder failure than a middling score, so it's a separate gate, not averaged away.
+  - **Open, not yet decided**: fallback behavior for a below-bar explanation (suppress it, retry the generation call, fall back to a template) — out of scope for the eval harness itself.
 
 ## Build-order lattice (retrieval × ranker are independently swappable)
 
