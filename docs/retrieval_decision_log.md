@@ -24,7 +24,7 @@ Why:
 
 Evidence:
 
-- **Primary viewer:** `notebooks/retrieval/recs_011_view_offline_eval.ipynb` (run snapshot: `recs_011_view_offline_eval__20260530.ipynb`) — **`eval_retrieval_overall.csv`**, not `eval_ranking_overall.csv`, for this decision.
+- **Primary viewer:** `notebooks/evaluation/recs_011_view_offline_eval.ipynb` (run snapshot: `recs_011_view_offline_eval__20260530.ipynb`) — **`eval_retrieval_overall.csv`**, not `eval_ranking_overall.csv`, for this decision.
 - Artifacts: `artifacts/recs/offline_eval/runs/latest/eval_retrieval_overall.csv` (@100) vs `eval_ranking_overall.csv` (@10).
 - Training + eval runbook: [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md).
 - Scorer: `src/steam_review_ml/recommender/two_tower_score.py`; registry in `retrieval_offline_eval.py`.
@@ -61,7 +61,7 @@ Why:
 Evidence:
 
 - Canonical runbook: [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) (eval contract v2).
-- Viewer: `notebooks/retrieval/recs_011_view_offline_eval__20260530.ipynb` — §5 @100 vs §6 @10.
+- Viewer: `notebooks/evaluation/recs_011_view_offline_eval__20260530.ipynb` — §5 @100 vs §6 @10.
 
 ## 2026-05-11: Documentation map (eval + transition plan)
 

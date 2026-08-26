@@ -7,7 +7,10 @@
     "fusion_c_raw_plus_behavior",
     "two_tower_v1",
     "two_tower_v1_v2a_embed_query_logpop_blend",
-    "two_tower_v1_heuristic_logpop_blend"
+    "two_tower_v1_heuristic_logpop_blend",
+    "rag_chunk_v1_raw_query",
+    "rag_chunk_v1_query_plus_desc",
+    "rag_chunk_v1_vector_blend_query"
   ],
   "active_cohort": "all",
   "max_examples": 12500,
@@ -32,5 +35,8 @@
   },
   "artifact_dir": "artifacts/recs",
   "output_dir": "artifacts/recs/offline_eval/runs/latest",
-  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras"
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras",
+  "rag_chroma_persist_dir": "artifacts/recs/embeddings/game_chunks/chroma",
+  "rag_variant": "any_polarity__log_weighted",
+  "rag_query_blend_weight": 0.5
 }

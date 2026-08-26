@@ -26,8 +26,8 @@ Offline evaluation for text-to-game retrieval:
 - `notebooks/models/query_embeddings/recs_006_eval_ablation_4way.ipynb` — 4-way query/index ablation
 - `notebooks/models/query_embeddings/recs_007_eval_qual_user_facing.ipynb` — qualitative checkpoint / failure tags
 - `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb` — candidate comparison vs the same contract as `recs_job_eval_offline.py`
-- `notebooks/retrieval/recs_011_view_offline_eval.ipynb` — **read-only viewer** for `recs_job_eval_offline.py` outputs (`runs/latest`)
-- `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` — **read-only viewer** for `recs_job_eval_ranking.py` outputs (`runs/latest_ranking`); headline ranker vs `popularity_train` deltas
+- `notebooks/evaluation/recs_011_view_offline_eval.ipynb` — **read-only viewer** for `recs_job_eval_offline.py` outputs (`runs/latest`)
+- `notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb` — **read-only viewer** for `recs_job_eval_ranking.py` outputs (`runs/latest_ranking`); headline ranker vs `popularity_train` deltas
 - [`two_tower_pipeline_plan.md`](two_tower_pipeline_plan.md) — script-only train + eval runbook for learned two-tower (`updated_user__updated_profile200_item`)
 
 ## Methods evaluated
@@ -154,7 +154,7 @@ Two jobs share the same **eval contract** (slices, metrics, cutoffs) but differ 
 | **Tables written** | `eval_retrieval_*` **and** `eval_ranking_*`, plus `eval_offline_examples.jsonl`, `eval_offline_run_meta.json` | `eval_ranking_*` only |
 | **Typical `methods` config** | `methods`: catalog scorers + pool rerankers (e.g. `raw`, `two_tower_v1`, `two_tower_v1_v2a_embed_query_logpop_blend`, `two_tower_v1_heuristic_logpop_blend`) | `pool_methods`, `ranker_methods`, `catalog_methods` |
 | **When to run** | Retrieval benchmarks, method comparison @100, export frozen pools, full-stack tables in one place | Fast ranker iteration; **gating** comparison (D1 vs bare pool vs `popularity_train`) |
-| **Viewer notebook** | `notebooks/retrieval/recs_011_view_offline_eval.ipynb` | `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` |
+| **Viewer notebook** | `notebooks/evaluation/recs_011_view_offline_eval.ipynb` | `notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb` |
 
 **`recs_job_eval_offline` (full offline eval)** — for each method in `methods`:
 
@@ -188,8 +188,8 @@ Artifact paths under `offline_eval/` are unchanged — only script/config names 
 - Consumer of scripted offline artifacts: `notebooks/retrieval/recs_004_eval_proxy_same_user_task_a_003.ipynb`
 - Full offline eval: `scripts/recs_job_eval_offline.py` + `configs/recs_job_eval_offline.json` → `runs/latest/`
 - Ranking gate (frozen pools): `scripts/recs_job_eval_ranking.py` + `configs/recs_job_eval_ranking.json` → `runs/latest_ranking/`
-- Offline results viewer: `notebooks/retrieval/recs_011_view_offline_eval.ipynb`
-- Ranking results viewer: `notebooks/ranking/recs_011_view_offline_ranking_eval.ipynb` (ranker vs `popularity_train` deltas; does not re-score)
+- Offline results viewer: `notebooks/evaluation/recs_011_view_offline_eval.ipynb`
+- Ranking results viewer: `notebooks/evaluation/recs_011_view_offline_ranking_eval.ipynb` (ranker vs `popularity_train` deltas; does not re-score)
 - Candidate comparison (dual retrieval / ranking tables): `notebooks/retrieval/recs_011_eval_retrieval_two_tower_comparison.ipynb`
 
 ---

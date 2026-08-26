@@ -222,6 +222,20 @@ def _scores_from_query(
     return s
 
 
+def _memoize_score_fn(fn: Callable[[dict], np.ndarray]) -> Callable[[dict], np.ndarray]:
+    """Cache ``fn(ex)`` per example so a later pass over the same examples (e.g. personalization
+    metrics, which re-scores every method to get top-k rows) doesn't repeat the same scoring work."""
+    cache: dict[tuple[str, int, float], np.ndarray] = {}
+
+    def wrapped(ex: dict) -> np.ndarray:
+        key = (str(ex["user_id"]), int(ex["query_app_id"]), float(ex["query_ts"]))
+        if key not in cache:
+            cache[key] = fn(ex)
+        return cache[key]
+
+    return wrapped
+
+
 def _build_method_registry(
     *,
     retriever: ContentRetriever,
@@ -1378,86 +1392,69 @@ class RetrievalEvalConfig:
         )
 
 
-def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
-    repo_root = config.repo_root
-    split = config.split
-    methods = config.methods
-    active_cohort = config.active_cohort
-    max_examples = config.max_examples
-    support_app_filter_mode = config.support_app_filter_mode
-    cohort_sizing = config.cohort_sizing
-    min_review_chars = config.min_review_chars
-    max_train_rows_per_user = config.max_train_rows_per_user
-    multi_max_reviews = config.multi_max_reviews
-    k_final = config.k_final
-    k_retrieval = config.k_retrieval
-    k_personalization = config.k_personalization
-    enable_popularity_decile_diagnostics = config.enable_popularity_decile_diagnostics
-    include_random_sanity = config.include_random_sanity
-    random_seed = config.random_seed
-    artifact_dir = config.artifact_dir
-    verbose = config.verbose
-    examples_parquet = config.examples_parquet
-    two_tower_model_path = config.two_tower_model_path
-    two_tower_catalog_item_batch = config.two_tower_catalog_item_batch
-    rag_chroma_persist_dir = config.rag_chroma_persist_dir
-    rag_variant = config.rag_variant
-    rag_query_blend_weight = config.rag_query_blend_weight
-    include_query_text = config.include_query_text
-
-    if not REQUIRED_PHASE1_METHODS.issubset(set(methods)):
-        raise ValueError(
-            "methods must include required baselines "
-            f"{sorted(REQUIRED_PHASE1_METHODS)}; got {sorted(set(methods))}"
-        )
-
-    k_r = int(k_final) if k_retrieval is None else int(k_retrieval)
-    if k_r < int(k_final):
-        raise ValueError(f"k_retrieval ({k_r}) must be >= k_final ({k_final})")
-
-    t0 = time.perf_counter()
-    if examples_parquet is not None:
-        p = examples_parquet
+def _load_eval_inputs(config: RetrievalEvalConfig) -> EvalInputs:
+    """Build EvalInputs from a frozen examples_parquet cache, or by live-sampling the cohort."""
+    if config.examples_parquet is not None:
+        p = config.examples_parquet
         if not p.is_file():
             raise FileNotFoundError(f"examples_parquet not found: {p}")
-        inputs = prepare_eval_inputs_from_cache(
-            repo_root=repo_root,
-            split=split,
-            min_review_chars=min_review_chars,
+        return prepare_eval_inputs_from_cache(
+            repo_root=config.repo_root,
+            split=config.split,
+            min_review_chars=config.min_review_chars,
             examples_parquet=p,
-            artifact_dir=artifact_dir,
-            verbose=verbose,
+            artifact_dir=config.artifact_dir,
+            verbose=config.verbose,
         )
-    else:
-        inputs = prepare_eval_inputs(
-            repo_root=repo_root,
-            split=split,
-            active_cohort=active_cohort,
-            max_examples=max_examples,
-            support_app_filter_mode=support_app_filter_mode,
-            cohort_sizing=cohort_sizing,
-            min_review_chars=min_review_chars,
-            max_train_rows_per_user=max_train_rows_per_user,
-            random_seed=random_seed,
-            artifact_dir=artifact_dir,
-            verbose=verbose,
-        )
-    t_inputs = time.perf_counter()
-    rng = np.random.default_rng(int(random_seed))
+    return prepare_eval_inputs(
+        repo_root=config.repo_root,
+        split=config.split,
+        active_cohort=config.active_cohort,
+        max_examples=config.max_examples,
+        support_app_filter_mode=config.support_app_filter_mode,
+        cohort_sizing=config.cohort_sizing,
+        min_review_chars=config.min_review_chars,
+        max_train_rows_per_user=config.max_train_rows_per_user,
+        random_seed=config.random_seed,
+        artifact_dir=config.artifact_dir,
+        verbose=config.verbose,
+    )
+
+
+def _resolve_registry_and_methods(
+    *,
+    config: RetrievalEvalConfig,
+    inputs: EvalInputs,
+    k_r: int,
+) -> tuple[
+    dict[str, Callable[[dict], np.ndarray]],
+    dict[str, Callable[[dict], np.ndarray]],
+    list[str],
+    list[tuple[str, Callable[[dict], np.ndarray] | None, PoolRerankSpec | None]],
+]:
+    """Build the (memoized) method score-fn registry, validate ``config.methods`` against it
+    (including pool-rerank base-method wiring), and resolve the final run list (with the
+    optional random sanity baseline appended).
+
+    Returns ``(registry, selected_registry, run_methods, method_iter)``.
+    """
+    methods = config.methods
+    rng = np.random.default_rng(int(config.random_seed))
     registry = _build_method_registry(
         retriever=inputs.retriever,
         X=inputs.embedding_matrix,
         pop_row=inputs.pop_row,
         app_to_row=inputs.app_to_row,
-        multi_max_reviews=multi_max_reviews,
+        multi_max_reviews=config.multi_max_reviews,
         rng=rng,
         mask_query_app=True,
-        two_tower_model_path=two_tower_model_path,
-        two_tower_catalog_item_batch=two_tower_catalog_item_batch,
-        rag_chroma_persist_dir=rag_chroma_persist_dir,
-        rag_variant=rag_variant,
-        rag_query_blend_weight=rag_query_blend_weight,
+        two_tower_model_path=config.two_tower_model_path,
+        two_tower_catalog_item_batch=config.two_tower_catalog_item_batch,
+        rag_chroma_persist_dir=config.rag_chroma_persist_dir,
+        rag_variant=config.rag_variant,
+        rag_query_blend_weight=config.rag_query_blend_weight,
     )
+    registry = {name: _memoize_score_fn(fn) for name, fn in registry.items()}
     rerank_specs = pool_rerank_registry()
     rerank_methods = [m for m in methods if m in rerank_specs]
     direct_methods = [m for m in methods if m not in rerank_specs]
@@ -1465,7 +1462,7 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
     needs_two_tower = METHOD_TWO_TOWER_V1 in direct_methods or any(
         rerank_specs[m].base_method == METHOD_TWO_TOWER_V1 for m in rerank_methods
     )
-    if needs_two_tower and two_tower_model_path is None:
+    if needs_two_tower and config.two_tower_model_path is None:
         raise ValueError(
             "Methods requiring two_tower_v1 need 'two_tower_model_path' in the eval job config "
             "(e.g. artifacts/recs/towers/<run_tag>/updated_user__updated_profile200_item.keras)."
@@ -1490,7 +1487,7 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
             )
 
     run_methods = methods.copy()
-    if include_random_sanity and "random" not in run_methods:
+    if config.include_random_sanity and "random" not in run_methods:
         run_methods.append("random")
         if "random" not in direct_methods:
             direct_methods.append("random")
@@ -1514,13 +1511,30 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
         else:
             method_iter.append((name, selected_registry[name], None))
 
-    if verbose:
-        method_iter = tqdm(method_iter, total=len(method_iter), desc="methods", unit="method")  # type: ignore[assignment]
+    return registry, selected_registry, run_methods, method_iter
+
+
+def _score_all_methods(
+    *,
+    method_iter: list[tuple[str, Callable[[dict], np.ndarray] | None, PoolRerankSpec | None]],
+    registry: dict[str, Callable[[dict], np.ndarray]],
+    inputs: EvalInputs,
+    k_r: int,
+    config: RetrievalEvalConfig,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[dict[str, Any]], str]:
+    """Score every requested method over all examples.
+
+    Returns per-example retrieval/ranking metric frames, JSONL-ready artifact rows, and the
+    embedding-model snapshot string used for run metadata.
+    """
+    iterable: Any = method_iter
+    if config.verbose:
+        iterable = tqdm(method_iter, total=len(method_iter), desc="methods", unit="method")
     retrieval_frames: list[pd.DataFrame] = []
     ranking_frames: list[pd.DataFrame] = []
     artifact_rows_acc: list[dict[str, Any]] = []
     model_snap = _embedding_model_snapshot(inputs.retriever)
-    for name, fn, rerank_spec in method_iter:
+    for name, fn, rerank_spec in iterable:
         if rerank_spec is not None:
             base_fn = registry[rerank_spec.base_method]
             df_r, df_k, arts = _per_example_retrieval_with_pool_rerank(
@@ -1532,10 +1546,10 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
                 app_to_row=inputs.app_to_row,
                 pop_row=inputs.pop_row,
                 k_retrieval=k_r,
-                k_final=k_final,
+                k_final=config.k_final,
                 masking_policy_version=MASKING_POLICY_VERSION,
                 model_version=model_snap,
-                verbose=verbose,
+                verbose=config.verbose,
             )
         else:
             df_r, df_k, arts = _per_example_retrieval_ranking(
@@ -1544,11 +1558,11 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
                 examples=inputs.examples,
                 app_ids=inputs.app_ids,
                 k_retrieval=k_r,
-                k_final=k_final,
+                k_final=config.k_final,
                 masking_policy_version=MASKING_POLICY_VERSION,
                 model_version=model_snap,
-                verbose=verbose,
-                include_query_text=include_query_text,
+                verbose=config.verbose,
+                include_query_text=config.include_query_text,
             )
         retrieval_frames.append(df_r)
         ranking_frames.append(df_k)
@@ -1558,8 +1572,30 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
     df_ex_ranking = pd.concat(ranking_frames, ignore_index=True)
     if len(df_ex_ranking) == 0:
         raise RuntimeError("No per-example metrics produced; check split/cohort/method settings.")
-    t_metrics = time.perf_counter()
+    return df_ex_retrieval, df_ex_ranking, artifact_rows_acc, model_snap
 
+
+def _build_eval_tables(
+    *,
+    df_ex_retrieval: pd.DataFrame,
+    df_ex_ranking: pd.DataFrame,
+    inputs: EvalInputs,
+    selected_registry: dict[str, Callable[[dict], np.ndarray]],
+    config: RetrievalEvalConfig,
+) -> tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame,
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame,
+    pd.DataFrame,
+]:
+    """Aggregate per-example scoring into the contract table set (overall / by-slice / by-support /
+    by-pop-decile, for both retrieval and ranking) with personalization metrics attached.
+
+    Returns (retrieval: overall, by_slice, by_support, by_pop_decile, pop_delta,
+             ranking: overall, by_slice, by_support, by_pop_decile, pop_delta,
+             personalization).
+    """
+    k_personalization = config.k_personalization
+    verbose = config.verbose
     overall_retrieval = _table_overall_retrieval(df_ex_retrieval)
     overall_ranking = _table_overall_ranking(df_ex_ranking)
     by_slice_retrieval = _table_by_slice_for_metrics(
@@ -1579,7 +1615,7 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
         examples=inputs.examples,
         app_ids=inputs.app_ids,
         pop_row=inputs.pop_row,
-        enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
+        enable_popularity_decile_diagnostics=config.enable_popularity_decile_diagnostics,
         metric_cols=RETRIEVAL_METRIC_COLS,
     )
     pop_rank, pop_delta_rank, _ = _table_popularity(
@@ -1587,7 +1623,7 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
         examples=inputs.examples,
         app_ids=inputs.app_ids,
         pop_row=inputs.pop_row,
-        enable_popularity_decile_diagnostics=enable_popularity_decile_diagnostics,
+        enable_popularity_decile_diagnostics=config.enable_popularity_decile_diagnostics,
         metric_cols=RANKING_REPORT_METRIC_COLS,
     )
     personalization = _table_personalization(
@@ -1668,7 +1704,25 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
     pop_delta_rank = _append_personalization_metrics(
         pop_delta_rank, pop_personalization, on_keys=["method", "pos_pop_decile"]
     )
-    t_tables = time.perf_counter()
+    return (
+        overall_retrieval, by_slice_retrieval, by_support_retrieval, pop_ret, pop_delta_ret,
+        overall_ranking, by_slice_ranking, by_support_ranking, pop_rank, pop_delta_rank,
+        personalization,
+    )
+
+
+def _build_run_meta(
+    *,
+    config: RetrievalEvalConfig,
+    inputs: EvalInputs,
+    run_methods: list[str],
+    k_r: int,
+    model_snap: str,
+    df_ex_retrieval: pd.DataFrame,
+    df_ex_ranking: pd.DataFrame,
+    timings: dict[str, float],
+) -> dict[str, Any]:
+    """Assemble run_meta: coverage, slice/support counts, retrieval bottleneck, and timing diagnostics."""
     coverage = _coverage_from_examples(inputs.examples).iloc[0].to_dict()
     ex_diag = pd.DataFrame(
         {
@@ -1698,18 +1752,18 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
     )
     slice_b_std_ranking = _slice_b_empirical_std(df_ex_ranking, metric_cols=tuple(METRIC_COLS))
 
-    run_meta = {
-        "split_requested": split,
+    return {
+        "split_requested": config.split,
         "split_used": inputs.eval_split_name,
-        "active_cohort": active_cohort,
-        "max_examples": int(max_examples),
+        "active_cohort": config.active_cohort,
+        "max_examples": int(config.max_examples),
         "n_examples_evaluable": int(len(inputs.examples)),
-        "methods_requested": methods,
+        "methods_requested": config.methods,
         "methods_run": run_methods,
-        "k_final": int(k_final),
+        "k_final": int(config.k_final),
         "k_retrieval": int(k_r),
-        "k_personalization": int(k_personalization),
-        "random_seed": int(random_seed),
+        "k_personalization": int(config.k_personalization),
+        "random_seed": int(config.random_seed),
         "masking_policy_version": MASKING_POLICY_VERSION,
         "model_version": model_snap,
         "coverage": coverage,
@@ -1722,13 +1776,65 @@ def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
             "ranking": slice_b_std_ranking,
             "note": "std across eval examples in slice_b_single_target (not bootstrap CI)",
         },
-        "timing_seconds": {
+        "timing_seconds": timings,
+    }
+
+
+def run_retrieval_eval(config: RetrievalEvalConfig) -> EvalTables:
+    """Score all requested methods on a cohort and assemble the full offline-eval contract tables.
+
+    Orchestrates four phases: load eval inputs, resolve the method registry, score every method
+    per example, then aggregate into contract tables + run metadata.
+    """
+    if not REQUIRED_PHASE1_METHODS.issubset(set(config.methods)):
+        raise ValueError(
+            "methods must include required baselines "
+            f"{sorted(REQUIRED_PHASE1_METHODS)}; got {sorted(set(config.methods))}"
+        )
+    k_r = int(config.k_final) if config.k_retrieval is None else int(config.k_retrieval)
+    if k_r < int(config.k_final):
+        raise ValueError(f"k_retrieval ({k_r}) must be >= k_final ({config.k_final})")
+
+    t0 = time.perf_counter()
+    inputs = _load_eval_inputs(config)
+    t_inputs = time.perf_counter()
+
+    registry, selected_registry, run_methods, method_iter = _resolve_registry_and_methods(
+        config=config, inputs=inputs, k_r=k_r
+    )
+    df_ex_retrieval, df_ex_ranking, artifact_rows_acc, model_snap = _score_all_methods(
+        method_iter=method_iter, registry=registry, inputs=inputs, k_r=k_r, config=config
+    )
+    t_metrics = time.perf_counter()
+
+    (
+        overall_retrieval, by_slice_retrieval, by_support_retrieval, pop_ret, pop_delta_ret,
+        overall_ranking, by_slice_ranking, by_support_ranking, pop_rank, pop_delta_rank,
+        personalization,
+    ) = _build_eval_tables(
+        df_ex_retrieval=df_ex_retrieval,
+        df_ex_ranking=df_ex_ranking,
+        inputs=inputs,
+        selected_registry=selected_registry,
+        config=config,
+    )
+    t_tables = time.perf_counter()
+
+    run_meta = _build_run_meta(
+        config=config,
+        inputs=inputs,
+        run_methods=run_methods,
+        k_r=k_r,
+        model_snap=model_snap,
+        df_ex_retrieval=df_ex_retrieval,
+        df_ex_ranking=df_ex_ranking,
+        timings={
             "prepare_inputs": round(t_inputs - t0, 3),
             "score_methods": round(t_metrics - t_inputs, 3),
             "build_tables": round(t_tables - t_metrics, 3),
             "total": round(t_tables - t0, 3),
         },
-    }
+    )
     return EvalTables(
         retrieval_overall=overall_retrieval,
         retrieval_by_slice=by_slice_retrieval,
