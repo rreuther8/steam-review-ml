@@ -188,6 +188,23 @@
       color: var(--accent);
       flex-shrink: 0;
     }
+    .explanation-box {
+      margin-top: 1rem;
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel, rgba(127, 127, 127, 0.06));
+    }
+    .explanation-box h3 {
+      font-size: 0.85rem;
+      margin: 0 0 0.4rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .explanation-box p {
+      margin: 0;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -231,6 +248,10 @@
     <section class="results" id="resultsSection" hidden>
       <h2>Recommendations</h2>
       <ol class="results-list" id="resultsList"></ol>
+      <div class="explanation-box" id="explanationBox" hidden>
+        <h3>Why this pick?</h3>
+        <p id="explanationText"></p>
+      </div>
     </section>
   </main>
 
@@ -247,6 +268,8 @@
     const statusEl = document.getElementById("status");
     const resultsSection = document.getElementById("resultsSection");
     const resultsList = document.getElementById("resultsList");
+    const explanationBox = document.getElementById("explanationBox");
+    const explanationText = document.getElementById("explanationText");
 
     let selectedAppId = null;
     let debounceTimer = null;
@@ -351,6 +374,7 @@
       setStatus("");
       resultsSection.hidden = true;
       resultsList.innerHTML = "";
+      explanationBox.hidden = true;
 
       const text = review.value.trim();
       if (!text) {
@@ -389,6 +413,12 @@
           li.appendChild(score);
           resultsList.appendChild(li);
         });
+        if (data.length && data[0].explanation) {
+          explanationText.textContent = data[0].explanation;
+          explanationBox.hidden = false;
+        } else {
+          explanationBox.hidden = true;
+        }
         resultsSection.hidden = false;
       } catch (e) {
         setStatus(e.message);

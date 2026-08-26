@@ -68,6 +68,7 @@ def pool_rerank_registry() -> dict[str, PoolRerankSpec]:
     """Registered pool rerankers (D1 + shipped v2a metadata blend)."""
     from steam_review_ml.evaluation.v2a_metadata_ranker import (
         DEFAULT_V2A_EMBED_W_META,
+        METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND,
         METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND,
         V2A_GENRE_THEME_KW_FIELDS,
         score_v2a_embed_query_logpop_blend,
@@ -83,6 +84,15 @@ def pool_rerank_registry() -> dict[str, PoolRerankSpec]:
         METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND: PoolRerankSpec(
             name=METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND,
             base_method="two_tower_v1",
+            rerank_fn=score_v2a_embed_query_logpop_blend,
+            params={
+                "w_meta": DEFAULT_V2A_EMBED_W_META,
+                "fields": V2A_GENRE_THEME_KW_FIELDS,
+            },
+        ),
+        METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND: PoolRerankSpec(
+            name=METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND,
+            base_method="rag_chunk_v1_vector_blend_query",
             rerank_fn=score_v2a_embed_query_logpop_blend,
             params={
                 "w_meta": DEFAULT_V2A_EMBED_W_META,
