@@ -1,7 +1,14 @@
-"""Retrieve with two_tower_v1, then rerank with a registered pool reranker (shipped v2a stack)."""
+"""Shared retrieve-then-rerank contract for production recommenders.
+
+Every recommender here is the same two-stage shape: a backend-specific retrieval
+score over the full catalog, then a shared pool-rerank stage keyed by ``app_id``
+(popularity + IGDB taxonomy blend). Subclasses only differ in how they produce
+that first full-catalog score vector.
+"""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import replace
 from pathlib import Path
 
@@ -17,20 +24,15 @@ from steam_review_ml.evaluation.v2a_metadata_ranker import (
     METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND,
 )
 from steam_review_ml.recommender.retrieve import ContentRetriever, default_repo_root
-from steam_review_ml.recommender.serve_config import load_serve_config
 
 METHOD_V2A = METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND
 
 
-def _resolve_rerank_spec(
-    method_id: str,
-    *,
-    igdb_enriched_path: str | None,
-) -> PoolRerankSpec:
+def _resolve_rerank_spec(method_id: str, *, igdb_enriched_path: str | None) -> PoolRerankSpec:
     specs = pool_rerank_registry()
     if method_id not in specs:
         raise ValueError(
-            f"Unknown stacked method {method_id!r}; available pool rerankers: {sorted(specs)}"
+            f"Unknown rerank method {method_id!r}; available pool rerankers: {sorted(specs)}"
         )
     spec = specs[method_id]
     if igdb_enriched_path:
@@ -39,37 +41,27 @@ def _resolve_rerank_spec(
     return spec
 
 
-class StackedRecommender:
-    """Two-stage recommend: ``two_tower_v1`` retrieve @k_retrieval → pool rerank @k_final."""
+class Recommender(ABC):
+    """Two-stage recommend: backend-specific retrieval @k_retrieval → pool rerank @k_final."""
 
     def __init__(
         self,
         *,
         method_id: str = METHOD_V2A,
-        two_tower_model_path: Path | str,
         repo_root: Path | None = None,
         artifact_dir: Path | None = None,
         igdb_enriched_path: Path | str | None = None,
         k_retrieval: int = 100,
         k_final: int = 10,
         min_review_chars: int = 30,
-        catalog_item_batch: int = 256,
     ) -> None:
         from steam_review_ml.evaluation.retrieval_offline_eval import load_ranking_catalog_context
-        from steam_review_ml.recommender.two_tower_score import (
-            encode_query_vector,
-            load_two_tower_model,
-            precompute_catalog_item_vectors,
-            score_catalog,
-        )
-        from steam_review_ml.recommender.two_tower_train import load_hub_settings
 
         self._repo_root = repo_root or default_repo_root()
         self._method_id = str(method_id)
         self._k_retrieval = int(k_retrieval)
         self._k_final = int(k_final)
         self._validate_k_bounds()
-        self._two_tower_model_path = Path(two_tower_model_path)
         self._igdb_enriched_path = str(igdb_enriched_path) if igdb_enriched_path else None
 
         self._retriever = ContentRetriever(artifact_dir=artifact_dir, repo_root=self._repo_root)
@@ -83,26 +75,8 @@ class StackedRecommender:
         self._app_to_row = catalog.app_to_row
         self._pop_row = catalog.pop_row
         self._rerank_spec = _resolve_rerank_spec(
-            self._method_id,
-            igdb_enriched_path=self._igdb_enriched_path,
+            self._method_id, igdb_enriched_path=self._igdb_enriched_path
         )
-
-        hub_url, hub_max_chars = load_hub_settings(self._retriever)
-        self._hub_max_chars = hub_max_chars
-        embed_dim = int(self._retriever.embedding_matrix.shape[1])
-        self._model = load_two_tower_model(
-            self._two_tower_model_path,
-            hub_url=hub_url,
-            n_items=len(self._retriever.app_ids),
-            embed_dim=embed_dim,
-        )
-        self._item_vectors = precompute_catalog_item_vectors(
-            self._model,
-            len(self._retriever.app_ids),
-            batch_size=int(catalog_item_batch),
-        )
-        self._encode_query_vector = encode_query_vector
-        self._score_catalog = score_catalog
 
     def _validate_k_bounds(self) -> None:
         if self._k_final > self._k_retrieval:
@@ -112,24 +86,15 @@ class StackedRecommender:
             )
 
     @classmethod
+    @abstractmethod
     def from_serve_config(
         cls,
         config_path: Path | str | None = None,
         *,
         repo_root: Path | None = None,
         artifact_dir: Path | None = None,
-    ) -> StackedRecommender:
-        cfg = load_serve_config(config_path, repo_root=repo_root)
-        root = repo_root or default_repo_root()
-        return cls(
-            method_id=str(cfg.get("default_method", METHOD_V2A)),
-            two_tower_model_path=cfg["two_tower_model_path"],
-            repo_root=root,
-            artifact_dir=artifact_dir,
-            igdb_enriched_path=cfg.get("igdb_enriched_path"),
-            k_retrieval=int(cfg.get("k_retrieval", 100)),
-            k_final=int(cfg.get("k_final", 10)),
-        )
+    ) -> Recommender:
+        """Build from ``configs/recs_serve.json`` (or an explicit path); backend-specific keys."""
 
     @property
     def method_id(self) -> str:
@@ -138,10 +103,6 @@ class StackedRecommender:
     @property
     def retriever(self) -> ContentRetriever:
         return self._retriever
-
-    @property
-    def two_tower_model_path(self) -> Path:
-        return self._two_tower_model_path
 
     @property
     def igdb_enriched_path(self) -> str | None:
@@ -155,27 +116,16 @@ class StackedRecommender:
     def k_final(self) -> int:
         return self._k_final
 
-    def recommend(
-        self,
-        query_text: str,
-        *,
-        query_app_id: int,
-    ) -> pd.DataFrame:
-        """Return top-``k_final`` catalog rows with rerank scores (query game masked at retrieve)."""
+    @abstractmethod
+    def _score_catalog(self, query_text: str, *, query_app_id: int) -> np.ndarray:
+        """Full-catalog score vector aligned to ``self._app_ids``; query app excluded/masked."""
+
+    def recommend(self, query_text: str, *, query_app_id: int) -> pd.DataFrame:
+        """Return top-``k_final`` catalog rows with rerank scores (query game excluded at retrieve)."""
         k_out = self._k_final
         k_pool = self._k_retrieval
 
-        user_vector = self._encode_query_vector(
-            self._model,
-            str(query_text),
-            max_chars=self._hub_max_chars,
-        )
-        mask_row = self._app_to_row.get(int(query_app_id))
-        base_scores = self._score_catalog(
-            user_vector,
-            self._item_vectors,
-            mask_row=mask_row,
-        )
+        base_scores = self._score_catalog(str(query_text), query_app_id=int(query_app_id))
 
         retrieved_indices = np.argsort(-base_scores)[:k_pool]
         pool_apps = [int(self._app_ids[int(i)]) for i in retrieved_indices]

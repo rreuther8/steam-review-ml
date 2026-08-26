@@ -32,7 +32,7 @@ Engineering notes (real, not part of the quality verdict):
 Product / eval implications:
 
 - **Shipped stack unchanged**: `two_tower_v1` retrieve @100 → `two_tower_v1_v2a_embed_query_logpop_blend` rerank @10.
-- **New, separate capability**: `LlamaCppBackend.generate_explanation()` — not a ranker, not gated by the promotion bar above; generates grounded natural-language explanations for existing recommendations. Validated against real `StackedRecommender` output in `notebooks/ranking/recs_029_stage4_llm_explanation_spike.ipynb`. See `docs/plans/rag_extension_plan.md` Stage 4 section for the updated plan.
+- **New, separate capability**: `LlamaCppBackend.generate_explanation()` — not a ranker, not gated by the promotion bar above; generates grounded natural-language explanations for existing recommendations. Validated against real two-tower-backed recommender output (`StackedRecommender` at the time, since renamed to `TwoTowerRecommender`) in `notebooks/ranking/recs_029_stage4_llm_explanation_spike.ipynb`. See `docs/plans/rag_extension_plan.md` Stage 4 section for the updated plan.
 - Deferred, not pursued given the size of the gap: Ablation C arm 2 (chain-of-thought reasoning-then-rank).
 
 ---

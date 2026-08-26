@@ -25,8 +25,8 @@ Recommender/tower work needs TensorFlow + TF Hub; prefer conda-forge (see `docs/
 
 ```bash
 python -m pytest -q                                    # full suite
-python -m pytest -q tests/test_stacked_recommender.py  # single file
-python -m pytest -q tests/test_stacked_recommender.py::test_name  # single test
+python -m pytest -q tests/test_rag_recommender.py       # single file
+python -m pytest -q tests/test_rag_recommender.py::test_name  # single test
 python -m pytest -q tests/test_recs_006_regression.py  # regression guard, after recs_006 changes
 python -m pytest -q tests/test_retrieval_eval_regression.py  # regression guard vs frozen baseline
 ```
@@ -39,14 +39,14 @@ No repo-level pytest/ruff config file exists (no `pytest.ini`/`setup.cfg`); ruff
 uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-Requires TF + Hub, `.[api]`, a trained tower checkpoint, and the IGDB enriched parquet (see pipeline order below). Config: `configs/recs_serve.json`. Endpoints: `GET /ui`, `GET /games`, `GET /recommendations` (`exclude_app_id` required for default `method=v2a`; `method=raw`/`structured` for legacy `ContentRetriever`), `GET /health`.
+Requires `.[api,rag]` (chromadb + sentence-transformers; no TF/Hub for the default RAG serve path), a built Chroma game-chunk index, and the IGDB enriched parquet (see pipeline order below). Config: `configs/recs_serve.json`. Endpoints: `GET /ui`, `GET /games`, `GET /recommendations` (`exclude_app_id` required for default `method=v2a`; `method=raw`/`structured` for legacy `ContentRetriever`), `GET /health`.
 
 **Programmatic retrieval:**
 
 ```python
-from steam_review_ml.recommender.stacked_recommender import StackedRecommender
-rec = StackedRecommender.from_serve_config()
-hits = rec.recommend("Great strategy RPG.", query_app_id=8930, k=10)
+from steam_review_ml.recommender.rag_recommender import RAGRecommender
+rec = RAGRecommender.from_serve_config()
+hits = rec.recommend("Great strategy RPG.", query_app_id=8930)
 ```
 
 **Full data pipeline** (raw CSV → served model) — see `docs/usage_pipeline.md` for the complete, current step list including IGDB jobs, two-tower training, and eval jobs. Order summary: clean → split → normalize → build game profiles → embed game profiles → train two-tower → fetch/enrich IGDB metadata → run offline eval → serve.
@@ -56,15 +56,15 @@ hits = rec.recommend("Great strategy RPG.", query_app_id=8930, k=10)
 **Shipped serve stack** (`configs/recs_serve.json`): a two-stage retrieve-then-rerank pipeline —
 
 ```
-two_tower_v1 (retrieve @100)  →  two_tower_v1_v2a_embed_query_logpop_blend (rerank @10)
+rag_chunk_v1_vector_blend_query (retrieve @100)  →  two_tower_v1_v2a_embed_query_logpop_blend (rerank @10)
 ```
 
-`StackedRecommender` (`src/steam_review_ml/recommender/stacked_recommender.py`) is the entry point: it retrieves candidates from a trained two-tower model (`two_tower_score.py` — query encoding + catalog scoring), then reranks using IGDB taxonomy embeddings blended with log-popularity (`evaluation/v2a_metadata_ranker.py`). The query game (`query_app_id`) is masked out at retrieval so a game isn't recommended against itself. `ContentRetriever` (`recommender/retrieve.py`) is the older, single-stage raw/structured-embedding retriever kept for ablation via `method=raw`/`structured`.
+`Recommender` (`src/steam_review_ml/recommender/recommender_base.py`) is an ABC for this shape: backend-specific full-catalog retrieval score → shared `app_id`-keyed pool rerank. `RAGRecommender` (`recommender/rag_recommender.py`) is the shipped entry point — Chroma chunk retrieval (`chroma_retrieve.py`) — then reranks using IGDB taxonomy embeddings blended with log-popularity (`evaluation/v2a_metadata_ranker.py`). `TwoTowerRecommender` (`recommender/two_tower_recommender.py`) is the earlier two-tower-retrieval implementation of the same ABC, kept for ablation/rollback (not wired into the API). Both mask/exclude the query game (`query_app_id`) at retrieval so a game isn't recommended against itself. `ContentRetriever` (`recommender/retrieve.py`) is the older, single-stage raw/structured-embedding retriever kept for ablation via `method=raw`/`structured`.
 
 **Package layout** (`src/steam_review_ml/`):
 - `data/` — streaming loaders, filters, feature selection, Parquet export for the raw→interim→processed pipeline.
 - `transforms/` — normalization rules for tabular features (fit on train, applied to val/test).
-- `recommender/` — retrieval/reranking models: `ContentRetriever`, `StackedRecommender`, two-tower train/score, ranker spikes (`ranker_d2`–`d6`, pointwise/listwise/cross-encoder/bi-encoder), preference extraction.
+- `recommender/` — retrieval/reranking models: `ContentRetriever`, `Recommender` ABC with `RAGRecommender` (shipped) and `TwoTowerRecommender` implementations, two-tower train/score, ranker spikes (`ranker_d2`–`d6`, pointwise/listwise/cross-encoder/bi-encoder), preference extraction.
 - `evaluation/` — offline eval orchestration (`retrieval_offline_eval.py`, `ranking_offline_eval.py`), shared metrics, example-cohort caching, experiment registry.
 - `igdb/` — IGDB metadata fetch/join (Twitch API credentials via repo-root `.env`).
 - `api/` — FastAPI app (`create_app` factory) — `/recommendations`, `/ui`, `/games`, `/health`.
