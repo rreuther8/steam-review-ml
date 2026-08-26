@@ -6,10 +6,10 @@ Run (from repo root, with ``.`` on ``PYTHONPATH`` or editable install)::
 
 Or: ``uvicorn steam_review_ml.api:create_app --factory`` (same factory, shorter import path).
 
-Requires TensorFlow + Hub in the environment (conda-forge recommended) and ``pip install -e '.[api]'``.
-Pip-only stack: ``pip install -e '.[api,recs-pip]'``.
+Requires ``pip install -e '.[api,rag]'`` (RAG serving needs chromadb + sentence-transformers,
+not TensorFlow/Hub).
 
-Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
+Default recommendations use the shipped stack: ``rag_chunk_v1_vector_blend_query`` @100 →
 ``two_tower_v1_v2a_embed_query_logpop_blend`` @10 (see ``configs/recs_serve.json``).
 """
 
@@ -21,8 +21,8 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
+from steam_review_ml.recommender.rag_recommender import RAGRecommender
 from steam_review_ml.recommender.retrieve import ContentRetriever
-from steam_review_ml.recommender.stacked_recommender import StackedRecommender
 
 _UI_HTML = Path(__file__).resolve().parent / "static" / "index.html"
 ServeMethod = Literal["v2a", "raw", "structured"]
@@ -50,7 +50,7 @@ def create_app() -> Any:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        _state["stacked"] = StackedRecommender.from_serve_config()
+        _state["recommender"] = RAGRecommender.from_serve_config()
         yield
         _state.clear()
 
@@ -86,20 +86,20 @@ def create_app() -> Any:
             _content_retriever = ContentRetriever()
         return _content_retriever
 
-    def stacked_recommender() -> StackedRecommender:
-        return _state["stacked"]
+    def recommender() -> RAGRecommender:
+        return _state["recommender"]
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        stacked = stacked_recommender()
+        rec = recommender()
         return {
             "status": "ok",
             "default_method": default_serve_method,
-            "stacked_method_id": stacked.method_id,
-            "two_tower_model_path": str(stacked.two_tower_model_path),
-            "igdb_enriched_path": stacked.igdb_enriched_path or "",
-            "k_retrieval": str(stacked.k_retrieval),
-            "k_final": str(stacked.k_final),
+            "recommender_method_id": rec.method_id,
+            "rag_variant": rec.rag_variant,
+            "igdb_enriched_path": rec.igdb_enriched_path or "",
+            "k_retrieval": str(rec.k_retrieval),
+            "k_final": str(rec.k_final),
         }
 
     @app.get("/games")
@@ -131,7 +131,7 @@ def create_app() -> Any:
         method: ServeMethod = Query(
             default_serve_method,
             description=(
-                "v2a: shipped two_tower + v2a rerank (requires exclude_app_id); "
+                "v2a: shipped rag_chunk_v1_vector_blend_query + v2a rerank (requires exclude_app_id); "
                 "raw|structured: legacy ContentRetriever ablations"
             ),
         ),
@@ -179,17 +179,17 @@ def create_app() -> Any:
                         "(select the game being reviewed via GET /games)"
                     ),
                 )
-            stacked = stacked_recommender()
-            if k > stacked.k_final:
+            rec = recommender()
+            if k > rec.k_final:
                 raise HTTPException(
                     status_code=422,
                     detail=(
                         f"k={k} exceeds method=v2a's fixed result size "
-                        f"(k_final={stacked.k_final}); request k<={stacked.k_final} "
+                        f"(k_final={rec.k_final}); request k<={rec.k_final} "
                         "or use method=raw for a full-catalog search"
                     ),
                 )
-            hits = stacked.recommend(q, query_app_id=int(exclude_app_id))
+            hits = rec.recommend(q, query_app_id=int(exclude_app_id))
             return _records(hits.head(k))
 
         use_structured = method == "structured" or structured

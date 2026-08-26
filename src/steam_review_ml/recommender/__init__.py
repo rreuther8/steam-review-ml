@@ -13,7 +13,9 @@ __all__ = [
     "METHOD_FUSION_C_RAW_PLUS_BEHAVIOR",
     "METHOD_V2A",
     "RETRIEVAL_METRIC_COLS",
-    "StackedRecommender",
+    "Recommender",
+    "RAGRecommender",
+    "TwoTowerRecommender",
     "build_embedding_input",
     "ContentRetriever",
     "default_repo_root",
@@ -29,10 +31,18 @@ def __getattr__(name: str):
         from steam_review_ml.evaluation import retrieval_offline_eval as _roe
 
         return getattr(_roe, name)
-    if name in ("METHOD_V2A", "StackedRecommender"):
-        from steam_review_ml.recommender import stacked_recommender as _sr
+    if name in ("METHOD_V2A", "Recommender"):
+        from steam_review_ml.recommender import recommender_base as _rb
 
-        return getattr(_sr, name)
+        return getattr(_rb, name)
+    if name == "TwoTowerRecommender":
+        from steam_review_ml.recommender import two_tower_recommender as _ttr
+
+        return getattr(_ttr, name)
+    if name == "RAGRecommender":
+        from steam_review_ml.recommender import rag_recommender as _rr
+
+        return getattr(_rr, name)
     if name == "load_serve_config":
         from steam_review_ml.recommender import serve_config as _sc
 

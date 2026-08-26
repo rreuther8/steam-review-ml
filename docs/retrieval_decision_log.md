@@ -5,6 +5,23 @@
 >
 > Ranking ship/kill/defer: [`ranking_decision_log.md`](ranking_decision_log.md).
 
+## 2026-08-26: RAG chunk retrieval — embedder swap was RAG-motivated, not a two-tower ablation; next is production
+
+Decision:
+
+- **Motivation, stated plainly:** the `bge-small-en-v1.5` embedder swap (decision #4 in `docs/plans/rag_extension_plan.md`) happened *because* we were building a RAG chunk-retrieval application (Stages 1-3) on top of the existing pipeline and needed a better sentence-transformer for that path — not as a standalone "is RAG architecturally better than two-tower" experiment.
+- **Recognize the confound explicitly:** `two_tower_v1` was never re-embedded or retrained on `bge-small` — it only exists in its original USE-encoder form. So `rag_chunk_v1_vector_blend_query` vs `two_tower_v1` in `eval_retrieval_overall.csv` compares (RAG mechanism + bge-small) against (two-tower mechanism + USE), **not** the same embedder on both sides. `two_tower_v1` was **not** directly ablation-tested against `rag_chunk_v1_vector_blend_query` with both sides held to the same embedder (USE and BGE) — the closest evidence is the USE-controlled grid (`recs_025`), which shows the RAG *mechanism* alone, held to USE, does not beat `two_tower_v1` (0/24 cells); that supports "the win is mostly the embedder," but the actual two-tower-on-bge-small cell has never been run.
+- **Next step:** stop treating this as an open ablation question for now and move `rag_chunk_v1_vector_blend_query` plus the Stage 1-3 chunk pipeline toward production, rather than blocking on closing the `two_tower_v1`-on-bge-small gap first.
+
+Why:
+
+- Naming the confound up front prevents overclaiming this as "RAG beats two-tower architecturally" — the honest claim is "RAG + a better embedder beats the current production baseline," which is still a real, shippable result and the reason to proceed to production now.
+
+Evidence:
+
+- `docs/plans/rag_extension_plan.md` — full ablation history and confound writeup (top of file), `recs_025` (USE-controlled) / `recs_027` (bge-small grid) numbers.
+- `artifacts/recs/offline_eval/runs/latest/eval_retrieval_overall.csv` — current head-to-head: `rag_chunk_v1_vector_blend_query` Hit@100 0.532 / Recall@100 0.514 vs `two_tower_v1` Hit@100 0.512 / Recall@100 0.494, now included in the baseline offline-eval config (`configs/recs_job_eval_offline.json`).
+
 ## 2026-05-30: Chosen retrieval mechanism — `two_tower_v1`
 
 Decision:

@@ -53,18 +53,20 @@ def test_recommendations_raw_does_not_require_exclude_app_id() -> None:
     assert "score" in body[0]
 
 
-def test_health_reports_stacked_method() -> None:
+def test_health_reports_recommender_method() -> None:
     pytest.importorskip("fastapi")
     pytest.importorskip("tensorflow")
+    pytest.importorskip("chromadb")
+    pytest.importorskip("sentence_transformers")
     from fastapi.testclient import TestClient
 
     from steam_review_ml.api.app import create_app
     from steam_review_ml.recommender.serve_config import load_serve_config
 
     cfg = load_serve_config()
-    tower = Path(cfg["two_tower_model_path"])
-    if not tower.is_file():
-        pytest.skip("two-tower checkpoint not present")
+    chroma_dir = Path(cfg["rag_chroma_persist_dir"])
+    if not chroma_dir.is_dir():
+        pytest.skip("RAG Chroma index not present")
 
     with TestClient(create_app()) as client:
         r = client.get("/health")
@@ -72,4 +74,5 @@ def test_health_reports_stacked_method() -> None:
     payload = r.json()
     assert payload["status"] == "ok"
     assert payload["default_method"] == "v2a"
-    assert payload["stacked_method_id"] == "two_tower_v1_v2a_embed_query_logpop_blend"
+    assert payload["recommender_method_id"] == "two_tower_v1_v2a_embed_query_logpop_blend"
+    assert payload["rag_variant"] == "any_polarity__log_weighted"

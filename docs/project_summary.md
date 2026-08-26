@@ -72,7 +72,7 @@ steam_recommendations/
 |--------|------|
 | `data/` | Streaming loaders, filters, feature selection, Parquet export |
 | `transforms/` | Normalization rules for tabular features |
-| `recommender/` | `ContentRetriever`, `StackedRecommender` (shipped v2a stack), preference extraction |
+| `recommender/` | `ContentRetriever`, `Recommender` ABC with `RAGRecommender` (shipped v2a stack) and `TwoTowerRecommender`, preference extraction |
 | `evaluation/` | Offline retrieval/ranking eval orchestration (`retrieval_offline_eval.py`), shared metrics |
 | `api/` | FastAPI app: `/recommendations`, `/ui`, `/games`, `/health` (optional extra `.[api]`) |
 | `constants.py` | Project-wide random seed |
@@ -91,24 +91,27 @@ flowchart LR
     SPLIT --> NORM[normalize_splits]
   end
 
-  subgraph index [Game index + tower]
+  subgraph index [Game index + retrieval backends]
     PROFILES[recs_job_game_profiles] --> EMBED[recs_job_game_embeddings]
     EMBED --> INDEX[(game_profile embeddings + index)]
     TOWER[recs_job_train_two_tower] --> TTMODEL[(two_tower_v1 checkpoint)]
+    CHUNKS[recs_job_game_chunk_embeddings] --> CHROMA[(Chroma game_profiles, bge-small)]
     IGDB[recs_job_igdb_games_enriched] --> META[(igdb taxonomy USE)]
   end
 
   subgraph query [Query path - shipped]
-    DRAFT[User draft + query_app_id] --> TTSCORE[two_tower_v1 retrieve @100]
-    TTMODEL --> TTSCORE
-    INDEX --> TTSCORE
-    TTSCORE --> RERANK[v2a_embed_query_logpop_blend @10]
+    DRAFT[User draft + query_app_id] --> RAGSCORE[rag_chunk_v1_vector_blend_query retrieve @100]
+    CHROMA --> RAGSCORE
+    RAGSCORE --> RERANK[v2a_embed_query_logpop_blend @10]
     META --> RERANK
     RERANK --> HITS[top 10]
   end
 
   subgraph quality [Offline quality]
+    TTMODEL --> TTSCORE[two_tower_v1 - ablation]
+    INDEX --> TTSCORE
     TTSCORE --> EVAL[recs_job_eval_offline]
+    RAGSCORE --> EVAL
     RERANK --> EVAL
     EVAL --> POOLS[eval_offline_examples.jsonl]
     POOLS --> RANKJOB[recs_job_eval_ranking]
@@ -116,7 +119,7 @@ flowchart LR
   end
 
   subgraph serve [Serving]
-    HITS --> API[FastAPI StackedRecommender]
+    HITS --> API[FastAPI RAGRecommender]
   end
 
   NORM --> PROFILES
@@ -124,10 +127,10 @@ flowchart LR
 ```
 
 1. **Ingest:** filter reviews, split users, normalize numeric features.
-2. **Index:** aggregate thumbs-up review text per game → embed (USE) → train two-tower retrieval; build IGDB enriched taxonomy features for v2a.
-3. **Retrieve + rerank:** `two_tower_v1` @100 → `two_tower_v1_v2a_embed_query_logpop_blend` @10 (query-game IGDB anchor + D1 log-pop blend).
+2. **Index:** aggregate thumbs-up review text per game → embed (bge-small chunk index for RAG retrieval; USE-based two-tower kept for ablation); build IGDB enriched taxonomy features for v2a.
+3. **Retrieve + rerank:** `rag_chunk_v1_vector_blend_query` @100 → `two_tower_v1_v2a_embed_query_logpop_blend` @10 (query-game IGDB anchor + D1 log-pop blend). `two_tower_v1` retrieval remains available for ablation/rollback (`TwoTowerRecommender`), not the shipped path.
 4. **Evaluate:** scripted jobs score methods and write contract tables under `artifacts/recs/offline_eval/runs/latest/`.
-5. **Serve:** `StackedRecommender` exposed over FastAPI (`method=v2a` default; `method=raw` ablation). **`exclude_app_id`** required for v2a (game being reviewed).
+5. **Serve:** `RAGRecommender` exposed over FastAPI (`method=v2a` default; `method=raw` ablation). **`exclude_app_id`** required for v2a (game being reviewed).
 
 ---
 

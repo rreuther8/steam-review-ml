@@ -299,16 +299,16 @@ Decision/log artifacts:
 Artifact layout reference:
 - `docs/artifact_layout.md`
 
-**Programmatic retrieval (shipped stack)** — default serve path uses `StackedRecommender` (`configs/recs_serve.json`): `two_tower_v1` retrieve @100 → `two_tower_v1_v2a_embed_query_logpop_blend` rerank @10. Legacy ablation: `ContentRetriever.top_k(...)` (raw or structured).
+**Programmatic retrieval (shipped stack)** — default serve path uses `RAGRecommender` (`configs/recs_serve.json`): `rag_chunk_v1_vector_blend_query` retrieve @100 → `two_tower_v1_v2a_embed_query_logpop_blend` rerank @10. `TwoTowerRecommender` (same `Recommender` ABC, two-tower retrieval instead of Chroma) is kept for ablation/rollback, not wired into the API. Legacy ablation: `ContentRetriever.top_k(...)` (raw or structured).
 
 ```python
-from steam_review_ml.recommender.stacked_recommender import StackedRecommender
+from steam_review_ml.recommender.rag_recommender import RAGRecommender
 
-rec = StackedRecommender.from_serve_config()
-hits = rec.recommend("Great strategy RPG.", query_app_id=8930, k=10)
+rec = RAGRecommender.from_serve_config()
+hits = rec.recommend("Great strategy RPG.", query_app_id=8930)
 ```
 
-Optional HTTP: TF + Hub as above, then `pip install -e '.[api]'`, then  
+Optional HTTP: `.[api,rag]` (chromadb + sentence-transformers), then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
 
 Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations.
