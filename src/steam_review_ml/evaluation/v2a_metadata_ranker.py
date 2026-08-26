@@ -21,6 +21,12 @@ from steam_review_ml.igdb.constants import (
 )
 
 METHOD_TWO_TOWER_V1_V2A_EMBED_QUERY_LOGPOP_BLEND = "two_tower_v1_v2a_embed_query_logpop_blend"
+# Same rerank formula/params as above, paired with Stage 3 RAG retrieval pools instead of
+# two_tower_v1 -- lets the offline ranking-eval job score the actually-shipped RAGRecommender
+# combination (retrieval + rerank together), not just each stage in isolation.
+METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND = (
+    "rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend"
+)
 
 # Frozen from recs_020 train_tune; do not tune on val.
 DEFAULT_V2A_EMBED_W_META = 0.1

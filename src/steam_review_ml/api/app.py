@@ -21,8 +21,10 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
+from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
 from steam_review_ml.recommender.rag_recommender import RAGRecommender
 from steam_review_ml.recommender.retrieve import ContentRetriever
+from steam_review_ml.recommender.serve_config import load_serve_config
 
 _UI_HTML = Path(__file__).resolve().parent / "static" / "index.html"
 ServeMethod = Literal["v2a", "raw", "structured"]
@@ -35,6 +37,48 @@ def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
     always strings, so this is a safe narrowing cast, not a runtime check.
     """
     return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+
+
+def _load_explanation_backend() -> Any | None:
+    """Load the Stage 4 explanation ``LlamaCppBackend``, or ``None`` if unavailable.
+
+    Optional: the GGUF model is a multi-GB local file not everyone running this API
+    has (or needs — ``llm-local`` is an optional extra). Missing model/dep degrades
+    to no ``explanation`` field on ``/recommendations`` rather than failing startup.
+    """
+    cfg = load_serve_config()
+    gguf_path = cfg.get("explanation_gguf_path")
+    if not gguf_path or not Path(gguf_path).is_file():
+        return None
+    try:
+        from steam_review_ml.recommender.llm_backends import LlamaCppBackend
+    except ImportError:
+        return None
+    return LlamaCppBackend(str(gguf_path), n_gpu_layers=-1)
+
+
+def _explain_top_pick(
+    backend: Any | None,
+    cache: dict[tuple[int, int], str],
+    *,
+    query_app_id: int,
+    rec_app_id: int,
+) -> str | None:
+    """Grounded explanation for ``rec_app_id`` given ``query_app_id``, cached by pair.
+
+    ``generate_explanation`` only consumes each game's IGDB text (not the user's free-text
+    query) and runs at ``temperature=0.0``, so it's deterministic per ``(query_app_id,
+    rec_app_id)`` pair — safe, and worthwhile, to cache across requests.
+    """
+    if backend is None:
+        return None
+    key = (query_app_id, rec_app_id)
+    if key in cache:
+        return cache[key]
+    game_texts = build_candidate_text_lookup([query_app_id, rec_app_id])
+    explanation = backend.generate_explanation(game_texts[query_app_id], game_texts[rec_app_id])
+    cache[key] = explanation
+    return explanation
 
 
 def create_app() -> Any:
@@ -88,6 +132,19 @@ def create_app() -> Any:
 
     def recommender() -> RAGRecommender:
         return _state["recommender"]
+
+    _explanation_backend: Any | None = None
+    _explanation_backend_loaded = False
+    _explanation_cache: dict[tuple[int, int], str] = {}
+
+    def explanation_backend() -> Any | None:
+        """Lazy-loaded, like ``content_retriever()`` -- avoids paying the ~6s GGUF load
+        (and its GPU memory) for requests/tests that never reach a v2a top-1 result."""
+        nonlocal _explanation_backend, _explanation_backend_loaded
+        if not _explanation_backend_loaded:
+            _explanation_backend = _load_explanation_backend()
+            _explanation_backend_loaded = True
+        return _explanation_backend
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -190,7 +247,15 @@ def create_app() -> Any:
                     ),
                 )
             hits = rec.recommend(q, query_app_id=int(exclude_app_id))
-            return _records(hits.head(k))
+            records = _records(hits.head(k))
+            if records:
+                records[0]["explanation"] = _explain_top_pick(
+                    explanation_backend(),
+                    _explanation_cache,
+                    query_app_id=int(exclude_app_id),
+                    rec_app_id=int(records[0]["app_id"]),
+                )
+            return records
 
         use_structured = method == "structured" or structured
         mask = {int(exclude_app_id)} if exclude_app_id is not None else None

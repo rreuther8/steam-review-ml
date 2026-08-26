@@ -23,7 +23,12 @@ def load_serve_config(
         raise FileNotFoundError(f"Serve config not found: {path}")
     cfg = json.loads(path.read_text(encoding="utf-8"))
     resolved = dict(cfg)
-    for key in ("two_tower_model_path", "igdb_enriched_path", "rag_chroma_persist_dir"):
+    for key in (
+        "two_tower_model_path",
+        "igdb_enriched_path",
+        "rag_chroma_persist_dir",
+        "explanation_gguf_path",
+    ):
         if key in resolved and resolved[key]:
             p = Path(str(resolved[key]))
             if not p.is_absolute():
