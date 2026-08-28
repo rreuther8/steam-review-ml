@@ -1163,6 +1163,18 @@ def _table_personalization(
     return pd.DataFrame(out_rows).sort_values("method").reset_index(drop=True)
 
 
+def _attach_retrieval_method(table: pd.DataFrame, df_ex_ranking: pd.DataFrame) -> pd.DataFrame:
+    """Label each ranking-table row with the retrieval mechanism its pool came from.
+
+    Ranking rows keep one row per method (rerank variants genuinely differ post-rerank), but
+    since ``retrieval_method`` is 1:1 with ``method`` this is a lookup merge, not a re-aggregation.
+    """
+    if table.empty or "method" not in table.columns or "retrieval_method" not in df_ex_ranking.columns:
+        return table
+    lut = df_ex_ranking[["method", "retrieval_method"]].drop_duplicates("method")
+    return table.merge(lut, on="method", how="left", validate="many_to_one")
+
+
 def _append_personalization_metrics(
     table: pd.DataFrame,
     personalization: pd.DataFrame,
@@ -1534,9 +1546,11 @@ def _score_all_methods(
     ranking_frames: list[pd.DataFrame] = []
     artifact_rows_acc: list[dict[str, Any]] = []
     model_snap = _embedding_model_snapshot(inputs.retriever)
+    seen_retrieval_bases: set[str] = set()
     for name, fn, rerank_spec in iterable:
         if rerank_spec is not None:
-            base_fn = registry[rerank_spec.base_method]
+            retrieval_method = rerank_spec.base_method
+            base_fn = registry[retrieval_method]
             df_r, df_k, arts = _per_example_retrieval_with_pool_rerank(
                 method_name=name,
                 base_score_fn=base_fn,
@@ -1552,6 +1566,7 @@ def _score_all_methods(
                 verbose=config.verbose,
             )
         else:
+            retrieval_method = name
             df_r, df_k, arts = _per_example_retrieval_ranking(
                 method_name=name,
                 score_fn=fn,  # type: ignore[arg-type]
@@ -1564,7 +1579,15 @@ def _score_all_methods(
                 verbose=config.verbose,
                 include_query_text=config.include_query_text,
             )
-        retrieval_frames.append(df_r)
+        # Rerank methods share their base's retrieval pool/scores -- only emit one
+        # retrieval-eval row per distinct retrieval mechanism, not one per rerank variant.
+        if retrieval_method not in seen_retrieval_bases:
+            df_r = df_r.copy()
+            df_r["method"] = retrieval_method
+            retrieval_frames.append(df_r)
+            seen_retrieval_bases.add(retrieval_method)
+        df_k = df_k.copy()
+        df_k["retrieval_method"] = retrieval_method
         ranking_frames.append(df_k)
         artifact_rows_acc.extend(arts)
 
@@ -1675,22 +1698,9 @@ def _build_eval_tables(
         group_col="pos_pop_decile",
         verbose=verbose,
     )
-    # Guardrails (ILD, catalog coverage, novelty, personalization gap) align with method top-k@k_personalization;
-    # attach to both ranking and retrieval summaries for comparable reporting.
-    overall_retrieval = _append_personalization_metrics(overall_retrieval, personalization, on_keys=["method"])
-    by_slice_retrieval = _append_personalization_metrics(
-        by_slice_retrieval, slice_personalization, on_keys=["method", "slice_name"]
-    )
-    by_support_retrieval = _append_personalization_metrics(
-        by_support_retrieval, support_personalization, on_keys=["method", "train_support_bucket"]
-    )
-    pop_ret = _append_personalization_metrics(
-        pop_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
-    )
-    pop_delta_ret = _append_personalization_metrics(
-        pop_delta_ret, pop_personalization, on_keys=["method", "pos_pop_decile"]
-    )
-
+    # Guardrails (ILD, catalog coverage, novelty, personalization gap) are computed at
+    # k_personalization (the final-list size), so they describe each method's served top-k --
+    # attach to ranking summaries only, not retrieval (@k_retrieval) summaries.
     overall_ranking = _append_personalization_metrics(overall_ranking, personalization, on_keys=["method"])
     by_slice_ranking = _append_personalization_metrics(
         by_slice_ranking, slice_personalization, on_keys=["method", "slice_name"]
@@ -1704,6 +1714,12 @@ def _build_eval_tables(
     pop_delta_rank = _append_personalization_metrics(
         pop_delta_rank, pop_personalization, on_keys=["method", "pos_pop_decile"]
     )
+
+    overall_ranking = _attach_retrieval_method(overall_ranking, df_ex_ranking)
+    by_slice_ranking = _attach_retrieval_method(by_slice_ranking, df_ex_ranking)
+    by_support_ranking = _attach_retrieval_method(by_support_ranking, df_ex_ranking)
+    pop_rank = _attach_retrieval_method(pop_rank, df_ex_ranking)
+    pop_delta_rank = _attach_retrieval_method(pop_delta_rank, df_ex_ranking)
     return (
         overall_retrieval, by_slice_retrieval, by_support_retrieval, pop_ret, pop_delta_ret,
         overall_ranking, by_slice_ranking, by_support_ranking, pop_rank, pop_delta_rank,

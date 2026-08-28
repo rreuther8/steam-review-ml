@@ -56,17 +56,16 @@ def test_recommendations_raw_does_not_require_exclude_app_id() -> None:
 def test_health_reports_recommender_method() -> None:
     pytest.importorskip("fastapi")
     pytest.importorskip("tensorflow")
-    pytest.importorskip("chromadb")
-    pytest.importorskip("sentence_transformers")
+    pytest.importorskip("tensorflow_hub")
     from fastapi.testclient import TestClient
 
     from steam_review_ml.api.app import create_app
     from steam_review_ml.recommender.serve_config import load_serve_config
 
     cfg = load_serve_config()
-    chroma_dir = Path(cfg["rag_chroma_persist_dir"])
-    if not chroma_dir.is_dir():
-        pytest.skip("RAG Chroma index not present")
+    tower = Path(cfg["two_tower_model_path"])
+    if not tower.is_file():
+        pytest.skip("two-tower checkpoint not present")
 
     with TestClient(create_app()) as client:
         r = client.get("/health")
@@ -75,24 +74,22 @@ def test_health_reports_recommender_method() -> None:
     assert payload["status"] == "ok"
     assert payload["default_method"] == "v2a"
     assert payload["recommender_method_id"] == "two_tower_v1_v2a_embed_query_logpop_blend"
-    assert payload["rag_variant"] == "any_polarity__log_weighted"
 
 
 def test_recommendations_v2a_attaches_explanation_to_top_pick_only(monkeypatch) -> None:
     """Uses a fake backend (no local LLM) to check wiring: only row 0 gets an explanation."""
     pytest.importorskip("fastapi")
     pytest.importorskip("tensorflow")
-    pytest.importorskip("chromadb")
-    pytest.importorskip("sentence_transformers")
+    pytest.importorskip("tensorflow_hub")
     from fastapi.testclient import TestClient
 
     import steam_review_ml.api.app as app_module
     from steam_review_ml.recommender.serve_config import load_serve_config
 
     cfg = load_serve_config()
-    chroma_dir = Path(cfg["rag_chroma_persist_dir"])
-    if not chroma_dir.is_dir():
-        pytest.skip("RAG Chroma index not present")
+    tower = Path(cfg["two_tower_model_path"])
+    if not tower.is_file():
+        pytest.skip("two-tower checkpoint not present")
 
     class _FakeBackend:
         def generate_explanation(self, query_text: str, recommended_text: str) -> str:

@@ -1,4 +1,4 @@
-"""Tests for the RAG chunk-retrieval + v2a serve path (``RAGRecommender``, shipped default)."""
+"""Tests for the RAG chunk-retrieval + v2a serve path (``RAGRecommender``, kept for ablation/rollback -- not the API default; see ``docs/retrieval_decision_log.md`` 2026-08-28)."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_rag_recommender_recommend_smoke() -> None:
     assert "score" in df.columns
     assert "app_id" in df.columns
     assert 8930 not in set(df["app_id"].astype(int).tolist())
-    assert rec.method_id == "two_tower_v1_v2a_embed_query_logpop_blend"
+    assert rec.method_id == "rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend"
 
 
 @pytest.mark.skipif(not _has_serve_artifacts(), reason="serve stack artifacts not present")
@@ -50,5 +50,5 @@ def test_rag_recommender_from_config_matches_method() -> None:
     pytest.importorskip("chromadb")
     pytest.importorskip("sentence_transformers")
     rec = RAGRecommender.from_serve_config()
-    assert rec.method_id == "two_tower_v1_v2a_embed_query_logpop_blend"
+    assert rec.method_id == "rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend"
     assert rec.rag_variant == "any_polarity__log_weighted"

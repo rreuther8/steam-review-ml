@@ -1,0 +1,14 @@
+{
+  "cohort_cache_name": "train_ranker_v1",
+  "cohort_cache_root": "artifacts/recs/eval_cache",
+  "split": "train",
+  "pool_method": "rag_chunk_v1_vector_blend_query",
+  "k_retrieval": 100,
+  "min_review_chars": 30,
+  "artifact_dir": "artifacts/recs",
+  "rag_chroma_persist_dir": "artifacts/recs/embeddings/game_chunks/chroma",
+  "rag_variant": "any_polarity__log_weighted",
+  "rag_query_blend_weight": 0.5,
+  "output_path": "artifacts/recs/ranker_pools/train_ranker_v1/rag_chunk_v1_vector_blend_query.parquet",
+  "verbose": true
+}

@@ -9,7 +9,7 @@ Or: ``uvicorn steam_review_ml.api:create_app --factory`` (same factory, shorter 
 Requires ``pip install -e '.[api,rag]'`` (RAG serving needs chromadb + sentence-transformers,
 not TensorFlow/Hub).
 
-Default recommendations use the shipped stack: ``rag_chunk_v1_vector_blend_query`` @100 →
+Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
 ``two_tower_v1_v2a_embed_query_logpop_blend`` @10 (see ``configs/recs_serve.json``).
 """
 
@@ -22,9 +22,9 @@ from typing import Any, Literal, cast
 import pandas as pd
 
 from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
-from steam_review_ml.recommender.rag_recommender import RAGRecommender
 from steam_review_ml.recommender.retrieve import ContentRetriever
 from steam_review_ml.recommender.serve_config import load_serve_config
+from steam_review_ml.recommender.two_tower_recommender import TwoTowerRecommender
 
 _UI_HTML = Path(__file__).resolve().parent / "static" / "index.html"
 ServeMethod = Literal["v2a", "raw", "structured"]
@@ -94,7 +94,7 @@ def create_app() -> Any:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        _state["recommender"] = RAGRecommender.from_serve_config()
+        _state["recommender"] = TwoTowerRecommender.from_serve_config()
         yield
         _state.clear()
 
@@ -130,7 +130,7 @@ def create_app() -> Any:
             _content_retriever = ContentRetriever()
         return _content_retriever
 
-    def recommender() -> RAGRecommender:
+    def recommender() -> TwoTowerRecommender:
         return _state["recommender"]
 
     _explanation_backend: Any | None = None
@@ -153,7 +153,6 @@ def create_app() -> Any:
             "status": "ok",
             "default_method": default_serve_method,
             "recommender_method_id": rec.method_id,
-            "rag_variant": rec.rag_variant,
             "igdb_enriched_path": rec.igdb_enriched_path or "",
             "k_retrieval": str(rec.k_retrieval),
             "k_final": str(rec.k_final),
@@ -188,7 +187,7 @@ def create_app() -> Any:
         method: ServeMethod = Query(
             default_serve_method,
             description=(
-                "v2a: shipped rag_chunk_v1_vector_blend_query + v2a rerank (requires exclude_app_id); "
+                "v2a: shipped two_tower_v1 + v2a rerank (requires exclude_app_id); "
                 "raw|structured: legacy ContentRetriever ablations"
             ),
         ),

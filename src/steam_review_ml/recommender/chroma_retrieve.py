@@ -33,6 +33,34 @@ BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 UNSCORED_SENTINEL = float("-inf")
 
 
+def _align_batch_query_results(
+    metadatas: list[list[dict]],
+    distances: list[list[float]],
+    *,
+    query_app_ids: np.ndarray,
+    app_ids: np.ndarray,
+) -> np.ndarray:
+    """Reshape Chroma's own per-query result lists into one aligned score matrix.
+
+    Pure function -- takes Chroma's already-computed distances as input and only restructures
+    them; it does not recompute or approximate similarity itself. Masks each row's own
+    ``query_app_id`` after the fact, since the batched call below drops the per-example
+    ``$ne`` exclusion filter (one ``where`` clause now applies to the whole batch).
+    """
+    app_id_to_col = {int(a): i for i, a in enumerate(app_ids)}
+    scores = np.full((len(metadatas), len(app_ids)), UNSCORED_SENTINEL, dtype=np.float32)
+    for row, (metas, dists) in enumerate(zip(metadatas, distances)):
+        for meta, dist in zip(metas, dists):
+            col = app_id_to_col.get(int(meta["app_id"]))
+            if col is not None:
+                scores[row, col] = -float(dist)
+    for row, qid in enumerate(query_app_ids):
+        col = app_id_to_col.get(int(qid))
+        if col is not None:
+            scores[row, col] = UNSCORED_SENTINEL
+    return scores
+
+
 class ChromaGameProfileRetriever:
     """Query one fixed pooling ``variant`` of the Stage 2 ``game_profiles`` collection."""
 
@@ -102,6 +130,57 @@ class ChromaGameProfileRetriever:
             return review_vec
         desc_vec = self.embed_text(description_text)
         return l2_normalize((1.0 - blend_weight) * review_vec + blend_weight * desc_vec)
+
+    def embed_texts_batch(self, texts: list[str]) -> np.ndarray:
+        """Batched sibling of ``embed_text`` -- one model call for many texts, not one per text.
+
+        For bulk offline scoring (e.g. exporting retrieval pools for a large cohort), where
+        calling ``embed_text`` per example would mean thousands of separate small model calls.
+        """
+        self._ensure_embedder()
+        cleaned = [BGE_QUERY_PREFIX + (t or "").strip() for t in texts]
+        raw = self._embed_fn(cleaned)
+        return np.vstack([l2_normalize(row) for row in raw])
+
+    def score_batch_against_catalog(
+        self,
+        query_vectors: np.ndarray,
+        *,
+        query_app_ids: np.ndarray,
+        app_ids: np.ndarray,
+        chroma_batch_size: int = 100,
+    ) -> np.ndarray:
+        """Batched sibling of ``score_against_catalog``: one Chroma call for many queries.
+
+        Still goes through Chroma's own distance computation -- this does not reimplement
+        similarity search locally. It only drops the per-example ``app_id != query_app_id``
+        filter (masking that afterward instead, in ``_align_batch_query_results``) so many
+        queries can share one ``where={"variant": ...}`` call, chunked by
+        ``chroma_batch_size``. Chroma's SQLite backend hits a "too many SQL variables" error
+        well before any request-size limit you'd expect -- empirically ~100-150 query vectors
+        per call at this collection's embedding dim (384) and ``n_results`` (~315); 100 is a
+        confirmed-safe default, not an arbitrary round number.
+        """
+        query_vectors = np.asarray(query_vectors, dtype=np.float32)
+        query_app_ids = np.asarray(query_app_ids)
+        n = query_vectors.shape[0]
+        chunks: list[np.ndarray] = []
+        for start in range(0, n, chroma_batch_size):
+            end = min(start + chroma_batch_size, n)
+            result = self._collection.query(
+                query_embeddings=query_vectors[start:end].tolist(),
+                n_results=len(app_ids),
+                where={"variant": self._variant},
+            )
+            chunks.append(
+                _align_batch_query_results(
+                    result["metadatas"],
+                    result["distances"],
+                    query_app_ids=query_app_ids[start:end],
+                    app_ids=app_ids,
+                )
+            )
+        return np.vstack(chunks)
 
     # --- retrieval ---
 

@@ -301,11 +301,16 @@ def test_eval_outputs_include_personalization_columns(monkeypatch: pytest.Monkey
     def has_all_prefixes(df: pd.DataFrame) -> bool:
         return all(any(c.startswith(p) for c in df.columns) for p in expected_prefixes)
 
-    assert has_all_prefixes(tables.retrieval_overall)
-    assert has_all_prefixes(tables.retrieval_by_slice)
-    assert has_all_prefixes(tables.retrieval_by_support_bucket)
-    assert has_all_prefixes(tables.retrieval_by_pop_decile)
-    assert has_all_prefixes(tables.retrieval_pop_delta_vs_popularity)
+    def has_any_prefix(df: pd.DataFrame) -> bool:
+        return any(any(c.startswith(p) for c in df.columns) for p in expected_prefixes)
+
+    # Guardrail metrics are computed at k_personalization (the final-list size), so they
+    # describe each method's served top-k -- ranking tables only, not @k_retrieval tables.
+    assert not has_any_prefix(tables.retrieval_overall)
+    assert not has_any_prefix(tables.retrieval_by_slice)
+    assert not has_any_prefix(tables.retrieval_by_support_bucket)
+    assert not has_any_prefix(tables.retrieval_by_pop_decile)
+    assert not has_any_prefix(tables.retrieval_pop_delta_vs_popularity)
 
     assert has_all_prefixes(tables.ranking_overall)
     assert has_all_prefixes(tables.ranking_by_slice)
