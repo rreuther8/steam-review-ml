@@ -10,7 +10,8 @@
     "two_tower_v1_heuristic_logpop_blend",
     "rag_chunk_v1_raw_query",
     "rag_chunk_v1_query_plus_desc",
-    "rag_chunk_v1_vector_blend_query"
+    "rag_chunk_v1_vector_blend_query",
+    "rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend"
   ],
   "active_cohort": "all",
   "max_examples": 12500,

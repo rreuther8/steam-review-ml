@@ -5,7 +5,28 @@
 >
 > Ranking ship/kill/defer: [`ranking_decision_log.md`](ranking_decision_log.md).
 
+## 2026-08-28: RAG pool + v2a rerank — popularity-weighted blend doesn't transfer from `two_tower_v1` pools; retune attempt failed to generalize
+
+Decision:
+
+- **No change to the shipped stack.** `two_tower_v1` retrieve → v2a rerank stays the winner; `rag_chunk_v1_vector_blend_query` retrieve → v2a rerank (`rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend`) underperforms it end-to-end (NDCG@10 0.089 vs 0.095, `eval_ranking_overall.csv`), even though RAG's pool has a *better* ceiling (OracleNDCG@10 0.589 vs 0.534).
+- **Root cause, confirmed:** v2a's frozen params (`alpha=0.2`, `w_meta=0.1`, from `recs_020` train_tune against `two_tower_v1` pools — see `ranking_decision_log.md` § 2026-06-22) make the score ~72% within-pool log-popularity. RAG's chunk-vector retrieval surfaces more popular decoy games than `two_tower_v1` does (pool median train-popularity ~9.2k vs ~6.5k on the current `latest` run), which pushes the true target's popularity rank *within its own pool* worse on average (27th vs 23rd of 100) — diluting the higher hit rate RAG's retrieval actually delivers.
+- **Retune attempt, also confirmed to fail:** `notebooks/ranking/recs_031_rag_ranker_retune.ipynb` swept `alpha` up (to de-weight popularity) against RAG's train pools, gated on a D1-D3 low-popularity-decile guardrail vs bare RAG order. `alpha=0.5` passed the guardrail and looked best on train (D1-D3 NDCG@10 0.050→0.085), but validated worse on held-out val overall (0.075) than both the current RAG default (0.089) and the shipped `two_tower_v1` stack (0.095) — did not generalize, not promoted.
+
+Why:
+
+- This isn't a RAG retrieval defect — RAG's pool is objectively better (Oracle numbers). It's a ranker-generalization gap: v2a was tuned once, on one retrieval mechanism's score/pool distribution, and never re-validated against a structurally different pool before being wired up as `rag_chunk_v1_vector_blend_query_v2a_embed_query_logpop_blend` in `configs/recs_job_eval_offline.json` (2026-08-27).
+- Recording this so a future alpha/w_meta retune attempt for RAG doesn't have to rediscover that simple `alpha` sweeps overfit train's D1-D3 slice without transferring to val.
+
+Evidence:
+
+- `artifacts/recs/offline_eval/runs/latest/eval_ranking_overall.csv` — head-to-head NDCG@10.
+- `notebooks/ranking/recs_031_rag_ranker_retune.ipynb` — alpha/w_meta sweeps, guardrail, val validation.
+- `src/steam_review_ml/evaluation/v2a_metadata_ranker.py` (`score_v2a_embed_query_logpop_blend`), `heuristic_ranker.py` (`score_logpop_blend`, `DEFAULT_LOGPOP_BLEND_ALPHA=0.2`).
+
 ## 2026-08-26: RAG chunk retrieval — embedder swap was RAG-motivated, not a two-tower ablation; next is production
+
+> **Superseded (2026-08-28):** "next is production" did not hold up once ranked end-to-end — see the entry above. API default reverted to `two_tower_v1`.
 
 Decision:
 
@@ -38,6 +59,10 @@ Why:
   - vs `fusion_c` **0.506** / **0.488**, `raw` **0.453** / **0.435**
 - **`popularity_train` hits higher @100 (~0.763)** but is a popularity baseline, not our personalized retrieval mechanism.
 - Pools are good enough to rank: OracleNDCG@10 ~**0.50** on the same candidates while bare pool order @10 is ~**0.018** — problem shifts to ranking (see [`ranking_decision_log.md`](ranking_decision_log.md) D1 ship).
+
+> **Addendum (2026-08-27):** the "why" above justifies the pick using **overall** Hit@100/Recall@100, not the **Slice A `Recall@K`-primary** criterion that `docs/recommendation_evaluation_overview.md` had already designated as the retrieval-stage selection metric (added 2026-05-11, 19 days before this entry — "Gate policy (v2)"). By that stated primary metric, **`multi_mean_train` actually edges `two_tower_v1` on Slice A Recall@100** (0.4716 vs 0.4602, +2.5% relative) — this entry never checked that number against its own contract.
+>
+> The pick still holds up once Slice B is weighed in: `two_tower_v1` wins **Slice B Hit@100** (Slice B's own stated primary) by a larger margin (0.4961 vs 0.4669, **+6.3% relative** — more than double the size of `multi_mean_train`'s Slice A edge). Verdict: **right call, sloppy justification** — the original write-up should have shown this trade-off against the contract's own designated metric instead of substituting overall numbers that happened to point the same direction.
 
 Evidence:
 

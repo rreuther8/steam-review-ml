@@ -17,6 +17,7 @@ from steam_review_ml.evaluation.heuristic_ranker import PoolRerankSpec, pool_rer
 from steam_review_ml.evaluation.retrieval_offline_eval import (
     RANKING_REPORT_METRIC_COLS,
     _append_personalization_metrics,
+    _attach_retrieval_method,
     _oracle_ranked_indices_from_retrieved,
     _personalization_by_group,
     _rank_rows,
@@ -307,7 +308,10 @@ def run_ranking_eval(
             )
             if m is not None:
                 rows_out.append(m)
-        ranking_frames.append(pd.DataFrame(rows_out))
+        df_catalog = pd.DataFrame(rows_out)
+        if not df_catalog.empty:
+            df_catalog["retrieval_method"] = catalog_method
+        ranking_frames.append(df_catalog)
 
     methods_to_score: list[tuple[str, str | None, PoolRerankSpec | None]] = []
     for rm in ranker_methods:
@@ -340,7 +344,10 @@ def run_ranking_eval(
             )
             if m is not None:
                 rows_out.append(m)
-        ranking_frames.append(pd.DataFrame(rows_out))
+        df_pool = pd.DataFrame(rows_out)
+        if not df_pool.empty:
+            df_pool["retrieval_method"] = pool_method
+        ranking_frames.append(df_pool)
 
     df_ex_ranking = pd.concat(ranking_frames, ignore_index=True)
     if df_ex_ranking.empty:
@@ -458,6 +465,12 @@ def run_ranking_eval(
         pop_delta_rank = _append_personalization_metrics(
             pop_delta_rank, pop_personalization, on_keys=["method", "pos_pop_decile"]
         )
+
+    overall_ranking = _attach_retrieval_method(overall_ranking, df_ex_ranking)
+    by_slice_ranking = _attach_retrieval_method(by_slice_ranking, df_ex_ranking)
+    by_support_ranking = _attach_retrieval_method(by_support_ranking, df_ex_ranking)
+    pop_rank = _attach_retrieval_method(pop_rank, df_ex_ranking)
+    pop_delta_rank = _attach_retrieval_method(pop_delta_rank, df_ex_ranking)
 
     t1 = time.perf_counter()
     run_meta = {

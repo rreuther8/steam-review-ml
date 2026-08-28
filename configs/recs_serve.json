@@ -1,5 +1,6 @@
 {
   "default_method": "two_tower_v1_v2a_embed_query_logpop_blend",
+  "two_tower_model_path": "artifacts/recs/towers/val_dev_12k_v1/updated_user__updated_profile200_item.keras",
   "rag_chroma_persist_dir": "artifacts/recs/embeddings/game_chunks/chroma",
   "rag_variant": "any_polarity__log_weighted",
   "rag_query_blend_weight": 0.5,

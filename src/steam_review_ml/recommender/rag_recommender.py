@@ -6,12 +6,18 @@ from pathlib import Path
 
 import numpy as np
 
-from steam_review_ml.recommender.recommender_base import METHOD_V2A, Recommender
+from steam_review_ml.evaluation.v2a_metadata_ranker import (
+    METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND,
+)
+from steam_review_ml.recommender.recommender_base import Recommender
 from steam_review_ml.recommender.retrieve import default_repo_root
 from steam_review_ml.recommender.serve_config import load_serve_config
 
 DEFAULT_RAG_VARIANT = "any_polarity__log_weighted"
 DEFAULT_RAG_QUERY_BLEND_WEIGHT = 0.5
+# RAGRecommender's own default -- not the shared `default_method` config key, which now
+# names the API's two_tower_v1 default (see docs/retrieval_decision_log.md 2026-08-28).
+DEFAULT_RAG_METHOD = METHOD_RAG_CHUNK_V1_VECTOR_BLEND_QUERY_V2A_EMBED_QUERY_LOGPOP_BLEND
 
 
 class RAGRecommender(Recommender):
@@ -20,7 +26,7 @@ class RAGRecommender(Recommender):
     def __init__(
         self,
         *,
-        method_id: str = METHOD_V2A,
+        method_id: str = DEFAULT_RAG_METHOD,
         rag_chroma_persist_dir: Path | str | None = None,
         rag_variant: str = DEFAULT_RAG_VARIANT,
         rag_query_blend_weight: float = DEFAULT_RAG_QUERY_BLEND_WEIGHT,
@@ -63,7 +69,7 @@ class RAGRecommender(Recommender):
         cfg = load_serve_config(config_path, repo_root=repo_root)
         root = repo_root or default_repo_root()
         return cls(
-            method_id=str(cfg.get("default_method", METHOD_V2A)),
+            method_id=DEFAULT_RAG_METHOD,
             rag_chroma_persist_dir=cfg.get("rag_chroma_persist_dir"),
             rag_variant=str(cfg.get("rag_variant", DEFAULT_RAG_VARIANT)),
             rag_query_blend_weight=float(
