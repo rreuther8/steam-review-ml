@@ -76,8 +76,38 @@ def test_health_reports_recommender_method() -> None:
     assert payload["recommender_method_id"] == "two_tower_v1_v2a_embed_query_logpop_blend"
 
 
-def test_recommendations_v2a_attaches_explanation_to_top_pick_only(monkeypatch) -> None:
-    """Uses a fake backend (no local LLM) to check wiring: only row 0 gets an explanation."""
+def test_recommendations_v2a_does_not_block_on_explanation(monkeypatch) -> None:
+    """Explanation generation moved to GET /explain -- /recommendations must not attach it."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("tensorflow")
+    pytest.importorskip("tensorflow_hub")
+    from fastapi.testclient import TestClient
+
+    import steam_review_ml.api.app as app_module
+    from steam_review_ml.recommender.serve_config import load_serve_config
+
+    cfg = load_serve_config()
+    tower = Path(cfg["two_tower_model_path"])
+    if not tower.is_file():
+        pytest.skip("two-tower checkpoint not present")
+
+    def _fail_if_called():
+        raise AssertionError("/recommendations must not load the explanation backend")
+
+    monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: _fail_if_called())
+
+    with TestClient(app_module.create_app()) as client:
+        r = client.get(
+            "/recommendations",
+            params={"q": "I love tactical RPGs", "exclude_app_id": 8930, "k": 3},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 3
+    assert all("explanation" not in row for row in body)
+
+
+def test_explain_returns_top_pick_explanation(monkeypatch) -> None:
     pytest.importorskip("fastapi")
     pytest.importorskip("tensorflow")
     pytest.importorskip("tensorflow_hub")
@@ -96,16 +126,16 @@ def test_recommendations_v2a_attaches_explanation_to_top_pick_only(monkeypatch) 
             return "fake explanation"
 
     monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: _FakeBackend())
+    monkeypatch.setattr(
+        app_module,
+        "build_candidate_text_lookup",
+        lambda app_ids: {a: f"text for {a}" for a in app_ids},
+    )
 
     with TestClient(app_module.create_app()) as client:
-        r = client.get(
-            "/recommendations",
-            params={"q": "I love tactical RPGs", "exclude_app_id": 8930, "k": 3},
-        )
+        r = client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
     assert r.status_code == 200
-    body = r.json()
-    assert body[0]["explanation"] == "fake explanation"
-    assert all("explanation" not in row for row in body[1:])
+    assert r.json() == {"explanation": "fake explanation"}
 
 
 def test_explain_top_pick_caches_by_query_and_rec_pair(monkeypatch) -> None:
