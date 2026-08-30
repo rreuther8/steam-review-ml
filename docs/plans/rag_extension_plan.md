@@ -323,6 +323,11 @@ generation, not discrimination among ~100 candidates). Validated against real
 
 **Independent of Stages 1–3** — its primary comparison uses the *existing* frozen `two_tower_v1` @100 pools (`artifacts/recs/offline_eval/runs/latest/eval_offline_examples.jsonl`), which already exist today. **Build order: Stages 1–3 first**, Stage 4 after.
 
+**Follow-on ideas (post-pivot, not yet built):**
+
+- **Review-grounded explanation (new explanation type)** — today's `generate_explanation()` only compares each game's *IGDB metadata* (name/summary/storyline via `build_candidate_text_lookup`); it never looks at the user's actual review text or the retrieved review chunks. A second explanation type would ground the "why" in *actual review content* instead — e.g. the user's free-text query plus Stage 1's `game_review_chunks` for the recommended game — surfaced in its own separate text box alongside the existing metadata-based explanation, not replacing it. Depends only on data that already exists (`game_review_chunks` is built but not yet used for this).
+- **LLM-as-judge eval of explanations** — see **Stage 5, Track B** below (built).
+
 Original plan (executed as written, then killed on results — kept here as the record of what was
 built and why, not a forward-looking TODO anymore):
 
@@ -336,10 +341,19 @@ built and why, not a forward-looking TODO anymore):
 - Open detail to resolve when we get here: regression-baseline tolerance/determinism policy for LLM output (seed/temperature pinning), since local LLM output may not be bit-identical run-to-run. — **N/A**: moot, not promoted.
 
 ### Stage 5 — Evaluation & integration (end-to-end combo)
-**Depends on:** Stage 3 (validated new retrieval) and Stage 4 (validated new generation) both done.
+
+**Track A — end-to-end combo.** **Depends on:** Stage 3 (validated new retrieval) and Stage 4 (validated new generation) both done.
 
 - Combine Stage 3 retrieval + Stage 4 generation into a new end-to-end pipeline option, registered as a new ranker-stage alongside the current heuristic ranker in `recs_job_eval_offline.py`, following the same "isolated spike → wire in only if it clears the bar" convention.
 - Reuses all existing eval tables/contract/regression pattern — no new evaluation infrastructure.
+
+**Track B — LLM-as-judge eval of Stage 4 explanations.** **Depends on:** Stage 4's explanation pivot only (not Track A, not Stages 1–3) — this scores explanations already being generated today.
+
+- **Built**: `src/steam_review_ml/evaluation/llm_judge.py` — scores each cached `(query_text, candidate_text, explanation)` row (same input the heuristic proxies in `explanation_heuristics.py` score) on two 1-5 axes, **faithfulness** (is every claim grounded in the two texts given, or invented) and **relevance** (does the explanation tie something specific about the query game to something specific about the recommendation, vs. generic boilerplate). Judge model is Claude (Anthropic API, default `claude-haiku-4-5-20251001`) — deliberately a *different* model family than the local Llama-3.1-8B that generated the explanations, to avoid a model grading its own output.
+- **Built**: `scripts/recs_job_explanation_judge_eval.py` + `configs/recs_job_explanation_judge_eval.json` — reads the same `explanations_cache` parquet the heuristic-eval job already produced (no regeneration), judge-scores it, caches judge verdicts to their own parquet (`judge_scores_cache`, so a rerun never re-pays the API), and writes `explanation_judge_scores.parquet` + `explanation_judge_summary.json` alongside the heuristic outputs under `artifacts/recs/explanation_eval/runs/latest/`. `--dry-run` previews the first prompt for free; `--limit` (config default `10`) caps how many cached explanations get judged per run, since every row is a paid API call. New optional extra: `.[llm-judge]` (`anthropic`); credential loaded via `ANTHROPIC_API_KEY` (env or repo-root `.env`, same pattern as IGDB's Twitch credentials).
+- **Built**: `src/steam_review_ml/evaluation/judge_calibration.py` + `scripts/recs_job_explanation_judge_calibration.py` (`--sample` / `--compare`, `configs/recs_job_explanation_judge_calibration.json`) — the calibration harness this track exists for. `--sample` writes a small, seeded CSV (`artifacts/recs/qualitative/user_facing/explanation_judge_calibration_sample.csv`) with blank `human_faithfulness`/`human_relevance` columns for a person to fill in by hand; `--compare` joins those hand labels (on a positional `example_id`) against the judge's and the heuristic proxies' scores for the same examples and reports Spearman correlation + exact/within-1 agreement rates, written to `explanation_judge_calibration_summary.json`.
+- **Not yet done — the actual labeling**: the harness only sets the table; someone still has to open the sample CSV and fill in real 1-5 judgments by hand before `--compare` says anything meaningful. See [`ideal_state_roadmap.md`](../plans/ideal_state_roadmap.md) § 2.5 — this is the "calibrated against a hand-labeled sample" step named there.
+- **Not yet done**: no promotion bar on any of this (matches the heuristic proxies' framing — diagnostic, not gating) — calibration informs how much to trust the judge, it doesn't gate anything by itself.
 
 ## Build-order lattice (retrieval × ranker are independently swappable)
 

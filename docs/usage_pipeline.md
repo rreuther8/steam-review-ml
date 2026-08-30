@@ -311,7 +311,9 @@ hits = rec.recommend("Great strategy RPG.", query_app_id=8930)
 Optional HTTP: `.[api,rag]` (chromadb + sentence-transformers), then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
 
-Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations.
+Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations; **`GET /explain?query_app_id=&rec_app_id=`** — top-pick "why" text, generated separately from `/recommendations` so the (optional, local-LLM) explanation call never blocks the recommendations response; returns `{"explanation": null}` if no explanation backend/model is configured.
+
+Every `/recommendations` and `/explain` response is also appended as a JSON line to `artifacts/recs/serving_logs/events.jsonl` (path configurable via `serving_log_path` in `configs/recs_serve.json`) — see [`artifact_layout.md`](artifact_layout.md).
 
 See [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md) for the archived v1→v2 narrative and [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) for the eval contract + notebook map.
 

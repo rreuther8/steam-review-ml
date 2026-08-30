@@ -8,6 +8,7 @@ that first full-catalog score vector.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import replace
 from pathlib import Path
@@ -121,15 +122,26 @@ class Recommender(ABC):
         """Full-catalog score vector aligned to ``self._app_ids``; query app excluded/masked."""
 
     def recommend(self, query_text: str, *, query_app_id: int) -> pd.DataFrame:
-        """Return top-``k_final`` catalog rows with rerank scores (query game excluded at retrieve)."""
+        """Return top-``k_final`` catalog rows with rerank scores (query game excluded at retrieve).
+
+        Per-stage timing (retrieve vs. rerank) is attached to the result via ``DataFrame.attrs``
+        (``retrieve_ms``, ``rerank_ms``) rather than changing the return type -- this method's
+        DataFrame contract is depended on by eval jobs, notebooks, and tests; ``.attrs`` is
+        pandas's sanctioned side channel for exactly this kind of per-call metadata, and each
+        call produces a fresh DataFrame/dict so there's no shared mutable state across requests.
+        """
         k_out = self._k_final
         k_pool = self._k_retrieval
 
+        t0 = time.perf_counter()
         base_scores = self._score_catalog(str(query_text), query_app_id=int(query_app_id))
+        retrieve_ms = (time.perf_counter() - t0) * 1000
 
         retrieved_indices = np.argsort(-base_scores)[:k_pool]
         pool_apps = [int(self._app_ids[int(i)]) for i in retrieved_indices]
         pool_retr_scores = [float(base_scores[int(i)]) for i in retrieved_indices]
+
+        t0 = time.perf_counter()
         rerank_scores = rerank_scores_on_pool(
             pool_apps,
             pool_retr_scores,
@@ -138,6 +150,7 @@ class Recommender(ABC):
             app_to_row=self._app_to_row,
             query_app_id=int(query_app_id),
         )
+        rerank_ms = (time.perf_counter() - t0) * 1000
 
         top_pool_order = np.argsort(-np.asarray(rerank_scores, dtype=np.float64))[:k_out]
         selected_apps = [pool_apps[int(i)] for i in top_pool_order]
@@ -147,4 +160,7 @@ class Recommender(ABC):
         row_indices = [self._app_to_row[int(a)] for a in selected_apps]
         out = idx_df.iloc[row_indices].copy()
         out["score"] = selected_scores
-        return out.reset_index(drop=True)
+        out = out.reset_index(drop=True)
+        out.attrs["retrieve_ms"] = retrieve_ms
+        out.attrs["rerank_ms"] = rerank_ms
+        return out
