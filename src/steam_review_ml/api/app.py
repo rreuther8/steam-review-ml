@@ -6,8 +6,8 @@ Run (from repo root, with ``.`` on ``PYTHONPATH`` or editable install)::
 
 Or: ``uvicorn steam_review_ml.api:create_app --factory`` (same factory, shorter import path).
 
-Requires ``pip install -e '.[api,rag]'`` (RAG serving needs chromadb + sentence-transformers,
-not TensorFlow/Hub).
+Requires ``pip install -e '.[api]'`` and TensorFlow + TF Hub in the environment (conda-forge
+recommended; see ``docs/usage_pipeline.md``).
 
 Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
 ``two_tower_v1_v2a_embed_query_logpop_blend`` @10 (see ``configs/recs_serve.json``).
@@ -112,6 +112,10 @@ def create_app() -> Any:
             "recommendations": (
                 "/recommendations?q=your+review+draft&k=10&exclude_app_id=8930"
                 " (default method=v2a; use method=raw for legacy ContentRetriever)"
+            ),
+            "explain": (
+                "/explain?query_app_id=8930&rec_app_id=42"
+                " (top-pick 'why' text, generated separately -- not blocking /recommendations)"
             ),
         }
 
@@ -246,15 +250,7 @@ def create_app() -> Any:
                     ),
                 )
             hits = rec.recommend(q, query_app_id=int(exclude_app_id))
-            records = _records(hits.head(k))
-            if records:
-                records[0]["explanation"] = _explain_top_pick(
-                    explanation_backend(),
-                    _explanation_cache,
-                    query_app_id=int(exclude_app_id),
-                    rec_app_id=int(records[0]["app_id"]),
-                )
-            return records
+            return _records(hits.head(k))
 
         use_structured = method == "structured" or structured
         mask = {int(exclude_app_id)} if exclude_app_id is not None else None
@@ -269,5 +265,20 @@ def create_app() -> Any:
             history_min_similarity=history_min_similarity,
         )
         return _records(hits)
+
+    @app.get("/explain")
+    def explain(
+        query_app_id: int = Query(..., description="app_id of the game being reviewed"),
+        rec_app_id: int = Query(..., description="app_id of the recommended game to explain"),
+    ) -> dict[str, str | None]:
+        """Grounded 'why this pick' text for one (query, rec) pair -- generated separately from
+        ``/recommendations`` so the LLM call doesn't block the recommendations response."""
+        explanation = _explain_top_pick(
+            explanation_backend(),
+            _explanation_cache,
+            query_app_id=int(query_app_id),
+            rec_app_id=int(rec_app_id),
+        )
+        return {"explanation": explanation}
 
     return app
