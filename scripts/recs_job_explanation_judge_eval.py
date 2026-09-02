@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
 from steam_review_ml.evaluation.llm_judge import (
     DEFAULT_JUDGE_MODEL,
     build_judge_prompt,
@@ -64,6 +65,7 @@ def main() -> None:
     model = str(cfg.get("model", DEFAULT_JUDGE_MODEL))
     limit = args.limit if args.limit is not None else cfg.get("limit")
     verbose = bool(cfg.get("verbose", True))
+    igdb_enriched_path = str(_resolve(str(cfg["igdb_enriched_path"])))
 
     if not explanations_cache.is_file():
         raise FileNotFoundError(
@@ -79,7 +81,10 @@ def main() -> None:
 
     if args.dry_run:
         row = results_df.iloc[0]
-        prompt = build_judge_prompt(row["query_text"], row["candidate_text"], row["explanation"])
+        query_game_text = build_candidate_text_lookup([row["query_app_id"]], enriched_path=igdb_enriched_path)[
+            row["query_app_id"]
+        ]
+        prompt = build_judge_prompt(query_game_text, row["candidate_text"], row["explanation"])
         print("\n--- dry-run: first judge prompt (no API call, no cost) ---\n")
         print(prompt)
         return
@@ -93,6 +98,7 @@ def main() -> None:
         model=model,
         limit=limit,
         verbose=verbose,
+        enriched_path=igdb_enriched_path,
     )
 
     scores_path = output_dir / "explanation_judge_scores.parquet"

@@ -4,5 +4,6 @@
   "output_dir": "artifacts/recs/explanation_eval/runs/latest",
   "model": "claude-haiku-4-5-20251001",
   "limit": 10,
-  "verbose": true
+  "verbose": true,
+  "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet"
 }

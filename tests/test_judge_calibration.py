@@ -32,8 +32,31 @@ def _explanations_df(n: int) -> pd.DataFrame:
     )
 
 
-def test_sample_for_hand_labeling_has_example_id_and_blank_label_columns() -> None:
-    sample = sample_for_hand_labeling(_explanations_df(20), n=5, seed=2026)
+def _write_igdb_fixture(path: Path, app_ids: list[int]) -> None:
+    pd.DataFrame(
+        {
+            "app_id": app_ids,
+            "app_name": [f"Query {i}" for i in range(len(app_ids))],
+            "summary": [f"IGDB summary for query app {a}." for a in app_ids],
+            "storyline": [None] * len(app_ids),
+        }
+    ).to_parquet(path, index=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_candidate_text_cache():
+    from steam_review_ml.evaluation import candidate_text
+
+    candidate_text._load_igdb_text_by_app.cache_clear()
+    yield
+    candidate_text._load_igdb_text_by_app.cache_clear()
+
+
+def test_sample_for_hand_labeling_has_example_id_and_blank_label_columns(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, list(range(100, 120)))
+
+    sample = sample_for_hand_labeling(_explanations_df(20), n=5, seed=2026, enriched_path=str(igdb_path))
 
     assert len(sample) == 5
     assert list(sample["example_id"]) == sorted(sample["example_id"])
@@ -42,18 +65,51 @@ def test_sample_for_hand_labeling_has_example_id_and_blank_label_columns() -> No
     assert (sample["human_relevance"] == "").all()
     assert "query_text" in sample.columns
     assert "explanation" in sample.columns
+    assert "query_igdb_text" in sample.columns
+    for _, row in sample.iterrows():
+        assert f"IGDB summary for query app {row['query_app_id']}." in row["query_igdb_text"]
+    # query_igdb_text (grounding text) must not be confused with query_text (the raw review)
+    assert list(sample.columns).index("query_igdb_text") < list(sample.columns).index("candidate_text")
 
 
-def test_sample_for_hand_labeling_is_deterministic_given_seed() -> None:
+def test_sample_for_hand_labeling_is_deterministic_given_seed(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, list(range(100, 120)))
     df = _explanations_df(20)
-    a = sample_for_hand_labeling(df, n=5, seed=2026)
-    b = sample_for_hand_labeling(df, n=5, seed=2026)
+    a = sample_for_hand_labeling(df, n=5, seed=2026, enriched_path=str(igdb_path))
+    b = sample_for_hand_labeling(df, n=5, seed=2026, enriched_path=str(igdb_path))
     assert a["example_id"].tolist() == b["example_id"].tolist()
 
 
-def test_sample_for_hand_labeling_caps_at_pool_size() -> None:
-    sample = sample_for_hand_labeling(_explanations_df(3), n=10, seed=2026)
+def test_sample_for_hand_labeling_caps_at_pool_size(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, list(range(100, 103)))
+    sample = sample_for_hand_labeling(_explanations_df(3), n=10, seed=2026, enriched_path=str(igdb_path))
     assert len(sample) == 3
+
+
+def test_sample_for_hand_labeling_excludes_given_ids(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, list(range(100, 120)))
+    df = _explanations_df(20)
+
+    first = sample_for_hand_labeling(df, n=5, seed=2026, enriched_path=str(igdb_path))
+    topped_up = sample_for_hand_labeling(
+        df, n=5, seed=2026, enriched_path=str(igdb_path), exclude_example_ids=first["example_id"].tolist()
+    )
+
+    assert set(topped_up["example_id"]).isdisjoint(set(first["example_id"]))
+    assert len(topped_up) == 5
+
+
+def test_sample_for_hand_labeling_exclude_shrinks_pool_below_n(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, list(range(100, 103)))
+    df = _explanations_df(3)
+
+    sample = sample_for_hand_labeling(df, n=5, seed=2026, enriched_path=str(igdb_path), exclude_example_ids=[0, 1])
+
+    assert sample["example_id"].tolist() == [2]
 
 
 def test_load_hand_labels_raises_on_unfilled_rows(tmp_path: Path) -> None:
@@ -95,9 +151,24 @@ def test_build_calibration_comparison_joins_on_example_id() -> None:
     )
     heuristic_scores_df = pd.DataFrame(
         [
-            {"content_overlap_ratio": 0.5, "relevance_cosine": 0.6, "is_degenerate": False},
-            {"content_overlap_ratio": 0.1, "relevance_cosine": 0.2, "is_degenerate": False},
-            {"content_overlap_ratio": 0.9, "relevance_cosine": 0.8, "is_degenerate": False},
+            {
+                "content_overlap_ratio": 0.5,
+                "relevance_cosine": 0.6,
+                "relevance_cosine_query_game": 0.55,
+                "is_degenerate": False,
+            },
+            {
+                "content_overlap_ratio": 0.1,
+                "relevance_cosine": 0.2,
+                "relevance_cosine_query_game": 0.25,
+                "is_degenerate": False,
+            },
+            {
+                "content_overlap_ratio": 0.9,
+                "relevance_cosine": 0.8,
+                "relevance_cosine_query_game": 0.85,
+                "is_degenerate": False,
+            },
         ]
     )
     judge_scores_df = pd.DataFrame(
@@ -122,7 +193,15 @@ def test_build_calibration_comparison_joins_on_example_id() -> None:
 def test_build_calibration_comparison_raises_when_judge_missing_example() -> None:
     hand_labels_df = pd.DataFrame([{"example_id": 5, "human_faithfulness": 5, "human_relevance": 4}])
     heuristic_scores_df = pd.DataFrame(
-        [{"content_overlap_ratio": 0.5, "relevance_cosine": 0.6, "is_degenerate": False}] * 6
+        [
+            {
+                "content_overlap_ratio": 0.5,
+                "relevance_cosine": 0.6,
+                "relevance_cosine_query_game": 0.5,
+                "is_degenerate": False,
+            }
+        ]
+        * 6
     )
     judge_scores_df = pd.DataFrame(
         [{"judge_faithfulness": 5, "judge_relevance": 4, "judge_rationale": "a"}] * 2
@@ -142,6 +221,7 @@ def test_summarize_calibration_perfect_agreement() -> None:
                 "judge_relevance": 4,
                 "content_overlap_ratio": 0.9,
                 "relevance_cosine": 0.8,
+                "relevance_cosine_query_game": 0.7,
             },
             {
                 "human_faithfulness": 1,
@@ -150,6 +230,7 @@ def test_summarize_calibration_perfect_agreement() -> None:
                 "judge_relevance": 2,
                 "content_overlap_ratio": 0.1,
                 "relevance_cosine": 0.2,
+                "relevance_cosine_query_game": 0.3,
             },
         ]
     )
@@ -162,6 +243,8 @@ def test_summarize_calibration_perfect_agreement() -> None:
     assert summary["judge_faithfulness_within_1_rate"] == pytest.approx(1.0)
     assert summary["judge_faithfulness_spearman"] == pytest.approx(1.0)
     assert summary["heuristic_groundedness_spearman"] == pytest.approx(1.0)
+    assert summary["heuristic_relevance_vs_review_spearman"] == pytest.approx(1.0)
+    assert summary["heuristic_relevance_vs_query_game_spearman"] == pytest.approx(1.0)
 
 
 def test_summarize_calibration_disagreement() -> None:
@@ -174,6 +257,7 @@ def test_summarize_calibration_disagreement() -> None:
                 "judge_relevance": 1,
                 "content_overlap_ratio": 0.5,
                 "relevance_cosine": 0.5,
+                "relevance_cosine_query_game": 0.5,
             },
             {
                 "human_faithfulness": 1,
@@ -182,6 +266,7 @@ def test_summarize_calibration_disagreement() -> None:
                 "judge_relevance": 5,
                 "content_overlap_ratio": 0.5,
                 "relevance_cosine": 0.5,
+                "relevance_cosine_query_game": 0.5,
             },
         ]
     )
@@ -193,3 +278,4 @@ def test_summarize_calibration_disagreement() -> None:
     assert summary["judge_faithfulness_spearman"] == pytest.approx(-1.0)
     # constant heuristic column -> undefined correlation, not a crash
     assert summary["heuristic_groundedness_spearman"] is None
+    assert summary["heuristic_relevance_vs_query_game_spearman"] is None

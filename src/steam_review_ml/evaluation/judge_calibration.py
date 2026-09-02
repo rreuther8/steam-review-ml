@@ -14,14 +14,20 @@ person's judgment? Three steps, the middle one deliberately not code:
 
 Never generate the human-label columns programmatically -- that defeats the entire
 point of calibration (it becomes the judge grading itself again, just with extra steps).
+
+Growing an existing sample (see the script's ``--sample``, default behavior) tops up the
+CSV with new rows rather than overwriting it, so hand-written labels are never destroyed
+by rerunning ``--sample`` -- pass ``--force`` to opt into a full overwrite instead.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
+
+from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
 
 _SAMPLE_KEEP_COLUMNS = (
     "example_id",
@@ -36,8 +42,22 @@ _SAMPLE_KEEP_COLUMNS = (
 _REQUIRED_LABEL_COLUMNS = ("human_faithfulness", "human_relevance")
 
 
-def sample_for_hand_labeling(explanations_df: pd.DataFrame, *, n: int, seed: int) -> pd.DataFrame:
+def sample_for_hand_labeling(
+    explanations_df: pd.DataFrame,
+    *,
+    n: int,
+    seed: int,
+    enriched_path: str | None = None,
+    exclude_example_ids: Iterable[int] | None = None,
+) -> pd.DataFrame:
     """Seeded sample of ``n`` rows from the cached explanations, with blank label columns.
+
+    Adds ``query_igdb_text`` -- the query game's IGDB metadata -- alongside the existing
+    ``candidate_text`` (the rec game's IGDB metadata). Both are what
+    ``LlamaCppBackend.generate_explanation()`` actually saw as grounding material; the
+    cached ``query_text`` column is the user's raw review, which is used for retrieval but
+    is *not* shown to the generator. Without ``query_igdb_text``, a human labeler can only
+    judge faithfulness against half of what the model was actually grounded in.
 
     ``example_id`` is the row's positional index in ``explanations_df`` -- the join key
     the rest of this module uses to match the sample back against
@@ -46,11 +66,28 @@ def sample_for_hand_labeling(explanations_df: pd.DataFrame, *, n: int, seed: int
     ``explanation_eval_pipeline.score_explanations`` / ``llm_judge.score_explanations_with_judge``).
     Caller is responsible for only passing rows that will actually be judge-scored (see
     ``recs_job_explanation_judge_calibration.py``'s ``--sample`` step).
+
+    ``exclude_example_ids`` -- when topping up an existing hand-labeled sample (see the
+    script's ``--sample`` append behavior), pass the example_ids already present so they
+    aren't redrawn. ``example_id`` values are computed from ``explanations_df`` before
+    exclusion, so they still reflect each row's true position in the full cached parquet --
+    excluding rows here doesn't renumber the ones that remain.
     """
     indexed = explanations_df.reset_index(drop=True).reset_index(names="example_id")
+    if exclude_example_ids:
+        indexed = indexed[~indexed["example_id"].isin(set(exclude_example_ids))]
     sample = indexed.sample(n=min(n, len(indexed)), random_state=seed).sort_values("example_id")
     keep_cols = [c for c in _SAMPLE_KEEP_COLUMNS if c in sample.columns]
     out = sample[keep_cols].copy()
+
+    if "query_app_id" in out.columns:
+        query_igdb_text_by_id = build_candidate_text_lookup(
+            out["query_app_id"].unique().tolist(), enriched_path=enriched_path
+        )
+        query_igdb_text = out["query_app_id"].map(query_igdb_text_by_id)
+        insert_at = out.columns.get_loc("candidate_text") if "candidate_text" in out.columns else len(out.columns)
+        out.insert(insert_at, "query_igdb_text", query_igdb_text)
+
     out["human_faithfulness"] = ""
     out["human_relevance"] = ""
     out["human_notes"] = ""
@@ -108,7 +145,9 @@ def build_calibration_comparison(
         )
 
     return hand_labels_df.merge(
-        heuristic_indexed[["example_id", "content_overlap_ratio", "relevance_cosine", "is_degenerate"]],
+        heuristic_indexed[
+            ["example_id", "content_overlap_ratio", "relevance_cosine", "relevance_cosine_query_game", "is_degenerate"]
+        ],
         on="example_id",
         how="left",
     ).merge(
@@ -143,5 +182,6 @@ def summarize_calibration(comparison_df: pd.DataFrame) -> dict[str, Any]:
         "judge_relevance_exact_agreement_rate": float((human_r == judge_r).mean()),
         "judge_relevance_within_1_rate": float((human_r - judge_r).abs().le(1).mean()),
         "heuristic_groundedness_spearman": _safe_spearman(human_f, df["content_overlap_ratio"]),
-        "heuristic_relevance_spearman": _safe_spearman(human_r, df["relevance_cosine"]),
+        "heuristic_relevance_vs_review_spearman": _safe_spearman(human_r, df["relevance_cosine"]),
+        "heuristic_relevance_vs_query_game_spearman": _safe_spearman(human_r, df["relevance_cosine_query_game"]),
     }

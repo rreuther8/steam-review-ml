@@ -38,7 +38,7 @@ artifacts/recs/
     user_facing/
   explanation_eval/
     runs/
-      latest/                       # recs_job_explanation_heuristic_eval: heuristic groundedness/relevance scores + summary
+      latest/                       # recs_job_explanation_heuristic_eval (heuristic scores+summary), recs_job_explanation_judge_eval (LLM-judge scores+summary), recs_job_explanation_judge_calibration --compare (calibration summary)
   serving_logs/
     events.jsonl                    # live API traffic: one JSON line per /recommendations or /explain response (see below)
 
@@ -75,9 +75,9 @@ artifacts/igdb/
 - One-off exploratory outputs go under:
   - `artifacts/recs/experiments/<track>/...`
 - User-facing manual evaluation files go under:
-  - `artifacts/recs/qualitative/user_facing/`
+  - `artifacts/recs/qualitative/user_facing/` — includes `explanation_judge_calibration_sample.csv` (Stage 5 Track B: seeded sample for hand-labeling `human_faithfulness`/`human_relevance`, written by `recs_job_explanation_judge_calibration.py --sample`)
 - Live serving traffic (real `/recommendations` and `/explain` calls, not eval) appends to:
-  - `artifacts/recs/serving_logs/events.jsonl` — path configurable via `serving_log_path` in `configs/recs_serve.json`. One JSON object per line, `event_type` discriminates `"recommendation"` (query + ranked results + total `duration_ms` + per-stage `retrieve_ms`/`rerank_ms`, the latter two set on `Recommender.recommend()`'s return value via `DataFrame.attrs`) from `"explanation"` (query/rec app_id pair + generated text + `cache_hit` + `backend_available` + `duration_ms`) — `backend_available=false` marks the fallback path where the local-LLM explanation model/dep wasn't loaded. Written by `steam_review_ml.api.serving_log.log_event`; not an eval artifact itself — input for a future offline pass (e.g. LLM-as-judge) over live traffic, not built yet. See [`plans/rag_extension_plan.md`](plans/rag_extension_plan.md) Stage 4/5.
+  - `artifacts/recs/serving_logs/events.jsonl` — path configurable via `serving_log_path` in `configs/recs_serve.json`. One JSON object per line, `event_type` discriminates `"recommendation"` (query + ranked results + total `duration_ms` + per-stage `retrieve_ms`/`rerank_ms`, the latter two set on `Recommender.recommend()`'s return value via `DataFrame.attrs`) from `"explanation"` (query/rec app_id pair + generated text + `cache_hit` + `backend_available` + `duration_ms`) — `backend_available=false` marks the fallback path where the local-LLM explanation model/dep wasn't loaded. Written by `steam_review_ml.api.serving_log.log_event`; not an eval artifact itself — input for a future offline pass over *live* traffic, not built yet. (Distinct from the already-built offline LLM-as-judge harness under `explanation_eval/` above, which judges explanations generated over an eval cohort, not live traffic.) See [`plans/rag_extension_plan.md`](plans/rag_extension_plan.md) Stage 4/5.
 
 ## Migration helper
 

@@ -1,12 +1,20 @@
 """LLM-as-judge scoring for Stage 4 explanations (Stage 5, Track B).
 
-Scores each cached ``(query_text, candidate_text, explanation)`` row from
-``explanation_eval_pipeline.py`` on two axes -- faithfulness (is every claim
-grounded in the two texts given, or invented) and relevance (does the explanation
-address the user's actual stated interest, not generic boilerplate) -- using a
-*different* model than the one that generated the explanations
-(``LlamaCppBackend``, local Llama-3.1-8B), specifically to avoid a model grading
-its own family's output.
+Scores each cached explanation from ``explanation_eval_pipeline.py`` on two axes --
+faithfulness (is every claim grounded in the two IGDB texts given, or invented) and
+relevance (does the explanation connect something specific about the query game to
+something specific about the recommended game) -- using a *different* model than the
+one that generated the explanations (``LlamaCppBackend``, local Llama-3.1-8B),
+specifically to avoid a model grading its own family's output.
+
+Both axes are judged **game-vs-game**, matching what ``generate_explanation`` was
+actually grounded in (see ``llm_backends.py``) -- never the user's raw review text.
+Judging against the review instead would produce false "hallucination" flags for
+details that are genuinely present in the query game's IGDB text but happen not to
+appear in that particular review, and would make relevance a function of how
+descriptive the review was rather than of explanation quality (see
+``explanation_heuristics.py``'s ``relevance_cosine`` vs. ``relevance_cosine_query_game``
+for the same distinction measured cheaply, without an API call).
 
 Deliberately not folded into the ``LLMRankerBackend`` ABC in
 ``recommender/llm_backends.py``: that contract is for *serving-path* backends
@@ -23,6 +31,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
 
 DEFAULT_JUDGE_MODEL = "claude-haiku-4-5-20251001"
 _JUDGE_TEXT_MAX_CHARS = 1000
@@ -55,7 +65,9 @@ def load_anthropic_client(*, repo_root: Path | None = None) -> Any:
     return anthropic.Anthropic()
 
 
-def build_judge_prompt(query_text: str, candidate_text: str, explanation: str) -> str:
+def build_judge_prompt(query_game_text: str, rec_game_text: str, explanation: str) -> str:
+    """Both game-text arguments are IGDB metadata -- the same two texts
+    ``generate_explanation`` was grounded in, not the user's review."""
     return (
         "You are grading one explanation from a game recommender system. The system "
         "showed a user (based on a game they like) a suggested game, along with the "
@@ -68,8 +80,8 @@ def build_judge_prompt(query_text: str, candidate_text: str, explanation: str) -
         "the user likes to something specific about the suggested game? 5 = specific, "
         "clearly tied to the user's stated interest. 1 = generic boilerplate that could "
         "apply to almost any pair of games.\n\n"
-        f"Game the user likes:\n{query_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
-        f"Suggested game:\n{candidate_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
+        f"Game the user likes:\n{query_game_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
+        f"Suggested game:\n{rec_game_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
         f"Explanation to grade:\n{explanation}\n\n"
         "Respond with ONLY a JSON object, no other text, no markdown fence: "
         '{"faithfulness": <1-5 int>, "relevance": <1-5 int>, "rationale": "<one short sentence>"}'
@@ -105,14 +117,14 @@ def parse_judge_response(content: str) -> dict[str, Any]:
 
 def judge_explanation(
     client: Any,
-    query_text: str,
-    candidate_text: str,
+    query_game_text: str,
+    rec_game_text: str,
     explanation: str,
     *,
     model: str = DEFAULT_JUDGE_MODEL,
 ) -> dict[str, Any]:
     """One judge call; returns the parsed verdict plus token usage for cost tracking."""
-    prompt = build_judge_prompt(query_text, candidate_text, explanation)
+    prompt = build_judge_prompt(query_game_text, rec_game_text, explanation)
     response = client.messages.create(
         model=model,
         max_tokens=_JUDGE_MAX_TOKENS,
@@ -133,21 +145,35 @@ def score_explanations_with_judge(
     model: str = DEFAULT_JUDGE_MODEL,
     limit: int | None = None,
     verbose: bool = True,
+    enriched_path: str | None = None,
 ) -> pd.DataFrame:
-    """Judge-score each row of ``results_df`` (needs ``query_text``/``candidate_text``/``explanation``).
+    """Judge-score each row of ``results_df`` (needs ``query_app_id``/``candidate_text``/``explanation``).
+
+    Looks up each row's query-game IGDB text (``query_app_id`` -> ``build_candidate_text_lookup``)
+    rather than using the ``query_text`` column -- that column is the user's raw review, which
+    ``generate_explanation`` never saw (see this module's docstring). Judging faithfulness/relevance
+    against the review would grade the explanation against material it wasn't grounded in.
 
     ``limit`` scores only the first N rows -- use it for a cheap pilot before a full run.
     Prints running token totals so cost is visible while the (paid, API-calling) loop runs.
     """
     rows = results_df.to_dict("records") if limit is None else results_df.head(limit).to_dict("records")
     n = len(rows)
+    query_app_ids = {row["query_app_id"] for row in rows}
+    query_game_text_by_app = build_candidate_text_lookup(query_app_ids, enriched_path=enriched_path)
     scored_rows: list[dict[str, Any]] = []
     total_input_tokens = 0
     total_output_tokens = 0
     run_start = time.perf_counter()
 
     for i, row in enumerate(rows):
-        verdict = judge_explanation(client, row["query_text"], row["candidate_text"], row["explanation"], model=model)
+        verdict = judge_explanation(
+            client,
+            query_game_text_by_app[row["query_app_id"]],
+            row["candidate_text"],
+            row["explanation"],
+            model=model,
+        )
         total_input_tokens += verdict["input_tokens"]
         total_output_tokens += verdict["output_tokens"]
         scored_rows.append(
@@ -179,6 +205,7 @@ def score_or_load_judge_scores(
     model: str = DEFAULT_JUDGE_MODEL,
     limit: int | None = None,
     verbose: bool = True,
+    enriched_path: str | None = None,
 ) -> pd.DataFrame:
     """Load ``cache_path`` if present (no API calls, no cost), else judge-score and cache it.
 
@@ -192,7 +219,9 @@ def score_or_load_judge_scores(
             print(f"Loaded {len(scored_df)} cached judge scores from {cache_path}")
         return scored_df
 
-    scored_df = score_explanations_with_judge(results_df, client, model=model, limit=limit, verbose=verbose)
+    scored_df = score_explanations_with_judge(
+        results_df, client, model=model, limit=limit, verbose=verbose, enriched_path=enriched_path
+    )
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     scored_df.to_parquet(cache_path, index=False)
     if verbose:

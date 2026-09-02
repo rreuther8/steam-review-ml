@@ -51,6 +51,26 @@ class _FakeClient:
         self.messages = _FakeMessages(responses)
 
 
+def _write_igdb_fixture(path: Path, app_ids: list[int]) -> None:
+    pd.DataFrame(
+        {
+            "app_id": app_ids,
+            "app_name": [f"Game {a}" for a in app_ids],
+            "summary": [f"Summary for game {a}." for a in app_ids],
+            "storyline": [None] * len(app_ids),
+        }
+    ).to_parquet(path, index=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_candidate_text_cache():
+    from steam_review_ml.evaluation import candidate_text
+
+    candidate_text._load_igdb_text_by_app.cache_clear()
+    yield
+    candidate_text._load_igdb_text_by_app.cache_clear()
+
+
 def test_build_judge_prompt_includes_all_three_texts_and_truncates() -> None:
     prompt = build_judge_prompt("q" * 2000, "c" * 2000, "the explanation")
     assert "the explanation" in prompt
@@ -103,11 +123,13 @@ def test_judge_explanation_returns_verdict_with_token_usage() -> None:
     assert "query text" in call["messages"][0]["content"]
 
 
-def test_score_explanations_with_judge_scores_all_rows() -> None:
+def test_score_explanations_with_judge_scores_all_rows(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, [1, 2])
     results_df = pd.DataFrame(
         [
-            {"query_text": "q1", "candidate_text": "c1", "explanation": "e1"},
-            {"query_text": "q2", "candidate_text": "c2", "explanation": "e2"},
+            {"query_app_id": 1, "query_text": "q1 (review, not used)", "candidate_text": "c1", "explanation": "e1"},
+            {"query_app_id": 2, "query_text": "q2 (review, not used)", "candidate_text": "c2", "explanation": "e2"},
         ]
     )
     client = _FakeClient(
@@ -117,24 +139,29 @@ def test_score_explanations_with_judge_scores_all_rows() -> None:
         ]
     )
 
-    scored = score_explanations_with_judge(results_df, client, verbose=False)
+    scored = score_explanations_with_judge(results_df, client, verbose=False, enriched_path=str(igdb_path))
 
     assert len(scored) == 2
     assert scored.iloc[0]["judge_faithfulness"] == 5
     assert scored.iloc[1]["judge_relevance"] == 2
-    assert list(scored["query_text"]) == ["q1", "q2"]
+    # the judge call must use the query game's IGDB text, never the review column
+    first_call_prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "Summary for game 1." in first_call_prompt
+    assert "q1 (review, not used)" not in first_call_prompt
 
 
-def test_score_explanations_with_judge_respects_limit() -> None:
+def test_score_explanations_with_judge_respects_limit(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, [1, 2])
     results_df = pd.DataFrame(
         [
-            {"query_text": "q1", "candidate_text": "c1", "explanation": "e1"},
-            {"query_text": "q2", "candidate_text": "c2", "explanation": "e2"},
+            {"query_app_id": 1, "query_text": "q1", "candidate_text": "c1", "explanation": "e1"},
+            {"query_app_id": 2, "query_text": "q2", "candidate_text": "c2", "explanation": "e2"},
         ]
     )
     client = _FakeClient([_FakeResponse('{"faithfulness": 3, "relevance": 3, "rationale": "a"}')])
 
-    scored = score_explanations_with_judge(results_df, client, limit=1, verbose=False)
+    scored = score_explanations_with_judge(results_df, client, limit=1, verbose=False, enriched_path=str(igdb_path))
 
     assert len(scored) == 1
     assert len(client.messages.calls) == 1
@@ -170,11 +197,15 @@ def test_score_or_load_judge_scores_uses_cache_without_calling_client(tmp_path: 
 
 
 def test_score_or_load_judge_scores_generates_and_caches(tmp_path: Path) -> None:
+    igdb_path = tmp_path / "igdb.parquet"
+    _write_igdb_fixture(igdb_path, [1])
     cache_path = tmp_path / "nested" / "judge_scores.parquet"
-    results_df = pd.DataFrame([{"query_text": "q", "candidate_text": "c", "explanation": "e"}])
+    results_df = pd.DataFrame([{"query_app_id": 1, "query_text": "q", "candidate_text": "c", "explanation": "e"}])
     client = _FakeClient([_FakeResponse('{"faithfulness": 4, "relevance": 4, "rationale": "ok"}')])
 
-    result = score_or_load_judge_scores(results_df, client, cache_path=cache_path, verbose=False)
+    result = score_or_load_judge_scores(
+        results_df, client, cache_path=cache_path, verbose=False, enriched_path=str(igdb_path)
+    )
 
     assert cache_path.is_file()
     assert result["judge_faithfulness"].tolist() == [4]

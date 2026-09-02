@@ -5,5 +5,6 @@
   "sample_path": "artifacts/recs/qualitative/user_facing/explanation_judge_calibration_sample.csv",
   "summary_path": "artifacts/recs/explanation_eval/runs/latest/explanation_judge_calibration_summary.json",
   "n_sample": 10,
-  "seed": null
+  "seed": null,
+  "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet"
 }
