@@ -1,0 +1,9 @@
+{
+  "explanations_cache": "artifacts/recs/eval_cache/val_llm_mini_v1/explanations.parquet",
+  "judge_scores_cache": "artifacts/recs/eval_cache/val_llm_mini_v1/judge_scores.parquet",
+  "output_dir": "artifacts/recs/explanation_eval/runs/latest",
+  "model": "claude-haiku-4-5-20251001",
+  "limit": 10,
+  "verbose": true,
+  "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet"
+}

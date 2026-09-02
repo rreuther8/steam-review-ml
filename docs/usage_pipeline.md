@@ -176,6 +176,26 @@ Prototype jobs for [`docs/plans/rag_extension_plan.md`](plans/rag_extension_plan
 - **Stage 1 — chunk table:** `python scripts/recs_job_game_chunks.py configs/recs_job_game_chunks.json` — any-polarity top-50-by-`votes_helpful` reviews per game (deterministic `review_id` tie-break) + one IGDB `summary`+`storyline` description row per game. No TensorFlow needed. Output: `artifacts/recs/embeddings/game_chunks/default/game_review_chunks.parquet`.
 - **Stage 2 — embed + index:** `pip install -e '.[rag]'` (adds `chromadb`), then `python scripts/recs_job_game_chunk_embeddings.py configs/recs_job_game_chunk_embeddings.json` — embeds every chunk once via USE (TF Hub, same model as `recs_002`), writes the fine-grain `game_review_chunks` Chroma collection (one row per chunk), then computes 4 pooling variants (`{any_polarity,recommended_only} x {flat,log1p_weighted}`) from those same embeddings, blends each with its game's description vector (`description_blend_weight`, default `0.1`), and writes the coarse `game_profiles` Chroma collection (one row per `app_id x variant`) — the collection Stage 3 will query. Output: `artifacts/recs/embeddings/game_chunks/chroma/` (persistent Chroma store).
 
+### RAG extension — Stage 4 explanations + Stage 5 Track B eval (LLM-as-judge + calibration)
+
+Diagnostic-only eval for `generate_explanation()`'s free-text "why this pick" output (see [`plans/rag_extension_plan.md`](plans/rag_extension_plan.md) Stage 4 / Stage 5 Track B) — no promotion bar, doesn't gate anything. Generation and judging are both grounded **game-vs-game** (each game's IGDB `summary`/`storyline` text, via `build_candidate_text_lookup`), never the user's raw review — the review drives retrieval upstream but the generator/judge never see it.
+
+- **Heuristic proxies (cheap, reference-free, run first):** `python scripts/recs_job_explanation_heuristic_eval.py configs/recs_job_explanation_heuristic_eval.json` — generates/caches explanations for a cohort parquet (local Llama-3.1-8B via `gguf_path`, cached to `explanations_cache` so a rerun doesn't regenerate), then scores content-overlap/tag-leakage groundedness plus two embedding-cosine relevance proxies: `relevance_cosine` (vs. the user's review — confounded by how descriptive that review happened to be) and `relevance_cosine_query_game` (vs. the query game's own IGDB text — apples-to-apples with what the generator actually saw). Requires `.[rag]` extra (`sentence-transformers`, `BAAI/bge-small-en-v1.5`). Outputs: `artifacts/recs/explanation_eval/runs/latest/explanation_heuristic_scores.parquet` + `explanation_heuristic_summary.json`.
+- **LLM-as-judge (paid, network-calling):** `python scripts/recs_job_explanation_judge_eval.py configs/recs_job_explanation_judge_eval.json` — judges the same cached explanations on `faithfulness`/`relevance` (1-5 each) using Claude (default `claude-haiku-4-5-20251001`, deliberately a different model family than the local generator, to avoid self-grading). `--dry-run` prints the first prompt for free, no API call; `--limit N` (config default `10`) caps paid calls per run. Verdicts cached to `judge_scores_cache` so a rerun never re-pays. Requires `.[llm-judge]` extra (`anthropic`) and `ANTHROPIC_API_KEY` (env or repo-root `.env`). Outputs: `explanation_judge_scores.parquet` + `explanation_judge_summary.json`.
+- **Calibration (human-in-the-loop, two-step):**
+
+  ```bash
+  python scripts/recs_job_explanation_judge_calibration.py configs/recs_job_explanation_judge_calibration.json --sample
+  # fill in human_faithfulness / human_relevance (1-5 ints) by hand in the written CSV
+  python scripts/recs_job_explanation_judge_calibration.py configs/recs_job_explanation_judge_calibration.json --compare
+  ```
+
+  `--sample` writes a small seeded CSV (`artifacts/recs/qualitative/user_facing/explanation_judge_calibration_sample.csv`) with blank human-label columns, bounded to whatever the judge has already scored when `judge_scores_path` exists (prints the `--limit` the judge job needs to cover it otherwise) — reruns top up the CSV with only new rows rather than overwriting your existing labels; pass `--force` to overwrite with a fresh sample instead. `--compare` joins the filled-in hand labels against the judge's and heuristic proxies' scores for the same rows and reports Spearman correlation + exact/within-1 agreement, written to `explanation_judge_calibration_summary.json`. **First pass done** (n=10, 2026-08-31): judge relevance tracked human labels reasonably (Spearman 0.66) but weak absolute agreement (20% exact/40% within-1); judge faithfulness showed ~no correlation (0.12), though human faithfulness labels were heavily skewed (8/10 rated 5) — too small/skewed a sample to trust yet. See [`rag_extension_plan.md`](plans/rag_extension_plan.md) Stage 5 Track B for the full readout and the plan to expand `n_sample`/`limit` (e.g. 30-50) before drawing conclusions.
+
+**View judge scores + calibration (read-only):**
+
+- `notebooks/ranking/recs_031_view_explanation_judge_calibration.ipynb` — full-pool judge score distribution, worst-scored explanations, and the human-vs-judge calibration comparison/agreement numbers. Loads artifacts only, no API calls.
+
 **Query + top‑K (smoke test / demo)** — same TF Hub model as `recs_002` (URL read from `game_profile_embedding_meta.json`):
 
 - Notebook: `notebooks/models/query_embeddings/recs_003_query_retrieve_smoke.ipynb`
@@ -311,7 +331,9 @@ hits = rec.recommend("Great strategy RPG.", query_app_id=8930)
 Optional HTTP: `.[api,rag]` (chromadb + sentence-transformers), then  
 `uvicorn steam_review_ml.api:create_app --factory --host 127.0.0.1 --port 8000` (or `steam_review_ml.api.app:create_app`).
 
-Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations.
+Endpoints: **`GET /ui`** — browser UI (game typeahead + review draft → recommendations); **`GET /games`** (`q` = optional substring on `app_name`, `limit`) for a typeahead picker; **`GET /recommendations`** with **`exclude_app_id`** (required for default `method=v2a`) set to the selected game; **`method=raw`** or **`method=structured`** for legacy `ContentRetriever` ablations; **`GET /explain?query_app_id=&rec_app_id=`** — top-pick "why" text, generated separately from `/recommendations` so the (optional, local-LLM) explanation call never blocks the recommendations response; returns `{"explanation": null}` if no explanation backend/model is configured.
+
+Every `/recommendations` and `/explain` response is also appended as a JSON line to `artifacts/recs/serving_logs/events.jsonl` (path configurable via `serving_log_path` in `configs/recs_serve.json`) — see [`artifact_layout.md`](artifact_layout.md).
 
 See [`archive/recommender_transition_plan.md`](archive/recommender_transition_plan.md) for the archived v1→v2 narrative and [`recommendation_evaluation_overview.md`](recommendation_evaluation_overview.md) for the eval contract + notebook map.
 

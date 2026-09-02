@@ -7,5 +7,6 @@
   "k_retrieval": 100,
   "k_final": 10,
   "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet",
-  "explanation_gguf_path": "artifacts/models/llm_local/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+  "explanation_gguf_path": "artifacts/models/llm_local/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+  "serving_log_path": "artifacts/recs/serving_logs/events.jsonl"
 }

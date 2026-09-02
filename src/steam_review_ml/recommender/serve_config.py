@@ -28,6 +28,7 @@ def load_serve_config(
         "igdb_enriched_path",
         "rag_chroma_persist_dir",
         "explanation_gguf_path",
+        "serving_log_path",
     ):
         if key in resolved and resolved[key]:
             p = Path(str(resolved[key]))

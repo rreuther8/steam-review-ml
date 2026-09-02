@@ -107,6 +107,8 @@ two_tower_v1 @100  →  two_tower_v1_v2a_embed_query_logpop_blend @10
 
 `uvicorn steam_review_ml.api:create_app --factory` — **`exclude_app_id`** required for default `method=v2a`; use `method=raw` for legacy `ContentRetriever`.
 
+Top-pick explanations are a separate, non-blocking `GET /explain?query_app_id=&rec_app_id=` call (local-LLM "why this pick" text) so a slow generation call never delays `/recommendations`. Every live `/recommendations`/`/explain` response is appended to [`artifacts/recs/serving_logs/events.jsonl`](docs/artifact_layout.md) for later offline analysis (e.g. an LLM-as-judge pass — see [`docs/plans/rag_extension_plan.md`](docs/plans/rag_extension_plan.md)).
+
 ## Reproducibility and usage
 
 - **Random seed:** the project-wide default is [`PROJECT_RANDOM_SEED`](src/steam_review_ml/constants.py) in `steam_review_ml.constants` (used for recommender eval subsampling, tabular `random_state`, and synthetic baseline RNG streams). Train/val/test splitting reads the same value from that module unless you override with **`STEAM_REVIEWS_RANDOM_STATE`** (see [`docs/usage_pipeline.md`](docs/usage_pipeline.md)).
@@ -151,4 +153,4 @@ Retrieval notebooks that **pool past reviews into one query vector** (e.g. `mult
 - Offline ranking gains need online validation (A/B testing plan not yet implemented).
 - Cold-start and popularity-bias handling can be improved with stronger priors and constraints.
 - Add tighter test coverage for retrieval blending and edge-case behavior.
-- Add request-level serving observability (latency, fallback path usage, score diagnostics).
+- Request-level serving observability: structured logging shipped (every `/recommendations`/`/explain` call → `artifacts/recs/serving_logs/events.jsonl`, query + ranked results + explanation + total `duration_ms` + per-stage `retrieve_ms`/`rerank_ms` + `backend_available`/`cache_hit` fallback flags). Not yet added: dashboards/alerting over this log.
