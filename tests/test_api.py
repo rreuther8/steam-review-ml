@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -159,140 +160,180 @@ def test_recommendations_v2a_logs_event(monkeypatch, tmp_path: Path) -> None:
     assert [r["rank"] for r in event["results"]] == [1, 2, 3]
 
 
-def test_explain_returns_top_pick_explanation(monkeypatch) -> None:
+def test_iterate_in_thread_yields_all_items_and_closes_on_early_exit() -> None:
+    from steam_review_ml.api.app import _iterate_in_thread
+
+    closed = {"flag": False}
+
+    def _pieces():
+        try:
+            yield from ["a", "b", "c"]
+        finally:
+            closed["flag"] = True
+
+    async def _take_all():
+        return [item async for item in _iterate_in_thread(_pieces())]
+
+    async def _take_first_then_stop():
+        stream = _iterate_in_thread(_pieces())
+        first = await stream.__anext__()
+        await stream.aclose()  # what a client disconnect does to the SSE body
+        return first
+
+    assert asyncio.run(_take_all()) == ["a", "b", "c"]
+    closed["flag"] = False
+    assert asyncio.run(_take_first_then_stop()) == "a"
+    assert closed["flag"] is True
+
+
+class _FakeStreamingBackend:
+    """Stands in for ``LlamaCppBackend``'s streaming methods; records each call."""
+
+    def __init__(self, pieces: tuple[str, ...] = ("fake ", "explanation"), fail_after: int | None = None) -> None:
+        self.pieces = pieces
+        self.fail_after = fail_after
+        self.calls: list[tuple] = []
+
+    def stream_explanation(self, query_game_text: str, rec_game_text: str):
+        self.calls.append(("game_to_game", query_game_text, rec_game_text))
+        yield from self._pieces()
+
+    def stream_review_explanation(self, review_text: str, query_game_text: str, rec_game_text: str):
+        self.calls.append(("review_to_game", review_text, query_game_text, rec_game_text))
+        yield from self._pieces()
+
+    def _pieces(self):
+        for i, piece in enumerate(self.pieces):
+            if self.fail_after is not None and i == self.fail_after:
+                raise RuntimeError("generation blew up")
+            yield piece
+
+
+def _parse_sse(body: str) -> list[tuple[str, dict]]:
+    """``[(event_name, data_dict), ...]`` from a text/event-stream body."""
+    events = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
+
+
+def _explain_app(monkeypatch, tmp_path: Path, backend):
+    """App module with the tower checkpoint required, a fake explanation backend, stub IGDB text,
+    and the serving log redirected to ``tmp_path``. Returns ``(app_module, log_path)``."""
     pytest.importorskip("fastapi")
     pytest.importorskip("tensorflow")
     pytest.importorskip("tensorflow_hub")
-    from fastapi.testclient import TestClient
-
     import steam_review_ml.api.app as app_module
     from steam_review_ml.recommender.serve_config import load_serve_config
 
-    cfg = load_serve_config()
-    tower = Path(cfg["two_tower_model_path"])
-    if not tower.is_file():
+    if not Path(load_serve_config()["two_tower_model_path"]).is_file():
         pytest.skip("two-tower checkpoint not present")
 
-    class _FakeBackend:
-        def generate_explanation(self, query_text: str, recommended_text: str) -> str:
-            return "fake explanation"
-
-    monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: _FakeBackend())
+    monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: backend)
     monkeypatch.setattr(
         app_module,
         "build_candidate_text_lookup",
         lambda app_ids: {a: f"text for {a}" for a in app_ids},
     )
+    log_path = tmp_path / "events.jsonl"
+    _patch_serving_log_path(monkeypatch, app_module, log_path)
+    return app_module, log_path
+
+
+def _log_events(log_path: Path) -> list[dict]:
+    return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_explain_streams_tokens_then_done(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    app_module, _ = _explain_app(monkeypatch, tmp_path, _FakeStreamingBackend())
 
     with TestClient(app_module.create_app()) as client:
         r = client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
     assert r.status_code == 200
-    assert r.json() == {"explanation": "fake explanation"}
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert _parse_sse(r.text) == [
+        ("token", {"text": "fake "}),
+        ("token", {"text": "explanation"}),
+        ("done", {}),
+    ]
 
 
-def test_explain_logs_event_with_cache_hit_and_backend_available(monkeypatch, tmp_path: Path) -> None:
-    pytest.importorskip("fastapi")
-    pytest.importorskip("tensorflow")
-    pytest.importorskip("tensorflow_hub")
+def test_explain_caches_pair_and_logs_ttft(monkeypatch, tmp_path: Path) -> None:
     from fastapi.testclient import TestClient
 
-    import steam_review_ml.api.app as app_module
-    from steam_review_ml.recommender.serve_config import load_serve_config
-
-    cfg = load_serve_config()
-    tower = Path(cfg["two_tower_model_path"])
-    if not tower.is_file():
-        pytest.skip("two-tower checkpoint not present")
-
-    class _FakeBackend:
-        def generate_explanation(self, query_text: str, recommended_text: str) -> str:
-            return "fake explanation"
-
-    monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: _FakeBackend())
-    monkeypatch.setattr(
-        app_module,
-        "build_candidate_text_lookup",
-        lambda app_ids: {a: f"text for {a}" for a in app_ids},
-    )
-    log_path = tmp_path / "events.jsonl"
-    _patch_serving_log_path(monkeypatch, app_module, log_path)
+    backend = _FakeStreamingBackend()
+    app_module, log_path = _explain_app(monkeypatch, tmp_path, backend)
 
     with TestClient(app_module.create_app()) as client:
         client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
-        client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
+        second = client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
 
-    lines = log_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 2
-    first, second = (json.loads(line) for line in lines)
-    for event in (first, second):
+    assert len(backend.calls) == 1
+    assert _parse_sse(second.text) == [("token", {"text": "fake explanation"}), ("done", {})]
+    first_event, second_event = _log_events(log_path)
+    for event in (first_event, second_event):
         assert event["event_type"] == "explanation"
-        assert event["query_app_id"] == 8930
-        assert event["rec_app_id"] == 42
+        assert event["kind"] == "game_to_game"
         assert event["explanation"] == "fake explanation"
         assert event["backend_available"] is True
-        assert event["duration_ms"] >= 0
-    assert first["cache_hit"] is False
-    assert second["cache_hit"] is True
+        assert event["completed"] is True
+        assert event["query_text"] is None
+        assert 0 <= event["ttft_ms"] <= event["duration_ms"]
+    assert first_event["cache_hit"] is False
+    assert second_event["cache_hit"] is True
 
 
-def test_explain_logs_backend_unavailable(monkeypatch, tmp_path: Path) -> None:
-    pytest.importorskip("fastapi")
-    pytest.importorskip("tensorflow")
-    pytest.importorskip("tensorflow_hub")
+def test_explain_backend_unavailable_sends_done_only(monkeypatch, tmp_path: Path) -> None:
     from fastapi.testclient import TestClient
 
-    import steam_review_ml.api.app as app_module
-    from steam_review_ml.recommender.serve_config import load_serve_config
-
-    cfg = load_serve_config()
-    tower = Path(cfg["two_tower_model_path"])
-    if not tower.is_file():
-        pytest.skip("two-tower checkpoint not present")
-
-    monkeypatch.setattr(app_module, "_load_explanation_backend", lambda: None)
-    log_path = tmp_path / "events.jsonl"
-    _patch_serving_log_path(monkeypatch, app_module, log_path)
+    app_module, log_path = _explain_app(monkeypatch, tmp_path, None)
 
     with TestClient(app_module.create_app()) as client:
         r = client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
-    assert r.json() == {"explanation": None}
+    assert _parse_sse(r.text) == [("done", {})]
 
-    event = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+    (event,) = _log_events(log_path)
     assert event["explanation"] is None
     assert event["backend_available"] is False
     assert event["cache_hit"] is False
+    assert event["ttft_ms"] is None
 
 
-def test_explain_top_pick_caches_by_query_and_rec_pair(monkeypatch) -> None:
-    import steam_review_ml.api.app as app_module
-    from steam_review_ml.api.app import _explain_top_pick
+def test_explain_personalized_grounds_in_review_and_is_not_cached(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
 
-    monkeypatch.setattr(
-        app_module,
-        "build_candidate_text_lookup",
-        lambda app_ids: {a: f"text for {a}" for a in app_ids},
-    )
+    backend = _FakeStreamingBackend()
+    app_module, log_path = _explain_app(monkeypatch, tmp_path, backend)
+    params = {"q": "Loved the tactical combat", "query_app_id": 8930, "rec_app_id": 42}
 
-    call_count = {"n": 0}
+    with TestClient(app_module.create_app()) as client:
+        r = client.get("/explain/personalized", params=params)
+        client.get("/explain/personalized", params=params)
 
-    class _FakeBackend:
-        def generate_explanation(self, query_text: str, recommended_text: str) -> str:
-            call_count["n"] += 1
-            return f"explanation #{call_count['n']}"
-
-    cache: dict[tuple[int, int], str] = {}
-    backend = _FakeBackend()
-
-    first = _explain_top_pick(backend, cache, query_app_id=8930, rec_app_id=42)
-    second = _explain_top_pick(backend, cache, query_app_id=8930, rec_app_id=42)
-    different_pair = _explain_top_pick(backend, cache, query_app_id=8930, rec_app_id=99)
-
-    assert first == second == "explanation #1"
-    assert different_pair == "explanation #2"
-    assert call_count["n"] == 2
+    assert _parse_sse(r.text)[-1] == ("done", {})
+    assert backend.calls == [("review_to_game", "Loved the tactical combat", "text for 8930", "text for 42")] * 2
+    for event in _log_events(log_path):
+        assert event["kind"] == "review_to_game"
+        assert event["query_text"] == "Loved the tactical combat"
+        assert event["cache_hit"] is False
+        assert event["ttft_ms"] >= 0
 
 
-def test_explain_top_pick_returns_none_without_backend() -> None:
-    from steam_review_ml.api.app import _explain_top_pick
+def test_explain_failure_mid_stream_sends_failed_and_is_not_cached(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
 
-    assert _explain_top_pick(None, {}, query_app_id=1, rec_app_id=2) is None
+    backend = _FakeStreamingBackend(fail_after=1)
+    app_module, log_path = _explain_app(monkeypatch, tmp_path, backend)
+
+    with TestClient(app_module.create_app()) as client:
+        r = client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
+        client.get("/explain", params={"query_app_id": 8930, "rec_app_id": 42})
+
+    assert _parse_sse(r.text) == [("token", {"text": "fake "}), ("failed", {"detail": "generation blew up"})]
+    assert len(backend.calls) == 2
+    first_event = _log_events(log_path)[0]
+    assert first_event["completed"] is False
+    assert first_event["explanation"] == "fake"

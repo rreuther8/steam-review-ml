@@ -15,14 +15,22 @@ Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, AsyncIterator, Iterator, Literal, cast
 
 import pandas as pd
 
-from steam_review_ml.api.serving_log import ExplanationEvent, RecommendationEvent, RecommendationResult, log_event
+from steam_review_ml.api.serving_log import (
+    ExplanationEvent,
+    ExplanationKind,
+    RecommendationEvent,
+    RecommendationResult,
+    log_event,
+)
 from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
 from steam_review_ml.recommender.retrieve import ContentRetriever, default_repo_root
 from steam_review_ml.recommender.serve_config import load_serve_config
@@ -59,34 +67,39 @@ def _load_explanation_backend() -> Any | None:
     return LlamaCppBackend(str(gguf_path), n_gpu_layers=-1)
 
 
-def _explain_top_pick(
-    backend: Any | None,
-    cache: dict[tuple[int, int], str],
-    *,
-    query_app_id: int,
-    rec_app_id: int,
-) -> str | None:
-    """Grounded explanation for ``rec_app_id`` given ``query_app_id``, cached by pair.
+def _sse(event: str, data: dict[str, Any]) -> str:
+    """One Server-Sent Events message. ``data`` is JSON so newlines in model text can't break framing."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
-    ``generate_explanation`` only consumes each game's IGDB text (not the user's free-text
-    query) and runs at ``temperature=0.0``, so it's deterministic per ``(query_app_id,
-    rec_app_id)`` pair — safe, and worthwhile, to cache across requests.
+
+async def _iterate_in_thread(iterator: Iterator[str]) -> AsyncIterator[str]:
+    """Pull each item of a blocking iterator (llama-cpp generation) in a worker thread, so the
+    event loop stays free for other requests while tokens are produced.
+
+    If the consumer is cancelled (client disconnect), wait for the in-flight ``next()`` to
+    finish before closing the iterator -- the caller holds the generation lock, and releasing
+    it while the model is still mid-call would let a second generation overlap it.
     """
-    if backend is None:
-        return None
-    key = (query_app_id, rec_app_id)
-    if key in cache:
-        return cache[key]
-    game_texts = build_candidate_text_lookup([query_app_id, rec_app_id])
-    explanation = backend.generate_explanation(game_texts[query_app_id], game_texts[rec_app_id])
-    cache[key] = explanation
-    return explanation
+    done = object()
+    try:
+        while True:
+            step = asyncio.ensure_future(asyncio.to_thread(next, iterator, done))
+            try:
+                item = await asyncio.shield(step)
+            except asyncio.CancelledError:
+                await step
+                raise
+            if item is done:
+                return
+            yield item
+    finally:
+        iterator.close()  # type: ignore[attr-defined]  # backend stream_* methods are generators
 
 
 def create_app() -> Any:
     try:
         from fastapi import FastAPI, HTTPException, Query
-        from fastapi.responses import FileResponse
+        from fastapi.responses import FileResponse, StreamingResponse
     except ImportError as e:
         raise ImportError("Install API deps: pip install -e '.[api]'") from e
 
@@ -123,7 +136,11 @@ def create_app() -> Any:
             ),
             "explain": (
                 "/explain?query_app_id=8930&rec_app_id=42"
-                " (top-pick 'why' text, generated separately -- not blocking /recommendations)"
+                " (SSE stream of top-pick 'why' text, generated separately -- not blocking /recommendations)"
+            ),
+            "explain_personalized": (
+                "/explain/personalized?q=your+review&query_app_id=8930&rec_app_id=42"
+                " (SSE stream; like /explain but also grounded in the review text)"
             ),
         }
 
@@ -148,6 +165,11 @@ def create_app() -> Any:
     _explanation_backend: Any | None = None
     _explanation_backend_loaded = False
     _explanation_cache: dict[tuple[int, int], str] = {}
+    # One loaded llama-cpp model can't serve two generations at once, so generations (and the
+    # lazy model load) take turns. An asyncio lock, held by an async generator, so a client
+    # disconnect cancels the generator and its ``async with`` releases the lock -- a sync
+    # generator isn't closed on disconnect and would hold a threading lock forever.
+    _generation_lock = asyncio.Lock()
 
     def explanation_backend() -> Any | None:
         """Lazy-loaded, like ``content_retriever()`` -- avoids paying the ~6s GGUF load
@@ -294,35 +316,88 @@ def create_app() -> Any:
         )
         return _records(hits)
 
+    async def _stream_explanation(
+        kind: ExplanationKind, query_app_id: int, rec_app_id: int, review_text: str | None
+    ) -> AsyncIterator[str]:
+        """SSE body shared by both explain endpoints: ``token`` events, then ``done`` (or ``failed``).
+
+        Backend unavailable -> ``done`` with no tokens (the UI hides the box). Only
+        ``game_to_game`` is cached: it depends on the two app_ids alone and runs at
+        temperature 0, so it's deterministic per pair; ``review_to_game`` depends on free text.
+        The event is logged in ``finally`` so a client disconnect still leaves a record.
+        """
+        t0 = time.perf_counter()
+        ttft_ms: float | None = None
+        pieces: list[str] = []
+        cache_key = (query_app_id, rec_app_id)
+        cache_hit = kind == "game_to_game" and cache_key in _explanation_cache
+        backend_available = True
+        completed = False
+        try:
+            if cache_hit:
+                pieces.append(_explanation_cache[cache_key])
+                ttft_ms = (time.perf_counter() - t0) * 1000
+                yield _sse("token", {"text": pieces[0]})
+            else:
+                async with _generation_lock:
+                    backend = await asyncio.to_thread(explanation_backend)
+                    backend_available = backend is not None
+                    if backend is not None:
+                        game_texts = build_candidate_text_lookup([query_app_id, rec_app_id])
+                        if kind == "review_to_game":
+                            tokens = backend.stream_review_explanation(
+                                review_text, game_texts[query_app_id], game_texts[rec_app_id]
+                            )
+                        else:
+                            tokens = backend.stream_explanation(game_texts[query_app_id], game_texts[rec_app_id])
+                        async for text in _iterate_in_thread(tokens):
+                            if ttft_ms is None:
+                                ttft_ms = (time.perf_counter() - t0) * 1000
+                            pieces.append(text)
+                            yield _sse("token", {"text": text})
+                if kind == "game_to_game" and pieces:
+                    _explanation_cache[cache_key] = "".join(pieces).strip()
+            completed = True
+            yield _sse("done", {})
+        except Exception as e:
+            # Headers (200) are already sent mid-stream, so report failure as an event instead.
+            yield _sse("failed", {"detail": str(e)})
+        finally:
+            log_event(
+                _serving_log_path,
+                ExplanationEvent(
+                    query_app_id=query_app_id,
+                    rec_app_id=rec_app_id,
+                    kind=kind,
+                    explanation="".join(pieces).strip() or None,
+                    cache_hit=cache_hit,
+                    backend_available=backend_available,
+                    completed=completed,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    ttft_ms=ttft_ms,
+                    query_text=review_text,
+                ),
+            )
+
+    def _sse_response(body: AsyncIterator[str]) -> Any:
+        return StreamingResponse(body, media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
     @app.get("/explain")
     def explain(
         query_app_id: int = Query(..., description="app_id of the game being reviewed"),
         rec_app_id: int = Query(..., description="app_id of the recommended game to explain"),
-    ) -> dict[str, str | None]:
-        """Grounded 'why this pick' text for one (query, rec) pair -- generated separately from
-        ``/recommendations`` so the LLM call doesn't block the recommendations response."""
-        cache_key = (int(query_app_id), int(rec_app_id))
-        cache_hit = cache_key in _explanation_cache
-        t0 = time.perf_counter()
-        backend = explanation_backend()
-        explanation = _explain_top_pick(
-            backend,
-            _explanation_cache,
-            query_app_id=int(query_app_id),
-            rec_app_id=int(rec_app_id),
-        )
-        duration_ms = (time.perf_counter() - t0) * 1000
-        log_event(
-            _serving_log_path,
-            ExplanationEvent(
-                query_app_id=int(query_app_id),
-                rec_app_id=int(rec_app_id),
-                explanation=explanation,
-                cache_hit=cache_hit,
-                backend_available=backend is not None,
-                duration_ms=duration_ms,
-            ),
-        )
-        return {"explanation": explanation}
+    ) -> Any:
+        """SSE stream of grounded game-to-game 'why this pick' text for one (query, rec) pair --
+        generated separately from ``/recommendations`` so the LLM call doesn't block it."""
+        return _sse_response(_stream_explanation("game_to_game", int(query_app_id), int(rec_app_id), None))
+
+    @app.get("/explain/personalized")
+    def explain_personalized(
+        q: str = Query(..., min_length=1, description="The user's review text"),
+        query_app_id: int = Query(..., description="app_id of the game being reviewed"),
+        rec_app_id: int = Query(..., description="app_id of the recommended game to explain"),
+    ) -> Any:
+        """SSE stream like ``/explain``, but also grounded in the user's review (review-to-game)."""
+        return _sse_response(_stream_explanation("review_to_game", int(query_app_id), int(rec_app_id), q))
 
     return app

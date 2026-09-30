@@ -17,6 +17,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -41,16 +42,29 @@ class RecommendationEvent:
     event_type: str = field(default="recommendation", init=False)
 
 
+ExplanationKind = Literal["game_to_game", "review_to_game"]
+
+
 @dataclass(frozen=True)
 class ExplanationEvent:
-    """One live ``/explain`` response for a single ``(query_app_id, rec_app_id)`` pair."""
+    """One live streamed ``/explain`` (``game_to_game``) or ``/explain/personalized``
+    (``review_to_game``) response for a single ``(query_app_id, rec_app_id)`` pair.
+
+    ``ttft_ms`` is time from request start to the first streamed token (``None`` if no token
+    was sent). ``completed`` is ``False`` when the client disconnected or generation failed
+    mid-stream -- ``explanation`` then holds only the partial text.
+    """
 
     query_app_id: int
     rec_app_id: int
+    kind: ExplanationKind
     explanation: str | None
     cache_hit: bool
     backend_available: bool
+    completed: bool
     duration_ms: float
+    ttft_ms: float | None
+    query_text: str | None = None
     event_type: str = field(default="explanation", init=False)
 
 

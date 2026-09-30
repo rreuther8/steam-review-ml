@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Iterator
 
 
 class LLMRankerBackend(ABC):
@@ -107,6 +108,23 @@ def _build_explanation_prompt(query_game_text: str, rec_game_text: str) -> str:
     )
 
 
+def _build_review_explanation_prompt(review_text: str, query_game_text: str, rec_game_text: str) -> str:
+    """Review-to-game variant: adds the user's own review, so the explanation can tie the pick to
+    what *this* user said, not just to the reviewed game in general. The review may be negative,
+    so the prompt says "reviewed", not "liked"."""
+    return (
+        "A recommender system suggested a game to a user based on a review they wrote of "
+        "another game. Write a short, friendly explanation (2-3 sentences), addressed to the "
+        "user, of why the suggested game fits what they said in their review. Ground it only "
+        "in the review and the two game descriptions below -- do not invent details not "
+        "present in them.\n\n"
+        f"User's review:\n{review_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
+        f"Game the user reviewed:\n{query_game_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
+        f"Suggested game:\n{rec_game_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
+        "Explanation:"
+    )
+
+
 class LlamaCppBackend(LLMRankerBackend):
     """Local GGUF model via ``llama-cpp-python``, run with GPU offload."""
 
@@ -158,3 +176,24 @@ class LlamaCppBackend(LLMRankerBackend):
             repeat_penalty=self._repeat_penalty,
         )
         return response["choices"][0]["message"]["content"].strip()
+
+    def stream_explanation(self, query_game_text: str, rec_game_text: str) -> Iterator[str]:
+        """Streaming ``generate_explanation``: yields text pieces as the model produces them."""
+        yield from self._stream_chat(_build_explanation_prompt(query_game_text, rec_game_text))
+
+    def stream_review_explanation(self, review_text: str, query_game_text: str, rec_game_text: str) -> Iterator[str]:
+        """Like ``stream_explanation``, but also grounded in the user's review text."""
+        yield from self._stream_chat(_build_review_explanation_prompt(review_text, query_game_text, rec_game_text))
+
+    def _stream_chat(self, prompt: str) -> Iterator[str]:
+        chunks = self._llm.create_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self._temperature,
+            max_tokens=_EXPLANATION_MAX_TOKENS,
+            repeat_penalty=self._repeat_penalty,
+            stream=True,
+        )
+        for chunk in chunks:
+            text = chunk["choices"][0]["delta"].get("content")
+            if text:
+                yield text

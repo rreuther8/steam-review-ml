@@ -11,6 +11,7 @@ from steam_review_ml.recommender.llm_backends import (
     LLMRankerBackend,
     _build_explanation_prompt,
     _build_prompt,
+    _build_review_explanation_prompt,
     _parse_ranked_app_ids,
 )
 
@@ -147,3 +148,40 @@ def test_llama_cpp_backend_generate_explanation(monkeypatch: pytest.MonkeyPatch)
     assert explanation == "Both are action games."  # stripped, not the raw padded response
     assert "Half-Life" in captured["messages"][0]["content"]
     assert captured["max_tokens"] == 100
+
+
+def test_build_review_explanation_prompt_includes_review_and_both_games() -> None:
+    prompt = _build_review_explanation_prompt(
+        "Loved the tight gunplay.", "Half-Life is a first-person shooter.", "The Crew 2 is a racing game."
+    )
+    assert "Loved the tight gunplay." in prompt
+    assert "Half-Life is a first-person shooter." in prompt
+    assert "The Crew 2 is a racing game." in prompt
+
+
+def test_llama_cpp_backend_stream_review_explanation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Streaming yields each non-empty ``delta.content`` piece (role-only/empty deltas skipped)."""
+    captured: dict = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            pass
+
+        def create_chat_completion(self, *, messages, temperature, max_tokens, repeat_penalty, stream):
+            captured["messages"] = messages
+            captured["stream"] = stream
+            deltas = [{"role": "assistant"}, {"content": "Both "}, {"content": ""}, {"content": "shoot."}, {}]
+            return iter({"choices": [{"delta": d}]} for d in deltas)
+
+    fake_module = types.ModuleType("llama_cpp")
+    fake_module.Llama = FakeLlama  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_module)
+
+    from steam_review_ml.recommender.llm_backends import LlamaCppBackend
+
+    backend = LlamaCppBackend("fake/path/model.gguf")
+    pieces = list(backend.stream_review_explanation("Loved the gunplay.", "Half-Life", "Doom"))
+
+    assert pieces == ["Both ", "shoot."]
+    assert captured["stream"] is True
+    assert "Loved the gunplay." in captured["messages"][0]["content"]

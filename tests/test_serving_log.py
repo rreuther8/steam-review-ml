@@ -45,13 +45,30 @@ def test_log_event_appends_across_calls(tmp_path: Path) -> None:
     log_event(
         log_path,
         ExplanationEvent(
-            query_app_id=1, rec_app_id=2, explanation="a", cache_hit=False, backend_available=True, duration_ms=1.0
+            query_app_id=1,
+            rec_app_id=2,
+            kind="review_to_game",
+            explanation="a",
+            cache_hit=False,
+            backend_available=True,
+            completed=True,
+            duration_ms=1.0,
+            ttft_ms=0.4,
+            query_text="my review",
         ),
     )
     log_event(
         log_path,
         ExplanationEvent(
-            query_app_id=1, rec_app_id=3, explanation=None, cache_hit=False, backend_available=False, duration_ms=0.5
+            query_app_id=1,
+            rec_app_id=3,
+            kind="game_to_game",
+            explanation=None,
+            cache_hit=False,
+            backend_available=False,
+            completed=True,
+            duration_ms=0.5,
+            ttft_ms=None,
         ),
     )
 
@@ -61,6 +78,11 @@ def test_log_event_appends_across_calls(tmp_path: Path) -> None:
     assert first["event_type"] == "explanation"
     assert first["rec_app_id"] == 2
     assert first["backend_available"] is True
+    assert first["kind"] == "review_to_game"
+    assert first["ttft_ms"] == 0.4
+    assert first["query_text"] == "my review"
     assert second["rec_app_id"] == 3
+    assert second["ttft_ms"] is None
+    assert second["query_text"] is None
     assert second["explanation"] is None
     assert second["backend_available"] is False

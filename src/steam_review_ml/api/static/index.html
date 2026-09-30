@@ -248,6 +248,10 @@
     <section class="results" id="resultsSection" hidden>
       <h2>Recommendations</h2>
       <ol class="results-list" id="resultsList"></ol>
+      <div class="explanation-box" id="personalBox" hidden>
+        <h3>Why this fits your review</h3>
+        <p id="personalText"></p>
+      </div>
       <div class="explanation-box" id="explanationBox" hidden>
         <h3>Why this pick?</h3>
         <p id="explanationText"></p>
@@ -270,9 +274,13 @@
     const resultsList = document.getElementById("resultsList");
     const explanationBox = document.getElementById("explanationBox");
     const explanationText = document.getElementById("explanationText");
+    const personalBox = document.getElementById("personalBox");
+    const personalText = document.getElementById("personalText");
 
     let selectedAppId = null;
     let debounceTimer = null;
+    let activeSource = null;  // the one explanation stream in flight, closed on a new search
+    let explainRun = 0;       // bumped per search so a stale sequence doesn't start its next stream
 
     function setStatus(msg) {
       statusEl.textContent = msg || "";
@@ -375,6 +383,9 @@
       resultsSection.hidden = true;
       resultsList.innerHTML = "";
       explanationBox.hidden = true;
+      personalBox.hidden = true;
+      explainRun += 1;
+      if (activeSource) activeSource.close();
 
       const text = review.value.trim();
       if (!text) {
@@ -417,7 +428,7 @@
         goBtn.disabled = false;
 
         if (data.length && !structuredEl.checked) {
-          fetchExplanation(selectedAppId, data[0].app_id);
+          explainTopPick(text, selectedAppId, data[0].app_id);
         }
       } catch (e) {
         setStatus(e.message);
@@ -425,24 +436,47 @@
       }
     });
 
-    async function fetchExplanation(queryAppId, recAppId) {
-      explanationText.textContent = "Generating explanation…";
-      explanationBox.hidden = false;
-      try {
-        const params = new URLSearchParams();
-        params.set("query_app_id", String(queryAppId));
-        params.set("rec_app_id", String(recAppId));
-        const r = await fetch("/explain?" + params.toString());
-        if (!r.ok) throw new Error("explain request failed");
-        const data = await r.json();
-        if (data.explanation) {
-          explanationText.textContent = data.explanation;
-        } else {
-          explanationBox.hidden = true;
-        }
-      } catch (e) {
-        explanationBox.hidden = true;
-      }
+    // Personalized first, then game-to-game: the server runs one generation at a time,
+    // so sequencing here keeps each stream's time-to-first-token about its own generation.
+    async function explainTopPick(reviewText, queryAppId, recAppId) {
+      const run = explainRun;
+      const params = new URLSearchParams();
+      params.set("query_app_id", String(queryAppId));
+      params.set("rec_app_id", String(recAppId));
+      const personalParams = new URLSearchParams(params);
+      personalParams.set("q", reviewText);
+
+      await streamExplanation("/explain/personalized?" + personalParams.toString(), personalBox, personalText);
+      if (run !== explainRun) return;
+      await streamExplanation("/explain?" + params.toString(), explanationBox, explanationText);
+    }
+
+    // Appends each SSE "token" event to textEl; resolves when the stream ends. Hides the box
+    // if nothing arrived (backend unavailable) or generation failed.
+    function streamExplanation(url, box, textEl) {
+      return new Promise((resolve) => {
+        let received = false;
+        textEl.textContent = "Generating explanation…";
+        box.hidden = false;
+        const source = new EventSource(url);
+        activeSource = source;
+        const finish = (ok) => {
+          source.close();
+          if (!ok || !received) box.hidden = true;
+          resolve();
+        };
+        source.addEventListener("token", (ev) => {
+          if (!received) {
+            textEl.textContent = "";
+            received = true;
+          }
+          textEl.textContent += JSON.parse(ev.data).text;
+        });
+        source.addEventListener("done", () => finish(true));
+        source.addEventListener("failed", () => finish(false));
+        // Connection error: close, rather than let EventSource auto-reconnect and regenerate.
+        source.onerror = () => finish(false);
+      });
     }
   </script>
 </body>
