@@ -1,0 +1,10 @@
+{
+  "explanations_cache": "artifacts/recs/eval_cache/val_llm_mini_v1/explanations.parquet",
+  "heuristic_scores_path": "artifacts/recs/explanation_eval/runs/latest/explanation_heuristic_scores.parquet",
+  "judge_scores_path": "artifacts/recs/eval_cache/val_llm_mini_v1/judge_scores.parquet",
+  "sample_path": "artifacts/recs/qualitative/user_facing/explanation_judge_calibration_sample.csv",
+  "summary_path": "artifacts/recs/explanation_eval/runs/latest/explanation_judge_calibration_summary.json",
+  "n_sample": 30,
+  "seed": null,
+  "igdb_enriched_path": "artifacts/igdb/igdb_games__enriched.parquet"
+}

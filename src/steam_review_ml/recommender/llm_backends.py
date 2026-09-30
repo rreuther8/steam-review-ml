@@ -93,14 +93,16 @@ _EXPLANATION_MAX_TOKENS = 100
 _EXPLANATION_TEXT_MAX_CHARS = 1000
 
 
-def _build_explanation_prompt(query_text: str, recommended_text: str) -> str:
+def _build_explanation_prompt(query_game_text: str, rec_game_text: str) -> str:
+    """Both arguments are IGDB metadata (name + summary [+ storyline]) -- never the user's
+    review text, which drove retrieval upstream but plays no part in generation."""
     return (
         "A recommender system suggested a game to a user based on another game they "
         "like. Write a short, friendly explanation (2-3 sentences) of why the "
         "suggested game is a good match, grounded only in the details given below -- "
         "do not invent details not present in either description.\n\n"
-        f"Game the user likes:\n{query_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
-        f"Suggested game:\n{recommended_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
+        f"Game the user likes:\n{query_game_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
+        f"Suggested game:\n{rec_game_text[:_EXPLANATION_TEXT_MAX_CHARS]}\n\n"
         "Explanation:"
     )
 
@@ -141,12 +143,14 @@ class LlamaCppBackend(LLMRankerBackend):
         content = response["choices"][0]["message"]["content"]
         return _parse_ranked_app_ids(content, candidates, top_k=top_k)
 
-    def generate_explanation(self, query_text: str, recommended_text: str) -> str:
-        """Free-text explanation of why ``recommended_text`` suits a fan of ``query_text``.
+    def generate_explanation(self, query_game_text: str, rec_game_text: str) -> str:
+        """Free-text explanation of why ``rec_game_text`` suits a fan of ``query_game_text``.
 
-        No structured-output parsing needed -- this is prose, not a JSON contract.
+        Both arguments are IGDB metadata (game-vs-game), not the user's review -- see
+        ``_build_explanation_prompt``. No structured-output parsing needed -- this is prose,
+        not a JSON contract.
         """
-        prompt = _build_explanation_prompt(query_text, recommended_text)
+        prompt = _build_explanation_prompt(query_game_text, rec_game_text)
         response = self._llm.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=self._temperature,

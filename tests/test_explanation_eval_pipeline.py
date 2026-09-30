@@ -122,6 +122,7 @@ def test_score_explanations_flags_ungrounded_tags(tmp_path: Path) -> None:
     assert scored.iloc[0]["is_degenerate"] == False  # noqa: E712 -- numpy bool, not python bool
     assert "Role-playing (RPG)" not in scored.iloc[0]["ungrounded_tags"]  # not in fixture vocab at all
     assert scored.iloc[0]["content_overlap_ratio"] < 1.0
+    assert "relevance_cosine_query_game" in scored.columns
 
 
 def test_summarize_explanation_scores() -> None:
@@ -132,12 +133,14 @@ def test_summarize_explanation_scores() -> None:
                 "ungrounded_tags": [],
                 "content_overlap_ratio": 0.8,
                 "relevance_cosine": 0.5,
+                "relevance_cosine_query_game": 0.6,
             },
             {
                 "is_degenerate": True,
                 "ungrounded_tags": ["RPG"],
                 "content_overlap_ratio": 0.2,
                 "relevance_cosine": 0.1,
+                "relevance_cosine_query_game": 0.2,
             },
         ]
     )
@@ -148,3 +151,4 @@ def test_summarize_explanation_scores() -> None:
     assert summary["degenerate_rate"] == pytest.approx(0.5)
     assert summary["any_ungrounded_tag_rate"] == pytest.approx(0.5)
     assert summary["content_overlap_ratio_mean"] == pytest.approx(0.5)
+    assert summary["relevance_cosine_query_game_mean"] == pytest.approx(0.4)

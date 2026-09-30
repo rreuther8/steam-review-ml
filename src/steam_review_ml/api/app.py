@@ -15,14 +15,16 @@ Default recommendations use the shipped stack: ``two_tower_v1`` @100 →
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import pandas as pd
 
+from steam_review_ml.api.serving_log import ExplanationEvent, RecommendationEvent, RecommendationResult, log_event
 from steam_review_ml.evaluation.candidate_text import build_candidate_text_lookup
-from steam_review_ml.recommender.retrieve import ContentRetriever
+from steam_review_ml.recommender.retrieve import ContentRetriever, default_repo_root
 from steam_review_ml.recommender.serve_config import load_serve_config
 from steam_review_ml.recommender.two_tower_recommender import TwoTowerRecommender
 
@@ -89,6 +91,12 @@ def create_app() -> Any:
         raise ImportError("Install API deps: pip install -e '.[api]'") from e
 
     default_serve_method: ServeMethod = "v2a"
+
+    _serving_log_path = Path(
+        load_serve_config().get(
+            "serving_log_path", str(default_repo_root() / "artifacts" / "recs" / "serving_logs" / "events.jsonl")
+        )
+    )
 
     _state: dict[str, Any] = {}
 
@@ -249,8 +257,28 @@ def create_app() -> Any:
                         "or use method=raw for a full-catalog search"
                     ),
                 )
+            t0 = time.perf_counter()
             hits = rec.recommend(q, query_app_id=int(exclude_app_id))
-            return _records(hits.head(k))
+            records = _records(hits.head(k))
+            duration_ms = (time.perf_counter() - t0) * 1000
+            log_event(
+                _serving_log_path,
+                RecommendationEvent(
+                    query_app_id=int(exclude_app_id),
+                    query_text=q,
+                    method_id=rec.method_id,
+                    results=[
+                        RecommendationResult(
+                            app_id=row["app_id"], app_name=row["app_name"], score=row["score"], rank=i + 1
+                        )
+                        for i, row in enumerate(records)
+                    ],
+                    duration_ms=duration_ms,
+                    retrieve_ms=hits.attrs.get("retrieve_ms", 0.0),
+                    rerank_ms=hits.attrs.get("rerank_ms", 0.0),
+                ),
+            )
+            return records
 
         use_structured = method == "structured" or structured
         mask = {int(exclude_app_id)} if exclude_app_id is not None else None
@@ -273,11 +301,27 @@ def create_app() -> Any:
     ) -> dict[str, str | None]:
         """Grounded 'why this pick' text for one (query, rec) pair -- generated separately from
         ``/recommendations`` so the LLM call doesn't block the recommendations response."""
+        cache_key = (int(query_app_id), int(rec_app_id))
+        cache_hit = cache_key in _explanation_cache
+        t0 = time.perf_counter()
+        backend = explanation_backend()
         explanation = _explain_top_pick(
-            explanation_backend(),
+            backend,
             _explanation_cache,
             query_app_id=int(query_app_id),
             rec_app_id=int(rec_app_id),
+        )
+        duration_ms = (time.perf_counter() - t0) * 1000
+        log_event(
+            _serving_log_path,
+            ExplanationEvent(
+                query_app_id=int(query_app_id),
+                rec_app_id=int(rec_app_id),
+                explanation=explanation,
+                cache_hit=cache_hit,
+                backend_available=backend is not None,
+                duration_ms=duration_ms,
+            ),
         )
         return {"explanation": explanation}
 

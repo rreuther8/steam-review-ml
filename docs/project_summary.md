@@ -73,8 +73,8 @@ steam_recommendations/
 | `data/` | Streaming loaders, filters, feature selection, Parquet export |
 | `transforms/` | Normalization rules for tabular features |
 | `recommender/` | `ContentRetriever`, `Recommender` ABC with `RAGRecommender` (shipped v2a stack) and `TwoTowerRecommender`, preference extraction |
-| `evaluation/` | Offline retrieval/ranking eval orchestration (`retrieval_offline_eval.py`), shared metrics |
-| `api/` | FastAPI app: `/recommendations`, `/ui`, `/games`, `/health` (optional extra `.[api]`) |
+| `evaluation/` | Offline retrieval/ranking eval orchestration (`retrieval_offline_eval.py`), shared metrics; Stage 4/5 explanation eval — heuristic proxies (`explanation_eval_pipeline.py`), LLM-as-judge (`llm_judge.py`), human-label calibration (`judge_calibration.py`) |
+| `api/` | FastAPI app: `/recommendations`, `/explain`, `/ui`, `/games`, `/health` (optional extra `.[api]`); `serving_log.py` appends every `/recommendations`/`/explain` response to `artifacts/recs/serving_logs/events.jsonl` |
 | `constants.py` | Project-wide random seed |
 
 **Install:** `pip install -e .` (core). Recommender notebooks and `ContentRetriever` need TensorFlow + TF Hub (typically conda-forge). API: `pip install -e ".[api]"`.
@@ -130,7 +130,7 @@ flowchart LR
 2. **Index:** aggregate thumbs-up review text per game → embed (bge-small chunk index for RAG retrieval; USE-based two-tower kept for ablation); build IGDB enriched taxonomy features for v2a.
 3. **Retrieve + rerank:** `rag_chunk_v1_vector_blend_query` @100 → `two_tower_v1_v2a_embed_query_logpop_blend` @10 (query-game IGDB anchor + D1 log-pop blend). `two_tower_v1` retrieval remains available for ablation/rollback (`TwoTowerRecommender`), not the shipped path.
 4. **Evaluate:** scripted jobs score methods and write contract tables under `artifacts/recs/offline_eval/runs/latest/`.
-5. **Serve:** `RAGRecommender` exposed over FastAPI (`method=v2a` default; `method=raw` ablation). **`exclude_app_id`** required for v2a (game being reviewed).
+5. **Serve:** `RAGRecommender` exposed over FastAPI (`method=v2a` default; `method=raw` ablation). **`exclude_app_id`** required for v2a (game being reviewed). Top-pick "why" text is a separate, non-blocking `GET /explain` call (Stage 4 local-LLM explanation, grounded in both games' IGDB text, not the user's review); every live `/recommendations`/`/explain` response is logged to `artifacts/recs/serving_logs/events.jsonl`, raw material for a future pass over *live* traffic. A separate, already-built offline harness LLM-judges explanations generated over an *eval cohort* (`recs_job_explanation_judge_eval.py`) and calibrates the judge against hand labels (`recs_job_explanation_judge_calibration.py`) — see [`plans/rag_extension_plan.md`](plans/rag_extension_plan.md) Stage 5 Track B.
 
 ---
 

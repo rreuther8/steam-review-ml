@@ -131,16 +131,30 @@ def score_explanations(
     *,
     enriched_path: str | None = None,
 ) -> pd.DataFrame:
-    """Groundedness proxy (content overlap + tag leakage) and relevance proxy (embedding cosine)."""
+    """Groundedness proxy (content overlap + tag leakage) and two relevance proxies (embedding cosine).
+
+    ``relevance_cosine`` (vs. ``query_text``, the user's raw review) is confounded by how
+    descriptive the review happened to be -- a terse review ("Just get it.") scores low
+    regardless of explanation quality, since there's little for the embedding to match
+    against. ``relevance_cosine_query_game`` (vs. the query game's own IGDB text -- what
+    ``generate_explanation`` was actually grounded in, alongside ``candidate_text``) isn't
+    subject to that confound and is the more apples-to-apples relevance signal. Keep both:
+    a gap between them is itself informative (it's exactly the review-vs-metadata mismatch
+    calibration surfaced).
+    """
     rec_app_ids = results_df["rec_app_id"].unique().tolist()
     tags_by_app = load_igdb_tags(rec_app_ids, enriched_path=enriched_path)
     tag_vocabulary = load_catalog_tag_vocabulary(enriched_path=enriched_path)
+
+    query_app_ids = results_df["query_app_id"].unique().tolist()
+    query_igdb_text_by_app = build_candidate_text_lookup(query_app_ids, enriched_path=enriched_path)
 
     scored_rows = []
     for row in results_df.to_dict("records"):
         explanation = row["explanation"]
         exp_vec = embed_model.encode([explanation])[0]
         query_vec = embed_model.encode([row["query_text"]])[0]
+        query_game_vec = embed_model.encode([query_igdb_text_by_app[row["query_app_id"]]])[0]
 
         scored_rows.append(
             {
@@ -151,6 +165,7 @@ def score_explanations(
                     explanation, tags_by_app[row["rec_app_id"]], tag_vocabulary
                 ),
                 "relevance_cosine": cosine_similarity(exp_vec, query_vec),
+                "relevance_cosine_query_game": cosine_similarity(exp_vec, query_game_vec),
             }
         )
     return pd.DataFrame(scored_rows)
@@ -165,4 +180,6 @@ def summarize_explanation_scores(scored_df: pd.DataFrame) -> dict[str, Any]:
         "content_overlap_ratio_median": float(scored_df["content_overlap_ratio"].median()),
         "relevance_cosine_mean": float(scored_df["relevance_cosine"].mean()),
         "relevance_cosine_median": float(scored_df["relevance_cosine"].median()),
+        "relevance_cosine_query_game_mean": float(scored_df["relevance_cosine_query_game"].mean()),
+        "relevance_cosine_query_game_median": float(scored_df["relevance_cosine_query_game"].median()),
     }
