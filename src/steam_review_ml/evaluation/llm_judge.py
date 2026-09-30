@@ -78,7 +78,7 @@ def build_judge_prompt(query_game_text: str, rec_game_text: str, explanation: st
         "present in neither text.\n\n"
         "relevance: does the explanation connect something specific about the game "
         "the user likes to something specific about the suggested game? 5 = specific, "
-        "clearly tied to the user's stated interest. 1 = generic boilerplate that could "
+        "clearly tied to the game the user likes. 1 = generic boilerplate that could "
         "apply to almost any pair of games.\n\n"
         f"Game the user likes:\n{query_game_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
         f"Suggested game:\n{rec_game_text[:_JUDGE_TEXT_MAX_CHARS]}\n\n"
